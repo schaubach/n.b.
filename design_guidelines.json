@@ -1,0 +1,173 @@
+{
+  "theme": "LIGHT",
+  "archetype": "3 (Pastel & Soft) mixed with Tactile Neo-Brutalism",
+  "rationale": "A teacher's grading app needs to be highly tactile, frictionless, and reduce cognitive load. By combining soft pastel zones (calming, clear organization) with Neo-Brutalist elements (hard borders, distinct shadows), the student cards feel like physical flashcards, making the swiping action highly satisfying and precise.",
+  "typography": {
+    "font_families": {
+      "heading": "Outfit, sans-serif",
+      "body": "Satoshi, sans-serif",
+      "monospace": "JetBrains Mono, monospace"
+    },
+    "hierarchy": {
+      "h1": "text-4xl sm:text-5xl font-black tracking-tight text-stone-900",
+      "h2": "text-2xl sm:text-3xl font-bold tracking-tight text-stone-900",
+      "h3": "text-xl font-bold text-stone-900",
+      "body": "text-lg text-stone-700",
+      "small_caps": "text-sm font-bold uppercase tracking-[0.2em] text-stone-500",
+      "student_name": "text-3xl sm:text-4xl font-black tracking-tighter text-stone-900",
+      "grade_display": "text-3xl font-black font-mono text-stone-900"
+    }
+  },
+  "color_palette": {
+    "background": {
+      "main": "bg-stone-50",
+      "card": "bg-white"
+    },
+    "text": {
+      "primary": "text-stone-900",
+      "secondary": "text-stone-600",
+      "inverse": "text-white"
+    },
+    "borders": {
+      "hard": "border-2 border-stone-900",
+      "subtle": "border border-stone-200"
+    },
+    "grading_zones": {
+      "top": {
+        "idle": "bg-emerald-100 text-emerald-900 border-transparent",
+        "active": "bg-emerald-400 text-stone-900 border-2 border-stone-900 shadow-[4px_4px_0_0_#1c1917]",
+        "grades_points": ["15", "14", "13", "12"],
+        "grades_traditional": ["1+", "1", "1-", "2+"]
+      },
+      "right": {
+        "idle": "bg-amber-100 text-amber-900 border-transparent",
+        "active": "bg-amber-400 text-stone-900 border-2 border-stone-900 shadow-[4px_4px_0_0_#1c1917]",
+        "grades_points": ["11", "10", "9", "8"],
+        "grades_traditional": ["2", "2-", "3+", "3"]
+      },
+      "bottom": {
+        "idle": "bg-indigo-100 text-indigo-900 border-transparent",
+        "active": "bg-indigo-400 text-stone-900 border-2 border-stone-900 shadow-[4px_4px_0_0_#1c1917]",
+        "grades_points": ["7", "6", "5", "4"],
+        "grades_traditional": ["3-", "4+", "4", "4-"]
+      },
+      "left": {
+        "idle": "bg-rose-100 text-rose-900 border-transparent",
+        "active": "bg-rose-400 text-stone-900 border-2 border-stone-900 shadow-[4px_4px_0_0_#1c1917]",
+        "grades_points": ["3", "2", "1", "0"],
+        "grades_traditional": ["5+", "5", "5-", "6"]
+      }
+    }
+  },
+  "layout_spacing": {
+    "app_container": "h-screen w-screen overflow-hidden bg-stone-50 touch-none select-none flex flex-col",
+    "header": "h-20 px-8 flex items-center justify-between shrink-0",
+    "grading_area": "flex-1 relative w-full h-full p-4 sm:p-8 flex items-center justify-center",
+    "grade_cells_container": "absolute inset-4 sm:inset-8 grid",
+    "grade_cell": "flex items-center justify-center font-mono font-black text-xl sm:text-2xl rounded-2xl transition-all duration-200"
+  },
+  "components": {
+    "student_card": {
+      "container": "relative z-40 w-[280px] sm:w-[340px] aspect-[3/4] bg-white border-2 border-stone-900 rounded-3xl shadow-[8px_8px_0_0_#1c1917] flex flex-col overflow-hidden touch-none",
+      "photo_area": "flex-1 w-full bg-stone-200 border-b-2 border-stone-900",
+      "info_area": "h-32 p-6 flex flex-col justify-center items-center bg-white text-center",
+      "name_first": "text-lg font-bold text-stone-500 uppercase tracking-wider",
+      "name_last": "text-3xl font-black text-stone-900 leading-none mt-1"
+    },
+    "buttons": {
+      "primary": "px-8 py-4 bg-stone-900 text-white font-bold rounded-xl border-2 border-stone-900 hover:bg-stone-800 hover:-translate-y-1 hover:shadow-[4px_4px_0_0_#a8a29e] transition-all active:translate-y-0 active:shadow-none",
+      "secondary": "px-6 py-3 bg-white text-stone-900 font-bold rounded-xl border-2 border-stone-900 hover:bg-stone-100 hover:-translate-y-1 hover:shadow-[4px_4px_0_0_#1c1917] transition-all active:translate-y-0 active:shadow-none",
+      "undo": "flex items-center gap-2 px-4 py-2 bg-white border-2 border-stone-900 rounded-full font-bold text-stone-900 hover:shadow-[2px_2px_0_0_#1c1917] active:shadow-none active:translate-y-0.5 transition-all"
+    },
+    "upload_zone": {
+      "container": "w-full max-w-2xl mx-auto mt-20 aspect-video rounded-3xl border-4 border-dashed border-stone-300 bg-white/50 flex flex-col items-center justify-center p-12 hover:border-stone-500 hover:bg-stone-100 transition-colors cursor-pointer",
+      "icon": "w-16 h-16 text-stone-400 mb-6",
+      "text": "text-2xl font-bold text-stone-700",
+      "subtext": "text-stone-500 mt-2"
+    },
+    "badges": {
+      "system": "px-3 py-1 bg-stone-200 text-stone-700 rounded-full text-xs font-bold uppercase tracking-wider",
+      "progress": "px-4 py-2 bg-white border-2 border-stone-900 rounded-full font-mono font-bold text-stone-900 shadow-[2px_2px_0_0_#1c1917]"
+    }
+  },
+  "motion_guidelines": {
+    "card_drag": {
+      "type": "spring",
+      "stiffness": 300,
+      "damping": 20,
+      "whileDrag": {
+        "scale": 1.05,
+        "boxShadow": "16px 16px 0px 0px #1c1917",
+        "cursor": "grabbing"
+      }
+    },
+    "card_dismiss": {
+      "type": "spring",
+      "stiffness": 200,
+      "damping": 25,
+      "exit_scale": 0.5,
+      "exit_opacity": 0
+    },
+    "card_entrance": {
+      "type": "spring",
+      "stiffness": 300,
+      "damping": 25,
+      "initial_scale": 0.8,
+      "initial_opacity": 0,
+      "initial_y": 50
+    },
+    "grade_cell_hover": {
+      "scale": 1.1,
+      "transition": "spring (stiffness: 400, damping: 25)"
+    }
+  },
+  "interaction_rules": {
+    "drag_threshold": "Card must be dragged at least 100px towards an edge to register a nearest-cell highlight. Upon release in an active zone, the grade is assigned.",
+    "snap_back": "If released before hitting the threshold, the card springs back to the exact center.",
+    "undo": "Hitting 'Rückgängig' instantly reverses the exit animation of the previous card and decrements the progress index.",
+    "responsive_edges": "On iPad Landscape, grade cells are distributed along the left, right, top, and bottom screen boundaries. On Portrait, they are tightly clustered in a ring around the card area.",
+    "accessibility": "Provide haptic feedback (navigator.vibrate) when a cell becomes active, and when a grade is successfully dropped."
+  },
+  "views_and_flow": {
+    "1_import": {
+      "title": ".idoceo Importieren",
+      "description": "Drag & drop zone for .idoceo files. Once dropped, parse and show summary (e.g., 'Klasse 10B - 21 Schüler')."
+    },
+    "2_class_list": {
+      "title": "Klasse Auswählen",
+      "description": "Grid of classes. Each card shows Class Name, Student Count, and Grade System Badge ('0-15 Punkte' or '1-6 Noten')."
+    },
+    "3_grading_swipe": {
+      "title": "Bewerten",
+      "description": "The main view. Fullscreen, no scrolling. Top header with Back, Progress (e.g., '1 / 21'), and Undo. Center has the draggable student card. Edges have the 16 cells."
+    },
+    "4_summary_export": {
+      "title": "Zusammenfassung",
+      "description": "List of all students and their assigned grades. Huge 'Als CSV Exportieren' primary button."
+    }
+  },
+  "media_urls": {
+    "placeholders": {
+      "student_1": "https://images.pexels.com/photos/13538613/pexels-photo-13538613.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940",
+      "student_2": "https://images.pexels.com/photos/36608621/pexels-photo-36608621.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940",
+      "classroom_bg": "https://images.pexels.com/photos/19037688/pexels-photo-19037688.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940"
+    }
+  },
+  "testing_attributes": {
+    "upload_input": "data-testid='import-file-input'",
+    "class_select_button": "data-testid='class-select-button'",
+    "student_card": "data-testid='student-swipe-card'",
+    "undo_button": "data-testid='undo-grade-button'",
+    "export_button": "data-testid='export-csv-button'",
+    "grade_cell": "data-testid='grade-cell-{value}'"
+  },
+  "instructions_to_main_agent": [
+    "Use framer-motion for the swipe card. Bind 'x' and 'y' drag offsets using useMotionValue.",
+    "Calculate the distance from the card center to all 16 grade cells dynamically during 'onDrag'. The closest cell (if within a set distance threshold) becomes the 'active' cell.",
+    "Map the 16 grade values perfectly to the 4 edges. Group them arrays of 4 (top, right, bottom, left).",
+    "The UI is purely German. Use terms like 'Importieren', 'Klasse Auswählen', 'Rückgängig', 'Zusammenfassung', 'Als CSV Exportieren'.",
+    "Disable native scrolling and bouncing on the grading screen with 'touch-none', 'overflow-hidden', and 'overscroll-none'.",
+    "Ensure large hit areas. The entire screen acts as a canvas for the drag. The grade cells themselves are visual targets.",
+    "Use standard HTML/Tailwind for the layout; no Shadcn components are required for the heavily custom swipe interface, but Shadcn can be used for the upload/export summaries if customized with the Neo-brutalist hard borders."
+  ]
+}
