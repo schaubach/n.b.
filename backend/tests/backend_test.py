@@ -190,7 +190,13 @@ def test_grade_delete(s, session_id, imported_class):
     assert found["grade"] is None
 
 
-# ---------- CSV export ----------
+def _grade(s, session_id, student_id, value):
+    r = s.post(f"{API}/sessions/{session_id}/grades",
+               json={"student_id": student_id, "value": value})
+    assert r.status_code == 200
+
+
+# ---------- Single-session CSV export ----------
 def test_csv_export_only_graded(s, session_id, imported_class):
     cid = imported_class["class_id"]
     cls = s.get(f"{API}/classes/{cid}").json()
@@ -209,3 +215,91 @@ def test_csv_export_only_graded(s, session_id, imported_class):
     sess = s.get(f"{API}/sessions/{session_id}").json()
     graded_count = sum(1 for st in sess["students"] if st["grade"])
     assert len(body) - 1 == graded_count
+
+
+# ---------- Multi-session aggregate (iteration 2) ----------
+# These tests delete all sessions of the class, so they must run AFTER
+# any test that depends on the session_id fixture (session-scoped).
+def test_zz_session_count_aggregate_and_delete(s, imported_class):
+    """End-to-end: create 2 sessions, grade different students, verify
+    aggregated CSV header + rows, then DELETE /classes/<id>/sessions and
+    verify session_count returns to 0 and CSV has only header row."""
+    cid = imported_class["class_id"]
+
+    # Start from a clean slate for this class
+    r0 = s.delete(f"{API}/classes/{cid}/sessions")
+    assert r0.status_code == 200
+    assert r0.json()["ok"] is True
+
+    cls = s.get(f"{API}/classes/{cid}").json()
+    assert cls["session_count"] == 0
+    students = cls["students"]
+
+    # Create 2 sessions
+    s1 = s.post(f"{API}/sessions", json={"class_id": cid}).json()["id"]
+    s2 = s.post(f"{API}/sessions", json={"class_id": cid}).json()["id"]
+
+    # Round 1: grade student 0 and 1
+    _grade(s, s1, students[0]["id"], "1+")
+    _grade(s, s1, students[1]["id"], "2")
+    # Round 2: grade student 1 and 2 (overlap on student 1)
+    _grade(s, s2, students[1]["id"], "3-")
+    _grade(s, s2, students[2]["id"], "4")
+
+    # session_count should now be 2 in both list and detail endpoints
+    lst = s.get(f"{API}/classes").json()
+    medu2 = next(c for c in lst if c["id"] == cid)
+    assert medu2["session_count"] == 2
+
+    detail = s.get(f"{API}/classes/{cid}").json()
+    assert detail["session_count"] == 2
+
+    # Aggregate CSV
+    r = s.get(f"{API}/classes/{cid}/export.csv")
+    assert r.status_code == 200
+    assert "text/csv" in r.headers.get("Content-Type", "")
+    lines = r.text.strip().splitlines()
+    today = datetime.now().strftime("%d.%m.%Y")
+    # Header: Vorname,Nachname,<today>,<today #2>   (both sessions created same day)
+    assert lines[0] == f"Vorname,Nachname,{today},{today} #2"
+    # Exactly 3 students have at least one grade -> 3 data rows
+    assert len(lines) - 1 == 3
+
+    # Build map { (vorname, nachname) -> [col1, col2] }
+    rows = [ln.split(",") for ln in lines[1:]]
+    by_name = {(r_[0], r_[1]): r_[2:] for r_ in rows}
+    s0 = (students[0]["first_name"], students[0]["last_name"])
+    s1n = (students[1]["first_name"], students[1]["last_name"])
+    s2n = (students[2]["first_name"], students[2]["last_name"])
+    assert by_name[s0] == ["1+", ""]
+    assert by_name[s1n] == ["2", "3-"]
+    assert by_name[s2n] == ["", "4"]
+
+    # DELETE all sessions of the class
+    rd = s.delete(f"{API}/classes/{cid}/sessions")
+    assert rd.status_code == 200
+    body = rd.json()
+    assert body["ok"] is True
+    assert body["deleted_sessions"] == 2
+
+    # session_count back to 0; students still present
+    cls2 = s.get(f"{API}/classes/{cid}").json()
+    assert cls2["session_count"] == 0
+    assert len(cls2["students"]) == 21
+
+    # Aggregated CSV now has only header row
+    r2 = s.get(f"{API}/classes/{cid}/export.csv")
+    assert r2.status_code == 200
+    lines2 = r2.text.strip().splitlines()
+    assert lines2 == ["Vorname,Nachname"]
+
+
+def test_zz_delete_sessions_when_none(s, imported_class):
+    """Calling delete-sessions on a class with no sessions returns 0 and ok."""
+    cid = imported_class["class_id"]
+    # ensure empty
+    s.delete(f"{API}/classes/{cid}/sessions")
+    r = s.delete(f"{API}/classes/{cid}/sessions")
+    assert r.status_code == 200
+    assert r.json()["deleted_sessions"] == 0
+

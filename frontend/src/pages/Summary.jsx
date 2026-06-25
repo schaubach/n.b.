@@ -1,81 +1,61 @@
 import React, { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
-import { ArrowLeft, Download, Loader2, Pencil, FileSpreadsheet, Share2 } from "lucide-react";
+import { ArrowLeft, Loader2, FileSpreadsheet, Share2, Plus, CheckCircle2, Pencil } from "lucide-react";
 import api from "../lib/api";
 import { initials } from "../lib/grades";
+import { exportAndDelete, shareAndDelete, canShareFiles } from "../lib/exportClass";
 
 export default function Summary() {
   const { sessionId } = useParams();
   const navigate = useNavigate();
   const [session, setSession] = useState(null);
+  const [sessionCount, setSessionCount] = useState(0);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
-  const [canShareFiles, setCanShareFiles] = useState(false);
 
   useEffect(() => {
     (async () => {
       const res = await api.get(`/sessions/${sessionId}`);
       setSession(res.data);
+      try {
+        const cls = await api.get(`/classes/${res.data.class_id}`);
+        setSessionCount(cls.data.session_count || 0);
+      } catch (e) {}
       setLoading(false);
     })();
-    try {
-      const probe = new File(["x"], "t.csv", { type: "text/csv" });
-      setCanShareFiles(!!(navigator.canShare && navigator.canShare({ files: [probe] })));
-    } catch (e) { setCanShareFiles(false); }
   }, [sessionId]);
 
-  const fileName = () => {
-    const name = (session?.class_name || "Klasse").replace(/\s+/g, "_");
-    const date = (session?.date || "").replace(/\./g, "-");
-    return `${name}_${date}.csv`;
+  const newRound = async () => {
+    const res = await api.post("/sessions", { class_id: session.class_id });
+    navigate(`/grade/${res.data.id}`);
   };
 
-  const fetchCsvFile = async () => {
-    const res = await api.get(`/sessions/${sessionId}/export.csv`, { responseType: "blob" });
-    return new File([res.data], fileName(), { type: "text/csv" });
-  };
-
-  const handleDownload = async () => {
-    setError(null);
-    setBusy(true);
+  const handleExport = async () => {
+    if (!window.confirm(
+      "Alle gesammelten Benotungen werden als CSV exportiert und anschließend gelöscht. Fortfahren?"
+    )) return;
+    setError(null); setBusy(true);
     try {
-      const file = await fetchCsvFile();
-      const url = URL.createObjectURL(file);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = file.name;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      setTimeout(() => URL.revokeObjectURL(url), 4000);
+      await exportAndDelete(session.class_id, session.class_name);
+      navigate("/");
     } catch (e) {
-      setError("Download fehlgeschlagen. Bitte erneut versuchen.");
-    } finally {
-      setBusy(false);
-    }
+      setError("Export fehlgeschlagen. Bitte erneut versuchen.");
+    } finally { setBusy(false); }
   };
 
   const handleShare = async () => {
-    setError(null);
-    setBusy(true);
+    if (!window.confirm(
+      "Alle gesammelten Benotungen werden geteilt und anschließend gelöscht. Fortfahren?"
+    )) return;
+    setError(null); setBusy(true);
     try {
-      const file = await fetchCsvFile();
-      if (navigator.canShare && navigator.canShare({ files: [file] })) {
-        await navigator.share({
-          files: [file],
-          title: fileName(),
-          text: `Noten ${session?.class_name} (${session?.date})`,
-        });
-      } else {
-        await handleDownload();
-      }
+      const ok = await shareAndDelete(session.class_id, session.class_name);
+      if (ok) navigate("/");
     } catch (e) {
-      if (e && e.name !== "AbortError") setError("Teilen nicht möglich. Datei wird stattdessen geladen.");
-    } finally {
-      setBusy(false);
-    }
+      setError("Teilen fehlgeschlagen. Bitte erneut versuchen.");
+    } finally { setBusy(false); }
   };
 
   if (loading) {
@@ -117,6 +97,10 @@ export default function Summary() {
           <p className="text-stone-500 mt-1 font-medium">
             {session.title} · {graded.length} von {students.length} bewertet
           </p>
+          <div className="mt-3 inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-emerald-100 border-2 border-emerald-900/10 text-emerald-900 font-bold text-sm">
+            <CheckCircle2 className="w-4 h-4" />
+            {sessionCount} Bewertung{sessionCount === 1 ? "" : "en"} für diese Klasse gesammelt
+          </div>
         </div>
 
         <div className="mt-6 rounded-3xl border-2 border-stone-900 bg-white shadow-brutal-sm overflow-hidden">
@@ -157,7 +141,7 @@ export default function Summary() {
         </div>
       </main>
 
-      {/* Sticky export bar */}
+      {/* Sticky action bar */}
       <div className="fixed bottom-0 inset-x-0 p-4 bg-gradient-to-t from-stone-50 via-stone-50 to-transparent">
         <div className="max-w-3xl mx-auto">
           {error && (
@@ -165,30 +149,36 @@ export default function Summary() {
               {error}
             </p>
           )}
+          <button
+            onClick={newRound}
+            disabled={busy}
+            data-testid="summary-new-round-button"
+            className="w-full mb-3 px-5 py-3 bg-emerald-400 text-stone-900 font-heading font-extrabold rounded-2xl border-2 border-stone-900 shadow-brutal-sm hover:-translate-y-0.5 active:translate-y-0 active:shadow-none transition-all flex items-center justify-center gap-2 disabled:opacity-50"
+          >
+            <Plus className="w-5 h-5" /> Weitere Bewertung erstellen
+          </button>
           <div className="flex gap-3">
             <button
-              onClick={handleDownload}
+              onClick={handleExport}
               disabled={busy}
               data-testid="export-csv-button"
-              className="flex-1 px-5 py-4 bg-stone-900 text-white font-heading font-extrabold rounded-2xl border-2 border-stone-900 shadow-brutal-sm hover:-translate-y-0.5 hover:shadow-brutal active:translate-y-0 active:shadow-none transition-all flex items-center justify-center gap-3 text-base sm:text-lg disabled:opacity-50"
+              className="flex-1 px-4 py-4 bg-stone-900 text-white font-heading font-extrabold rounded-2xl border-2 border-stone-900 shadow-brutal-sm hover:-translate-y-0.5 active:translate-y-0 active:shadow-none transition-all flex items-center justify-center gap-2 text-sm sm:text-base disabled:opacity-50"
             >
-              {busy ? <Loader2 className="w-6 h-6 animate-spin" /> : <FileSpreadsheet className="w-6 h-6" />}
-              CSV herunterladen
-              {!busy && <Download className="w-5 h-5" />}
+              {busy ? <Loader2 className="w-5 h-5 animate-spin" /> : <FileSpreadsheet className="w-5 h-5" />}
+              Exportieren &amp; löschen
             </button>
             <button
               onClick={handleShare}
               disabled={busy}
               data-testid="export-share-button"
-              className="px-5 py-4 bg-emerald-400 text-stone-900 font-heading font-extrabold rounded-2xl border-2 border-stone-900 shadow-brutal-sm hover:-translate-y-0.5 hover:shadow-brutal active:translate-y-0 active:shadow-none transition-all flex items-center justify-center gap-2 disabled:opacity-50"
-              title="An iDoceo / Dateien teilen"
+              className="flex-1 px-4 py-4 bg-white text-stone-900 font-heading font-extrabold rounded-2xl border-2 border-stone-900 shadow-brutal-sm hover:-translate-y-0.5 active:translate-y-0 active:shadow-none transition-all flex items-center justify-center gap-2 text-sm sm:text-base disabled:opacity-50"
             >
-              <Share2 className="w-6 h-6" />
-              <span className="hidden sm:inline">Teilen</span>
+              <Share2 className="w-5 h-5" />
+              {canShareFiles() ? "Teilen" : "Laden"} &amp; löschen
             </button>
           </div>
           <p className="text-center text-xs text-stone-400 mt-2 font-medium">
-            Spalte „{session.date}" · {canShareFiles ? '„Teilen" sendet direkt an iDoceo/Dateien · ' : ''}in iDoceo per CSV-Import einlesen
+            Export enthält alle gesammelten Runden (je eine Spalte) · danach wird der Bestand geleert
           </p>
         </div>
       </div>

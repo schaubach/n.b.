@@ -2,11 +2,12 @@ import React, { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import {
-  Upload, GraduationCap, Users, Play, Trash2, CheckCircle2,
-  Loader2, FileUp, X,
+  Upload, GraduationCap, Users, Trash2, CheckCircle2,
+  Loader2, FileUp, X, Plus, FileSpreadsheet, Share2,
 } from "lucide-react";
 import api from "../lib/api";
 import { GRADE_SYSTEMS } from "../lib/grades";
+import { exportAndDelete, shareAndDelete, canShareFiles } from "../lib/exportClass";
 
 export default function Home() {
   const navigate = useNavigate();
@@ -68,6 +69,22 @@ export default function Home() {
     if (!window.confirm("Klasse wirklich löschen? Alle Bewertungen gehen verloren.")) return;
     await api.delete(`/classes/${classId}`);
     await load();
+  };
+
+  const handleExport = async (cls) => {
+    if (!window.confirm(
+      `Alle gesammelten Benotungen von „${cls.name}" werden als CSV exportiert und anschließend gelöscht. Fortfahren?`
+    )) return;
+    await exportAndDelete(cls.id, cls.name);
+    await load();
+  };
+
+  const handleShare = async (cls) => {
+    if (!window.confirm(
+      `Alle gesammelten Benotungen von „${cls.name}" werden geteilt und anschließend gelöscht. Fortfahren?`
+    )) return;
+    const ok = await shareAndDelete(cls.id, cls.name);
+    if (ok) await load();
   };
 
   return (
@@ -173,6 +190,8 @@ export default function Home() {
                 onSetSystem={setSystem}
                 onStart={() => startRound(c.id)}
                 onDelete={() => removeClass(c.id)}
+                onExport={() => handleExport(c)}
+                onShare={() => handleShare(c)}
               />
             ))}
           </div>
@@ -182,7 +201,15 @@ export default function Home() {
   );
 }
 
-function ClassCard({ c, onSetSystem, onStart, onDelete }) {
+function ClassCard({ c, onSetSystem, onStart, onDelete, onExport, onShare }) {
+  const [busy, setBusy] = useState(false);
+  const sessions = c.session_count || 0;
+
+  const run = async (fn) => {
+    setBusy(true);
+    try { await fn(); } finally { setBusy(false); }
+  };
+
   return (
     <motion.div
       initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }}
@@ -203,6 +230,19 @@ function ClassCard({ c, onSetSystem, onStart, onDelete }) {
 
       <div className="mt-2 flex items-center gap-2 text-stone-500 font-medium">
         <Users className="w-4 h-4" /> {c.student_count} Schüler*innen
+      </div>
+
+      <div className="mt-3" data-testid={`session-count-${c.id}`}>
+        {sessions > 0 ? (
+          <span className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-emerald-100 border-2 border-emerald-900/10 text-emerald-900 font-bold text-sm">
+            <CheckCircle2 className="w-4 h-4" />
+            {sessions} Bewertung{sessions === 1 ? "" : "en"} gesammelt
+          </span>
+        ) : (
+          <span className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-stone-100 text-stone-500 font-bold text-sm">
+            Noch keine Bewertung
+          </span>
+        )}
       </div>
 
       <div className="mt-5">
@@ -228,11 +268,34 @@ function ClassCard({ c, onSetSystem, onStart, onDelete }) {
       <button
         onClick={onStart}
         data-testid={`start-round-${c.id}`}
-        disabled={c.student_count === 0}
+        disabled={c.student_count === 0 || busy}
         className="mt-6 w-full px-5 py-4 bg-emerald-400 text-stone-900 font-heading font-extrabold rounded-2xl border-2 border-stone-900 shadow-brutal-sm hover:-translate-y-0.5 hover:shadow-brutal active:translate-y-0 active:shadow-none transition-all flex items-center justify-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:translate-y-0 disabled:hover:shadow-brutal-sm"
       >
-        <Play className="w-5 h-5" /> Bewerten
+        <Plus className="w-5 h-5" /> Neue Bewertung
       </button>
+
+      {sessions > 0 && (
+        <div className="mt-3 pt-3 border-t-2 border-stone-100 space-y-2">
+          <button
+            onClick={() => run(onExport)}
+            disabled={busy}
+            data-testid={`export-delete-${c.id}`}
+            className="w-full px-4 py-3 bg-stone-900 text-white font-bold rounded-xl border-2 border-stone-900 active:scale-[0.99] transition-all flex items-center justify-center gap-2 text-sm disabled:opacity-50"
+          >
+            {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileSpreadsheet className="w-4 h-4" />}
+            Exportieren &amp; löschen
+          </button>
+          <button
+            onClick={() => run(onShare)}
+            disabled={busy}
+            data-testid={`share-delete-${c.id}`}
+            className="w-full px-4 py-3 bg-white text-stone-900 font-bold rounded-xl border-2 border-stone-900 active:scale-[0.99] transition-all flex items-center justify-center gap-2 text-sm disabled:opacity-50"
+          >
+            <Share2 className="w-4 h-4" />
+            {canShareFiles() ? "Teilen" : "Herunterladen"} &amp; löschen
+          </button>
+        </div>
+      )}
     </motion.div>
   );
 }

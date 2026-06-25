@@ -173,7 +173,8 @@ async def list_classes():
     out = []
     async for c in db.classes.find().sort("created_at", -1):
         count = await db.students.count_documents({"class_id": str(c["_id"])})
-        out.append(class_out(c, count))
+        sessions = await db.sessions.count_documents({"class_id": str(c["_id"])})
+        out.append({**class_out(c, count), "session_count": sessions})
     return out
 
 
@@ -185,7 +186,8 @@ async def get_class(class_id: str):
     students = []
     async for s in db.students.find({"class_id": class_id}).sort("order", 1):
         students.append(student_out(s))
-    return {**class_out(c, len(students)), "students": students}
+    sessions = await db.sessions.count_documents({"class_id": class_id})
+    return {**class_out(c, len(students)), "session_count": sessions, "students": students}
 
 
 @api.put("/classes/{class_id}/grade-system")
@@ -208,6 +210,60 @@ async def delete_class(class_id: str):
     await db.sessions.delete_many({"class_id": class_id})
     await db.classes.delete_one({"_id": ObjectId(class_id)})
     return {"ok": True}
+
+
+@api.get("/classes/{class_id}/export.csv")
+async def export_class_csv(class_id: str):
+    cls = await db.classes.find_one({"_id": ObjectId(class_id)})
+    if not cls:
+        raise HTTPException(404, "Klasse nicht gefunden")
+
+    sessions = [s async for s in db.sessions.find({"class_id": class_id}).sort("created_at", 1)]
+
+    # build unique column headers from session dates
+    headers = []  # list of (session_id, label)
+    seen = {}
+    for s in sessions:
+        base = s.get("date", "")
+        seen[base] = seen.get(base, 0) + 1
+        label = base if seen[base] == 1 else f"{base} #{seen[base]}"
+        headers.append((str(s["_id"]), label))
+
+    grademap = {}  # (session_id, student_id) -> value
+    for sid, _label in headers:
+        async for g in db.grades.find({"session_id": sid}):
+            grademap[(sid, g["student_id"])] = g["value"]
+
+    buf = io.StringIO()
+    writer = csv.writer(buf, delimiter=",")
+    writer.writerow(["Vorname", "Nachname"] + [h[1] for h in headers])
+    async for st in db.students.find({"class_id": class_id}).sort("order", 1):
+        sid = str(st["_id"])
+        row = [grademap.get((h[0], sid), "") for h in headers]
+        if not any(row):
+            continue
+        writer.writerow([st.get("first_name", ""), st.get("last_name", "")] + row)
+
+    buf.seek(0)
+    cname = cls.get("name", "Klasse").replace(" ", "_")
+    today = datetime.now(timezone.utc).strftime("%d-%m-%Y")
+    fname = f"{cname}_alle_Bewertungen_{today}.csv"
+    return StreamingResponse(
+        iter([buf.getvalue()]),
+        media_type="text/csv",
+        headers={"Content-Disposition": f'attachment; filename="{fname}"'},
+    )
+
+
+@api.delete("/classes/{class_id}/sessions")
+async def delete_class_sessions(class_id: str):
+    """Deletes all grading rounds (sessions) + grades of a class. Students stay."""
+    count = 0
+    async for s in db.sessions.find({"class_id": class_id}):
+        await db.grades.delete_many({"session_id": str(s["_id"])})
+        count += 1
+    await db.sessions.delete_many({"class_id": class_id})
+    return {"ok": True, "deleted_sessions": count}
 
 
 @api.post("/sessions")
