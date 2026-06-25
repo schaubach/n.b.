@@ -1,8 +1,8 @@
 import React, { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
-import { ArrowLeft, Download, Loader2, Pencil, FileSpreadsheet } from "lucide-react";
-import api, { API } from "../lib/api";
+import { ArrowLeft, Download, Loader2, Pencil, FileSpreadsheet, Share2 } from "lucide-react";
+import api from "../lib/api";
 import { initials } from "../lib/grades";
 
 export default function Summary() {
@@ -10,6 +10,9 @@ export default function Summary() {
   const navigate = useNavigate();
   const [session, setSession] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState(null);
+  const [canShareFiles, setCanShareFiles] = useState(false);
 
   useEffect(() => {
     (async () => {
@@ -17,7 +20,63 @@ export default function Summary() {
       setSession(res.data);
       setLoading(false);
     })();
+    try {
+      const probe = new File(["x"], "t.csv", { type: "text/csv" });
+      setCanShareFiles(!!(navigator.canShare && navigator.canShare({ files: [probe] })));
+    } catch (e) { setCanShareFiles(false); }
   }, [sessionId]);
+
+  const fileName = () => {
+    const name = (session?.class_name || "Klasse").replace(/\s+/g, "_");
+    const date = (session?.date || "").replace(/\./g, "-");
+    return `${name}_${date}.csv`;
+  };
+
+  const fetchCsvFile = async () => {
+    const res = await api.get(`/sessions/${sessionId}/export.csv`, { responseType: "blob" });
+    return new File([res.data], fileName(), { type: "text/csv" });
+  };
+
+  const handleDownload = async () => {
+    setError(null);
+    setBusy(true);
+    try {
+      const file = await fetchCsvFile();
+      const url = URL.createObjectURL(file);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = file.name;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 4000);
+    } catch (e) {
+      setError("Download fehlgeschlagen. Bitte erneut versuchen.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleShare = async () => {
+    setError(null);
+    setBusy(true);
+    try {
+      const file = await fetchCsvFile();
+      if (navigator.canShare && navigator.canShare({ files: [file] })) {
+        await navigator.share({
+          files: [file],
+          title: fileName(),
+          text: `Noten ${session?.class_name} (${session?.date})`,
+        });
+      } else {
+        await handleDownload();
+      }
+    } catch (e) {
+      if (e && e.name !== "AbortError") setError("Teilen nicht möglich. Datei wird stattdessen geladen.");
+    } finally {
+      setBusy(false);
+    }
+  };
 
   if (loading) {
     return (
@@ -101,16 +160,35 @@ export default function Summary() {
       {/* Sticky export bar */}
       <div className="fixed bottom-0 inset-x-0 p-4 bg-gradient-to-t from-stone-50 via-stone-50 to-transparent">
         <div className="max-w-3xl mx-auto">
-          <a
-            href={`${API}/sessions/${sessionId}/export.csv`}
-            data-testid="export-csv-button"
-            className="w-full px-6 py-4 bg-stone-900 text-white font-heading font-extrabold rounded-2xl border-2 border-stone-900 shadow-brutal-sm hover:-translate-y-0.5 hover:shadow-brutal active:translate-y-0 active:shadow-none transition-all flex items-center justify-center gap-3 text-lg"
-          >
-            <FileSpreadsheet className="w-6 h-6" /> Als CSV für iDoceo exportieren
-            <Download className="w-5 h-5" />
-          </a>
+          {error && (
+            <p data-testid="export-error" className="text-center text-sm font-bold text-rose-700 mb-2">
+              {error}
+            </p>
+          )}
+          <div className="flex gap-3">
+            <button
+              onClick={handleDownload}
+              disabled={busy}
+              data-testid="export-csv-button"
+              className="flex-1 px-5 py-4 bg-stone-900 text-white font-heading font-extrabold rounded-2xl border-2 border-stone-900 shadow-brutal-sm hover:-translate-y-0.5 hover:shadow-brutal active:translate-y-0 active:shadow-none transition-all flex items-center justify-center gap-3 text-base sm:text-lg disabled:opacity-50"
+            >
+              {busy ? <Loader2 className="w-6 h-6 animate-spin" /> : <FileSpreadsheet className="w-6 h-6" />}
+              CSV herunterladen
+              {!busy && <Download className="w-5 h-5" />}
+            </button>
+            <button
+              onClick={handleShare}
+              disabled={busy}
+              data-testid="export-share-button"
+              className="px-5 py-4 bg-emerald-400 text-stone-900 font-heading font-extrabold rounded-2xl border-2 border-stone-900 shadow-brutal-sm hover:-translate-y-0.5 hover:shadow-brutal active:translate-y-0 active:shadow-none transition-all flex items-center justify-center gap-2 disabled:opacity-50"
+              title="An iDoceo / Dateien teilen"
+            >
+              <Share2 className="w-6 h-6" />
+              <span className="hidden sm:inline">Teilen</span>
+            </button>
+          </div>
           <p className="text-center text-xs text-stone-400 mt-2 font-medium">
-            Spalte „{session.date}" · in iDoceo per CSV-Import einlesen
+            Spalte „{session.date}" · {canShareFiles ? '„Teilen" sendet direkt an iDoceo/Dateien · ' : ''}in iDoceo per CSV-Import einlesen
           </p>
         </div>
       </div>
