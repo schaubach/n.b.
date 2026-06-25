@@ -32,6 +32,19 @@ Bewertung schnell und einfach. Single-User, lokal auf iPad.
 - Zusammenfassung + CSV-Export (Spalten Vorname,Nachname,<Datum>) für iDoceo-Reimport.
 - Getestet: Backend 14/14 pytest, Frontend Core-Flow 100% (testing agent iteration_1).
 
+## Update (2026-06-25) – Mehrere Bewertungen sammeln + robuster Export
+- CSV-Download von `<a href>` auf **Blob-Download** umgestellt (Preview-iframe blockierte
+  direkte Downloads) + **Teilen-Button** (Web Share API mit Datei, iOS Share Sheet).
+- **Sammel-System je Klasse**: mehrere Bewertungsrunden (sessions) werden gesammelt.
+  Klassenkachel zeigt „X Bewertungen gesammelt" / „Noch keine Bewertung", Button
+  „Neue Bewertung". Bestand bleibt bis explizit „Exportieren & löschen" oder
+  „Teilen & löschen" gedrückt wird (Buttons in Klassenkachel UND auf Summary-Seite).
+- **Aggregierter Export**: GET /api/classes/{id}/export.csv → eine Spalte je Runde
+  (Header = Datum, Duplikate „ #2"), nur Zeilen mit ≥1 Note. DELETE
+  /api/classes/{id}/sessions leert den Bestand (Schüler bleiben).
+- Getestet: Backend 16/16 pytest, Frontend Multi-Round/Export/Share-Flow 100%
+  (testing agent iteration_2). Keine offenen Bugs.
+
 ## User persona
 Lehrer*in mit iDoceo auf dem iPad, will mündliche Mitarbeit o.ä. sehr schnell benoten.
 

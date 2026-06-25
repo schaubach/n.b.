@@ -2,7 +2,14 @@ import api from "./api";
 
 export function classFileName(className, dateLabel) {
   const name = (className || "Klasse").replace(/\s+/g, "_");
-  const date = (dateLabel || new Date().toLocaleDateString("de-DE")).replace(/\./g, "-");
+  let date = dateLabel;
+  if (!date) {
+    const d = new Date();
+    const p = (n) => String(n).padStart(2, "0");
+    date = `${p(d.getDate())}-${p(d.getMonth() + 1)}-${d.getFullYear()}`;
+  } else {
+    date = date.replace(/\./g, "-");
+  }
   return `${name}_alle_Bewertungen_${date}.csv`;
 }
 
