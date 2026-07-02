@@ -7,6 +7,9 @@ import { buildEdgeCells, centerCell, ZONE_STYLES, initials } from "../lib/grades
 
 const THRESHOLD = 60; // px of drag before an edge grade registers
 
+const ZONE_ACCENT = { top: "#10b981", right: "#f59e0b", bottom: "#0ea5e9", left: "#fb7185" };
+const CENTER_COLOR = "#dc2626"; // red flash for the center grade (5 / 3)
+
 function vibrate(ms) {
   try { if (navigator.vibrate) navigator.vibrate(ms); } catch (e) {}
 }
@@ -24,10 +27,12 @@ export default function Grade() {
   const [exitDir, setExitDir] = useState({ x: 0, y: 0 });
   const [history, setHistory] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [flash, setFlash] = useState(null); // {value, color} shown briefly on assign
 
   const cellRefs = useRef([]);
   const centersRef = useRef([]);
   const draggingRef = useRef(false);
+  const assigningRef = useRef(false);
 
   useEffect(() => {
     (async () => {
@@ -66,15 +71,21 @@ export default function Grade() {
     return best;
   };
 
-  const assign = useCallback((value, exitVec) => {
+  const assign = useCallback((value, exitVec, color) => {
     const student = students[index];
-    if (!student) return;
-    setExitDir(exitVec || { x: 0, y: 0 });
-    vibrate(20);
-    setHistory((h) => [...h, { studentId: student.id, index }]);
+    if (!student || assigningRef.current) return;
+    assigningRef.current = true;
+    setFlash({ value, color });
     setActive(null);
-    setIndex((i) => i + 1);
+    vibrate(30);
     api.post(`/sessions/${sessionId}/grades`, { student_id: student.id, value }).catch(() => {});
+    setTimeout(() => {
+      setExitDir(exitVec || { x: 0, y: 0 });
+      setHistory((h) => [...h, { studentId: student.id, index }]);
+      setIndex((i) => i + 1);
+      setFlash(null);
+      assigningRef.current = false;
+    }, 240);
   }, [students, index, sessionId]);
 
   const onDrag = (_e, info) => {
@@ -96,7 +107,7 @@ export default function Grade() {
       const exitVec = c
         ? { x: (c.x - window.innerWidth / 2) * 1.8, y: (c.y - window.innerHeight / 2) * 1.8 }
         : { x: 0, y: 0 };
-      assign(cell.value, exitVec);
+      assign(cell.value, exitVec, ZONE_ACCENT[cell.zone]);
     } else {
       setActive(null);
     }
@@ -104,17 +115,17 @@ export default function Grade() {
   };
 
   const onTapCard = () => {
-    if (draggingRef.current) return;
-    assign(center.value, { x: 0, y: 0 });
+    if (draggingRef.current || assigningRef.current) return;
+    assign(center.value, { x: 0, y: 0 }, CENTER_COLOR);
   };
 
   const tapCell = (i) => {
-    if (index >= students.length) return;
+    if (index >= students.length || assigningRef.current) return;
     const c = centersRef.current[i];
     const exitVec = c
       ? { x: (c.x - window.innerWidth / 2) * 1.8, y: (c.y - window.innerHeight / 2) * 1.8 }
       : { x: 0, y: 0 };
-    assign(cells[i].value, exitVec);
+    assign(cells[i].value, exitVec, ZONE_ACCENT[cells[i].zone]);
   };
 
   const undo = async () => {
@@ -240,9 +251,28 @@ export default function Grade() {
                     {student.last_name}
                   </span>
                   <span className="mt-1.5 inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-violet-200 text-violet-900 font-mono font-bold text-xs border-2 border-stone-900/10">
-                    <Hand className="w-3 h-3" /> Tippen = {center.value} · {center.alt}
+                    <Hand className="w-3 h-3" /> Tippen = {center.value}
                   </span>
                 </div>
+
+                <AnimatePresence>
+                  {flash && (
+                    <motion.div
+                      key="flash"
+                      data-testid="grade-flash"
+                      className="absolute inset-0 z-50 rounded-3xl flex items-center justify-center pointer-events-none"
+                      style={{ backgroundColor: flash.color + "e6", boxShadow: `0 0 0 8px ${flash.color}` }}
+                      initial={{ opacity: 0, scale: 0.85 }}
+                      animate={{ opacity: 1, scale: 1 }}
+                      exit={{ opacity: 0 }}
+                      transition={{ duration: 0.12 }}
+                    >
+                      <span className="font-mono font-black text-white text-6xl sm:text-7xl drop-shadow-lg">
+                        {flash.value}
+                      </span>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
               </motion.div>
             )}
           </AnimatePresence>
