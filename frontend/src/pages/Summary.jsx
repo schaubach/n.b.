@@ -1,9 +1,9 @@
 import React, { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { motion } from "framer-motion";
-import { ArrowLeft, Loader2, FileSpreadsheet, Share2, Plus, CheckCircle2, Pencil } from "lucide-react";
+import { motion, AnimatePresence } from "framer-motion";
+import { ArrowLeft, Loader2, FileSpreadsheet, Share2, Plus, CheckCircle2, Pencil, X, Trash2 } from "lucide-react";
 import api from "../lib/api";
-import { initials } from "../lib/grades";
+import { initials, allGrades } from "../lib/grades";
 import { exportAndDelete, shareAndDelete, canShareFiles } from "../lib/exportClass";
 import ConfirmModal from "../components/ConfirmModal";
 
@@ -16,7 +16,24 @@ export default function Summary() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
   const [modal, setModal] = useState({ open: false });
+  const [picker, setPicker] = useState(null); // student being corrected
   const closeModal = () => setModal({ open: false });
+
+  const updateGrade = async (studentId, value) => {
+    try {
+      if (value === null) {
+        await api.delete(`/sessions/${sessionId}/grades/${studentId}`);
+      } else {
+        await api.post(`/sessions/${sessionId}/grades`, { student_id: studentId, value });
+      }
+      setSession((s) => ({
+        ...s,
+        students: s.students.map((st) => (st.id === studentId ? { ...st, grade: value } : st)),
+      }));
+    } catch (e) {}
+    setPicker(null);
+  };
+
 
   useEffect(() => {
     (async () => {
@@ -126,12 +143,14 @@ export default function Summary() {
 
         <div className="mt-6 rounded-3xl border-2 border-stone-900 bg-white shadow-brutal-sm overflow-hidden">
           {students.map((s, i) => (
-            <motion.div
+            <motion.button
               key={s.id}
+              type="button"
+              onClick={() => setPicker(s)}
               initial={{ opacity: 0, x: -8 }} animate={{ opacity: 1, x: 0 }}
               transition={{ delay: i * 0.015 }}
               data-testid={`summary-row-${s.id}`}
-              className={`flex items-center gap-4 px-4 sm:px-6 py-3 ${i !== 0 ? "border-t-2 border-stone-100" : ""}`}
+              className={`w-full text-left flex items-center gap-4 px-4 sm:px-6 py-3 hover:bg-stone-50 transition-colors ${i !== 0 ? "border-t-2 border-stone-100" : ""}`}
             >
               <div className="w-11 h-11 rounded-xl border-2 border-stone-900 overflow-hidden bg-stone-200 shrink-0">
                 {s.photo ? (
@@ -146,6 +165,9 @@ export default function Summary() {
                 <p className="font-bold text-stone-900 truncate">
                   {s.first_name} <span className="font-black">{s.last_name}</span>
                 </p>
+                <p className="text-xs text-stone-400 font-bold uppercase tracking-wider flex items-center gap-1">
+                  <Pencil className="w-3 h-3" /> Tippen zum Korrigieren
+                </p>
               </div>
               <div
                 data-testid={`summary-grade-${s.id}`}
@@ -157,7 +179,7 @@ export default function Summary() {
               >
                 {s.grade || "–"}
               </div>
-            </motion.div>
+            </motion.button>
           ))}
         </div>
       </main>
@@ -205,6 +227,79 @@ export default function Summary() {
       </div>
 
       <ConfirmModal {...modal} onClose={closeModal} />
+
+      <GradePicker
+        student={picker}
+        systemId={session.grade_system}
+        onPick={(v) => updateGrade(picker.id, v)}
+        onRemove={() => updateGrade(picker.id, null)}
+        onClose={() => setPicker(null)}
+      />
     </div>
+  );
+}
+
+function GradePicker({ student, systemId, onPick, onRemove, onClose }) {
+  const grades = allGrades(systemId);
+  return (
+    <AnimatePresence>
+      {student && (
+        <motion.div
+          className="fixed inset-0 z-[100] flex items-center justify-center p-4"
+          initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+          data-testid="grade-picker"
+        >
+          <div className="absolute inset-0 bg-stone-900/40 backdrop-blur-sm" onClick={onClose} />
+          <motion.div
+            initial={{ scale: 0.9, y: 20, opacity: 0 }}
+            animate={{ scale: 1, y: 0, opacity: 1 }}
+            exit={{ scale: 0.95, opacity: 0 }}
+            transition={{ type: "spring", stiffness: 320, damping: 26 }}
+            className="relative w-full max-w-md bg-white border-2 border-stone-900 rounded-3xl shadow-brutal p-6"
+          >
+            <button
+              onClick={onClose}
+              data-testid="picker-close"
+              className="absolute top-4 right-4 text-stone-400 hover:text-stone-900 transition-colors"
+              aria-label="Schließen"
+            >
+              <X className="w-5 h-5" />
+            </button>
+            <p className="text-xs font-bold uppercase tracking-[0.2em] text-stone-400">Note korrigieren</p>
+            <h3 className="font-heading text-2xl font-black text-stone-900 leading-tight mt-0.5">
+              {student.first_name} {student.last_name}
+            </h3>
+
+            <div className="mt-5 grid grid-cols-4 gap-2">
+              {grades.map((g) => (
+                <button
+                  key={g.value}
+                  onClick={() => onPick(g.value)}
+                  data-testid={`picker-grade-${g.value}`}
+                  className={`py-3 rounded-xl border-2 font-mono font-black flex flex-col items-center justify-center transition-all active:scale-95 ${
+                    student.grade === g.value
+                      ? "bg-stone-900 text-white border-stone-900"
+                      : "bg-stone-50 text-stone-900 border-stone-200 hover:border-stone-900"
+                  }`}
+                >
+                  <span className="text-xl leading-none">{g.value}</span>
+                  <span className="text-[10px] opacity-50 mt-0.5">{g.alt}</span>
+                </button>
+              ))}
+            </div>
+
+            {student.grade && (
+              <button
+                onClick={onRemove}
+                data-testid="picker-remove"
+                className="mt-4 w-full px-5 py-3 bg-white text-rose-600 font-bold rounded-xl border-2 border-rose-300 hover:border-rose-500 transition-all flex items-center justify-center gap-2"
+              >
+                <Trash2 className="w-4 h-4" /> Note entfernen
+              </button>
+            )}
+          </motion.div>
+        </motion.div>
+      )}
+    </AnimatePresence>
   );
 }

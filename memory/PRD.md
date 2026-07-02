@@ -45,6 +45,15 @@ Bewertung schnell und einfach. Single-User, lokal auf iPad.
 - Getestet: Backend 16/16 pytest, Frontend Multi-Round/Export/Share-Flow 100%
   (testing agent iteration_2). Keine offenen Bugs.
 
+## Update (2026-07-02b) – Notenbereiche v3 + Listen-Korrektur
+- Layout: 4 Randzonen (Top 1er, Right 2er, Bottom 3er, Left 4er) + zwei Flank-Zellen
+  neben der Karte: **links 6 (0 P.)**, **rechts 5 (2 P.)** – 5/6 ohne Tendenzen.
+- **Kein Benoten mehr per Klick auf die Karte** (nur Swipe in Zone oder Tap auf Zelle).
+- Farbiges Flash-Feedback beim Vergeben (Center-Rot entfällt; Flanks 5/6 = rot).
+- **Ende der Runde → direkt zur Notenliste** (Summary, kein „alles erledigt"-Screen).
+- **Notenliste: Klick auf Zeile → GradePicker** (alle 14 Noten mit Punktwert,
+  aktuelle hervorgehoben, „Note entfernen"). Verifiziert für beide Systeme.
+
 ## Update (2026-07-02) – Große Notenbereiche + Fixes
 - Datei-Import: `accept`-Filter entfernt (`.idoceo` war im iPad-Dialog ausgegraut).
 - Alle nativen `window.confirm` durch **In-App-ConfirmModal** ersetzt (Sandbox-iframe

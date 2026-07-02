@@ -1,14 +1,11 @@
 import React, { useEffect, useLayoutEffect, useRef, useState, useCallback } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
-import { ArrowLeft, Undo2, Loader2, CheckCheck, Hand } from "lucide-react";
+import { ArrowLeft, Undo2, Loader2 } from "lucide-react";
 import api from "../lib/api";
-import { buildEdgeCells, centerCell, ZONE_STYLES, initials } from "../lib/grades";
+import { buildCells, ZONE_STYLES, ZONE_ACCENT, initials } from "../lib/grades";
 
-const THRESHOLD = 60; // px of drag before an edge grade registers
-
-const ZONE_ACCENT = { top: "#10b981", right: "#f59e0b", bottom: "#0ea5e9", left: "#fb7185" };
-const CENTER_COLOR = "#dc2626"; // red flash for the center grade (5 / 3)
+const THRESHOLD = 55; // px of drag before a grade registers
 
 function vibrate(ms) {
   try { if (navigator.vibrate) navigator.vibrate(ms); } catch (e) {}
@@ -21,13 +18,12 @@ export default function Grade() {
   const [session, setSession] = useState(null);
   const [students, setStudents] = useState([]);
   const [cells, setCells] = useState([]);
-  const [center, setCenter] = useState({ value: "5", alt: "3" });
   const [index, setIndex] = useState(0);
   const [active, setActive] = useState(null);
   const [exitDir, setExitDir] = useState({ x: 0, y: 0 });
   const [history, setHistory] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [flash, setFlash] = useState(null); // {value, color} shown briefly on assign
+  const [flash, setFlash] = useState(null);
 
   const cellRefs = useRef([]);
   const centersRef = useRef([]);
@@ -39,13 +35,20 @@ export default function Grade() {
       const res = await api.get(`/sessions/${sessionId}`);
       setSession(res.data);
       setStudents(res.data.students);
-      setCells(buildEdgeCells(res.data.grade_system));
-      setCenter(centerCell(res.data.grade_system));
+      setCells(buildCells(res.data.grade_system));
       const firstUngraded = res.data.students.findIndex((s) => !s.grade);
       setIndex(firstUngraded === -1 ? res.data.students.length : firstUngraded);
       setLoading(false);
     })();
   }, [sessionId]);
+
+  // When all students are graded, go straight to the list.
+  useEffect(() => {
+    if (!loading && students.length > 0 && index >= students.length) {
+      const t = setTimeout(() => navigate(`/summary/${sessionId}`, { replace: true }), 380);
+      return () => clearTimeout(t);
+    }
+  }, [index, students.length, loading, navigate, sessionId]);
 
   const measure = useCallback(() => {
     centersRef.current = cellRefs.current.map((el) => {
@@ -88,6 +91,13 @@ export default function Grade() {
     }, 240);
   }, [students, index, sessionId]);
 
+  const exitVecFor = (i) => {
+    const c = centersRef.current[i];
+    return c
+      ? { x: (c.x - window.innerWidth / 2) * 1.9, y: (c.y - window.innerHeight / 2) * 1.9 }
+      : { x: 0, y: 0 };
+  };
+
   const onDrag = (_e, info) => {
     const dist = Math.hypot(info.offset.x, info.offset.y);
     if (dist > 10) draggingRef.current = true;
@@ -103,29 +113,16 @@ export default function Grade() {
     const dist = Math.hypot(info.offset.x, info.offset.y);
     if (dist >= THRESHOLD && active !== null) {
       const cell = cells[active];
-      const c = centersRef.current[active];
-      const exitVec = c
-        ? { x: (c.x - window.innerWidth / 2) * 1.8, y: (c.y - window.innerHeight / 2) * 1.8 }
-        : { x: 0, y: 0 };
-      assign(cell.value, exitVec, ZONE_ACCENT[cell.zone]);
+      assign(cell.value, exitVecFor(active), ZONE_ACCENT[cell.zone]);
     } else {
       setActive(null);
     }
     setTimeout(() => { draggingRef.current = false; }, 60);
   };
 
-  const onTapCard = () => {
-    if (draggingRef.current || assigningRef.current) return;
-    assign(center.value, { x: 0, y: 0 }, CENTER_COLOR);
-  };
-
   const tapCell = (i) => {
     if (index >= students.length || assigningRef.current) return;
-    const c = centersRef.current[i];
-    const exitVec = c
-      ? { x: (c.x - window.innerWidth / 2) * 1.8, y: (c.y - window.innerHeight / 2) * 1.8 }
-      : { x: 0, y: 0 };
-    assign(cells[i].value, exitVec, ZONE_ACCENT[cells[i].zone]);
+    assign(cells[i].value, exitVecFor(i), ZONE_ACCENT[cells[i].zone]);
   };
 
   const undo = async () => {
@@ -149,8 +146,9 @@ export default function Grade() {
   const done = index >= students.length;
   const student = students[index];
   const total = students.length;
-
   const byZone = (z) => cells.filter((c) => c.zone === z);
+  const flankLeft = cells.find((c) => c.zone === "flankLeft");
+  const flankRight = cells.find((c) => c.zone === "flankRight");
 
   return (
     <div className="h-screen w-screen overflow-hidden bg-stone-50 no-scroll flex flex-col select-none">
@@ -191,37 +189,44 @@ export default function Grade() {
 
       {/* Grading area */}
       <div className="flex-1 relative w-full">
-        {/* Top zone */}
+        {/* Top zone (1er) */}
         <div className="absolute top-0 left-0 right-0 h-[30%] grid grid-cols-3 gap-1.5 p-1.5 z-10">
           {byZone("top").map((c) => <ZoneCell key={c.index} c={c} active={active} cellRefs={cellRefs} onTap={tapCell} />)}
         </div>
-        {/* Bottom zone */}
+        {/* Bottom zone (3er) */}
         <div className="absolute bottom-0 left-0 right-0 h-[30%] grid grid-cols-3 gap-1.5 p-1.5 z-10">
           {byZone("bottom").map((c) => <ZoneCell key={c.index} c={c} active={active} cellRefs={cellRefs} onTap={tapCell} />)}
         </div>
-        {/* Left zone */}
-        <div className="absolute left-0 top-[30%] bottom-[30%] w-[26%] grid grid-rows-3 gap-1.5 p-1.5 z-10">
+        {/* Left zone (4er) */}
+        <div className="absolute left-0 top-[30%] bottom-[30%] w-[21%] grid grid-rows-3 gap-1.5 p-1.5 z-10">
           {byZone("left").map((c) => <ZoneCell key={c.index} c={c} active={active} cellRefs={cellRefs} onTap={tapCell} />)}
         </div>
-        {/* Right zone */}
-        <div className="absolute right-0 top-[30%] bottom-[30%] w-[26%] grid grid-rows-3 gap-1.5 p-1.5 z-10">
+        {/* Right zone (2er) */}
+        <div className="absolute right-0 top-[30%] bottom-[30%] w-[21%] grid grid-rows-3 gap-1.5 p-1.5 z-10">
           {byZone("right").map((c) => <ZoneCell key={c.index} c={c} active={active} cellRefs={cellRefs} onTap={tapCell} />)}
         </div>
+        {/* Flank 6 (left of card) */}
+        <div className="absolute left-[21%] top-[35%] bottom-[35%] w-[14%] p-1.5 z-10">
+          {flankLeft && <ZoneCell c={flankLeft} active={active} cellRefs={cellRefs} onTap={tapCell} />}
+        </div>
+        {/* Flank 5 (right of card) */}
+        <div className="absolute right-[21%] top-[35%] bottom-[35%] w-[14%] p-1.5 z-10">
+          {flankRight && <ZoneCell c={flankRight} active={active} cellRefs={cellRefs} onTap={tapCell} />}
+        </div>
 
-        {/* Card / center */}
+        {/* Card */}
         <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
           <AnimatePresence custom={exitDir} mode="popLayout">
             {!done && student && (
               <motion.div
                 key={student.id}
                 data-testid="student-swipe-card"
-                className="pointer-events-auto relative z-40 w-[190px] h-[248px] sm:w-[230px] sm:h-[300px] bg-white border-2 border-stone-900 rounded-3xl shadow-brutal flex flex-col overflow-hidden cursor-grab active:cursor-grabbing"
+                className="pointer-events-auto relative z-40 w-[168px] h-[224px] sm:w-[210px] sm:h-[280px] bg-white border-2 border-stone-900 rounded-3xl shadow-brutal flex flex-col overflow-hidden cursor-grab active:cursor-grabbing"
                 drag
                 dragSnapToOrigin
                 dragElastic={0.7}
                 onDrag={onDrag}
                 onDragEnd={onDragEnd}
-                onTap={onTapCard}
                 custom={exitDir}
                 initial={{ scale: 0.85, opacity: 0, y: 24 }}
                 animate={{ scale: 1, opacity: 1, y: 0 }}
@@ -247,11 +252,8 @@ export default function Grade() {
                   <span className="text-xs font-bold text-stone-500 uppercase tracking-wider truncate max-w-full">
                     {student.first_name}
                   </span>
-                  <span className="font-heading text-xl sm:text-2xl font-black text-stone-900 leading-none truncate max-w-full">
+                  <span className="font-heading text-lg sm:text-2xl font-black text-stone-900 leading-none truncate max-w-full">
                     {student.last_name}
-                  </span>
-                  <span className="mt-1.5 inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-violet-200 text-violet-900 font-mono font-bold text-xs border-2 border-stone-900/10">
-                    <Hand className="w-3 h-3" /> Tippen = {center.value}
                   </span>
                 </div>
 
@@ -276,34 +278,6 @@ export default function Grade() {
               </motion.div>
             )}
           </AnimatePresence>
-
-          {done && (
-            <motion.div
-              initial={{ scale: 0.8, opacity: 0 }} animate={{ scale: 1, opacity: 1 }}
-              data-testid="grading-done"
-              className="pointer-events-auto z-40 bg-white border-2 border-stone-900 rounded-3xl shadow-brutal p-8 text-center max-w-sm mx-4"
-            >
-              <div className="w-16 h-16 rounded-2xl bg-emerald-400 border-2 border-stone-900 flex items-center justify-center mx-auto mb-5 shadow-brutal-sm">
-                <CheckCheck className="w-9 h-9 text-stone-900" />
-              </div>
-              <h2 className="font-heading text-2xl font-black text-stone-900">Alle bewertet!</h2>
-              <p className="text-stone-500 mt-2">
-                {total} Schüler*innen der Klasse {session?.class_name}.
-              </p>
-              <button
-                onClick={() => navigate(`/summary/${sessionId}`)}
-                data-testid="go-summary-button"
-                className="mt-6 w-full px-5 py-4 bg-stone-900 text-white font-heading font-extrabold rounded-2xl border-2 border-stone-900 shadow-brutal-sm hover:-translate-y-0.5 active:translate-y-0 active:shadow-none transition-all"
-              >
-                Zusammenfassung & Export
-              </button>
-              {history.length > 0 && (
-                <button onClick={undo} className="mt-3 w-full px-5 py-3 text-stone-600 font-bold">
-                  <Undo2 className="w-4 h-4 inline mr-1" /> Letzte Note korrigieren
-                </button>
-              )}
-            </motion.div>
-          )}
         </div>
       </div>
     </div>
@@ -322,7 +296,7 @@ function ZoneCell({ c, active, cellRefs, onTap }) {
         isActive ? st.active : st.idle
       }`}
     >
-      <span className="font-mono font-black text-4xl sm:text-6xl leading-none">{c.value}</span>
+      <span className="font-mono font-black text-3xl sm:text-5xl leading-none">{c.value}</span>
       <span className="font-mono font-bold text-xs sm:text-base opacity-50 mt-1">{c.alt}</span>
     </button>
   );
