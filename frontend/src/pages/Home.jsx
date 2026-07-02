@@ -9,6 +9,7 @@ import api from "../lib/api";
 import { GRADE_SYSTEMS } from "../lib/grades";
 import { exportAndDelete, shareAndDelete, canShareFiles, downloadClassCsv } from "../lib/exportClass";
 import ConfirmModal from "../components/ConfirmModal";
+import SessionSetupModal from "../components/SessionSetupModal";
 
 export default function Home() {
   const navigate = useNavigate();
@@ -19,6 +20,7 @@ export default function Home() {
   const [result, setResult] = useState(null);
   const [error, setError] = useState(null);
   const [modal, setModal] = useState({ open: false });
+  const [setup, setSetup] = useState(null); // class selected for a new round
   const fileRef = useRef(null);
 
   const closeModal = () => setModal({ open: false });
@@ -64,8 +66,8 @@ export default function Home() {
     await api.put(`/classes/${classId}/grade-system`, { grade_system: system });
   };
 
-  const startRound = async (classId) => {
-    const res = await api.post("/sessions", { class_id: classId });
+  const startRound = async (classId, opts) => {
+    const res = await api.post("/sessions", { class_id: classId, ...opts });
     navigate(`/grade/${res.data.id}`);
   };
 
@@ -239,7 +241,7 @@ export default function Home() {
               <ClassCard
                 key={c.id} c={c}
                 onSetSystem={setSystem}
-                onStart={() => startRound(c.id)}
+                onStart={() => setSetup(c)}
                 onDelete={() => removeClass(c)}
                 onExport={() => handleExport(c)}
                 onShare={() => handleShare(c)}
@@ -250,6 +252,12 @@ export default function Home() {
       </main>
 
       <ConfirmModal {...modal} onClose={closeModal} />
+      <SessionSetupModal
+        open={!!setup}
+        className={setup?.name}
+        onStart={async (opts) => { const c = setup; setSetup(null); await startRound(c.id, opts); }}
+        onClose={() => setSetup(null)}
+      />
     </div>
   );
 }

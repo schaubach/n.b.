@@ -59,6 +59,13 @@ Bewertung schnell und einfach. Single-User, lokal auf iPad.
 - **Farbcodierung** der Noten in der Übersichtsliste: Tier 1 dunkelgrün → 6 dunkelrot
   (emerald→lime→amber→orange→red→dark red), für beide Systeme (Punkte per Tier-Mapping).
 
+## Update (2026-07-02d)
+- Grading-Zonen im Durchgang in Tier-Farben (identisch zur Liste).
+- Summary: „Bearbeiten" entfernt; „Klassen" als langer Button ganz unten.
+- **Session-Setup-Modal** vor jedem Start: Name (Default „mündliche Mitarbeit"),
+  Gewichtung (Default 1), Datum (Default heute) – vorausgefüllt, ein Klick genügt.
+  Backend speichert `weight`; Aggregat-CSV-Spalte = „{Name} {Datum} (x{Gewichtung})".
+
 ## Update (2026-07-02) – Große Notenbereiche + Fixes
 - Datei-Import: `accept`-Filter entfernt (`.idoceo` war im iPad-Dialog ausgegraut).
 - Alle nativen `window.confirm` durch **In-App-ConfirmModal** ersetzt (Sandbox-iframe

@@ -72,6 +72,8 @@ class GradeSystemUpdate(BaseModel):
 class SessionCreate(BaseModel):
     class_id: str
     title: Optional[str] = None
+    weight: Optional[float] = 1.0
+    date: Optional[str] = None
 
 
 class GradeIn(BaseModel):
@@ -224,7 +226,11 @@ async def export_class_csv(class_id: str):
     headers = []  # list of (session_id, label)
     seen = {}
     for s in sessions:
-        base = s.get("date", "")
+        title = s.get("title", "") or "Bewertung"
+        date = s.get("date", "")
+        weight = s.get("weight", 1.0)
+        w = int(weight) if float(weight).is_integer() else weight
+        base = f"{title} {date} (x{w})"
         seen[base] = seen.get(base, 0) + 1
         label = base if seen[base] == 1 else f"{base} #{seen[base]}"
         headers.append((str(s["_id"]), label))
@@ -272,11 +278,14 @@ async def create_session(body: SessionCreate):
     if not c:
         raise HTTPException(404, "Klasse nicht gefunden")
     now = datetime.now(timezone.utc)
-    title = body.title or f"Bewertung {now.strftime('%d.%m.%Y')}"
+    title = (body.title or "").strip() or "mündliche Mitarbeit"
+    date = (body.date or "").strip() or now.strftime("%d.%m.%Y")
+    weight = body.weight if body.weight is not None else 1.0
     doc = {
         "class_id": body.class_id,
         "title": title,
-        "date": now.strftime("%d.%m.%Y"),
+        "date": date,
+        "weight": weight,
         "created_at": now.isoformat(),
     }
     res = await db.sessions.insert_one(doc)
@@ -292,6 +301,7 @@ async def list_sessions(class_id: Optional[str] = None):
         graded = await db.grades.count_documents({"session_id": str(s["_id"])})
         out.append({"id": str(s["_id"]), "class_id": s["class_id"],
                     "title": s["title"], "date": s["date"],
+                    "weight": s.get("weight", 1.0),
                     "created_at": s["created_at"], "graded_count": graded})
     return out
 
@@ -329,7 +339,7 @@ async def get_session(session_id: str):
         students.append({**student_out(st), "grade": grades.get(str(st["_id"]))})
     cls = await db.classes.find_one({"_id": ObjectId(s["class_id"])})
     return {"id": str(s["_id"]), "class_id": s["class_id"], "title": s["title"],
-            "date": s["date"], "students": students,
+            "date": s["date"], "weight": s.get("weight", 1.0), "students": students,
             "class_name": (cls or {}).get("name", ""),
             "grade_system": (cls or {}).get("grade_system", "grades_1_6")}
 

@@ -179,7 +179,7 @@ export default function Grade() {
             {session?.class_name}
           </p>
           <p className="text-[10px] sm:text-xs font-bold uppercase tracking-[0.18em] text-stone-400">
-            {session?.date}
+            {session?.title} · {session?.date}
           </p>
         </div>
         <div className="flex items-center gap-2">

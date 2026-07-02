@@ -6,6 +6,7 @@ import api from "../lib/api";
 import { initials, allGrades, gradeColorClasses } from "../lib/grades";
 import { exportAndDelete, shareAndDelete, canShareFiles } from "../lib/exportClass";
 import ConfirmModal from "../components/ConfirmModal";
+import SessionSetupModal from "../components/SessionSetupModal";
 
 export default function Summary() {
   const { sessionId } = useParams();
@@ -17,6 +18,7 @@ export default function Summary() {
   const [error, setError] = useState(null);
   const [modal, setModal] = useState({ open: false });
   const [picker, setPicker] = useState(null); // student being corrected
+  const [setupOpen, setSetupOpen] = useState(false);
   const closeModal = () => setModal({ open: false });
 
   const updateGrade = async (studentId, value) => {
@@ -47,8 +49,8 @@ export default function Summary() {
     })();
   }, [sessionId]);
 
-  const newRound = async () => {
-    const res = await api.post("/sessions", { class_id: session.class_id });
+  const newRound = async (opts) => {
+    const res = await api.post("/sessions", { class_id: session.class_id, ...opts });
     navigate(`/grade/${res.data.id}`);
   };
 
@@ -116,7 +118,7 @@ export default function Summary() {
             {session.class_name}
           </h1>
           <p className="text-stone-500 mt-1 font-medium">
-            {session.title} · {graded.length} von {students.length} bewertet
+            {session.title} · Gewichtung {session.weight ?? 1} · {graded.length} von {students.length} bewertet
           </p>
           <div className="mt-3 inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-emerald-100 border-2 border-emerald-900/10 text-emerald-900 font-bold text-sm">
             <CheckCircle2 className="w-4 h-4" />
@@ -176,7 +178,7 @@ export default function Summary() {
             </p>
           )}
           <button
-            onClick={newRound}
+            onClick={() => setSetupOpen(true)}
             disabled={busy}
             data-testid="summary-new-round-button"
             className="w-full mb-3 px-5 py-3 bg-emerald-400 text-stone-900 font-heading font-extrabold rounded-2xl border-2 border-stone-900 shadow-brutal-sm hover:-translate-y-0.5 active:translate-y-0 active:shadow-none transition-all flex items-center justify-center gap-2 disabled:opacity-50"
@@ -217,6 +219,13 @@ export default function Summary() {
       </div>
 
       <ConfirmModal {...modal} onClose={closeModal} />
+
+      <SessionSetupModal
+        open={setupOpen}
+        className={session.class_name}
+        onStart={async (opts) => { setSetupOpen(false); await newRound(opts); }}
+        onClose={() => setSetupOpen(false)}
+      />
 
       <GradePicker
         student={picker}
