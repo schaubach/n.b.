@@ -120,7 +120,6 @@ export default function Home() {
           <input
             ref={fileRef}
             type="file"
-            accept=".idoceo,.zip"
             multiple
             className="hidden"
             data-testid="import-file-input"
