@@ -109,24 +109,7 @@ export default function Summary() {
 
   return (
     <div className="min-h-screen bg-stone-50 bg-dots">
-      <header className="px-4 sm:px-10 pt-8 pb-4 max-w-3xl mx-auto flex items-center justify-between">
-        <button
-          onClick={() => navigate("/")}
-          data-testid="summary-back-button"
-          className="flex items-center gap-2 px-4 py-2 bg-white border-2 border-stone-900 rounded-full font-bold text-stone-900 shadow-brutal-sm active:translate-y-0.5 active:shadow-none transition-all"
-        >
-          <ArrowLeft className="w-5 h-5" /> Klassen
-        </button>
-        <button
-          onClick={() => navigate(`/grade/${sessionId}`)}
-          data-testid="summary-edit-button"
-          className="flex items-center gap-2 px-4 py-2 bg-white border-2 border-stone-900 rounded-full font-bold text-stone-900 shadow-brutal-sm active:translate-y-0.5 active:shadow-none transition-all"
-        >
-          <Pencil className="w-4 h-4" /> Bearbeiten
-        </button>
-      </header>
-
-      <main className="px-4 sm:px-10 max-w-3xl mx-auto pb-32">
+      <main className="px-4 sm:px-10 max-w-3xl mx-auto pb-64 pt-8">
         <div className="mt-2">
           <p className="text-xs font-bold uppercase tracking-[0.2em] text-stone-400">Zusammenfassung</p>
           <h1 className="font-heading text-3xl sm:text-4xl font-black text-stone-900">
@@ -223,6 +206,13 @@ export default function Summary() {
           <p className="text-center text-xs text-stone-400 mt-2 font-medium">
             Export enthält alle gesammelten Runden (je eine Spalte) · danach wird der Bestand geleert
           </p>
+          <button
+            onClick={() => navigate("/")}
+            data-testid="summary-back-button"
+            className="w-full mt-3 px-5 py-3 bg-white text-stone-900 font-heading font-extrabold rounded-2xl border-2 border-stone-900 shadow-brutal-sm hover:-translate-y-0.5 active:translate-y-0 active:shadow-none transition-all flex items-center justify-center gap-2"
+          >
+            <ArrowLeft className="w-5 h-5" /> Klassen
+          </button>
         </div>
       </div>
 
