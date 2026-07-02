@@ -3,7 +3,7 @@ import { useParams, useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { ArrowLeft, Undo2, Loader2 } from "lucide-react";
 import api from "../lib/api";
-import { buildCells, ZONE_STYLES, ZONE_ACCENT, initials } from "../lib/grades";
+import { buildCells, gradeColorClasses, gradeAccent, initials } from "../lib/grades";
 
 const THRESHOLD = 55; // px of drag before a grade registers
 
@@ -113,7 +113,7 @@ export default function Grade() {
     const dist = Math.hypot(info.offset.x, info.offset.y);
     if (dist >= THRESHOLD && active !== null) {
       const cell = cells[active];
-      assign(cell.value, exitVecFor(active), ZONE_ACCENT[cell.zone]);
+      assign(cell.value, exitVecFor(active), gradeAccent(cell.value, session.grade_system));
     } else {
       setActive(null);
     }
@@ -122,7 +122,7 @@ export default function Grade() {
 
   const tapCell = (i) => {
     if (index >= students.length || assigningRef.current) return;
-    assign(cells[i].value, exitVecFor(i), ZONE_ACCENT[cells[i].zone]);
+    assign(cells[i].value, exitVecFor(i), gradeAccent(cells[i].value, session.grade_system));
   };
 
   const skipCard = () => {
@@ -204,27 +204,27 @@ export default function Grade() {
       <div className="flex-1 relative w-full">
         {/* Top zone (1er) */}
         <div className="absolute top-0 left-0 right-0 h-[30%] grid grid-cols-3 gap-1.5 p-1.5 z-10">
-          {byZone("top").map((c) => <ZoneCell key={c.index} c={c} active={active} cellRefs={cellRefs} onTap={tapCell} />)}
+          {byZone("top").map((c) => <ZoneCell key={c.index} c={c} active={active} cellRefs={cellRefs} onTap={tapCell} systemId={session.grade_system} />)}
         </div>
         {/* Bottom zone (3er) */}
         <div className="absolute bottom-0 left-0 right-0 h-[30%] grid grid-cols-3 gap-1.5 p-1.5 z-10">
-          {byZone("bottom").map((c) => <ZoneCell key={c.index} c={c} active={active} cellRefs={cellRefs} onTap={tapCell} />)}
+          {byZone("bottom").map((c) => <ZoneCell key={c.index} c={c} active={active} cellRefs={cellRefs} onTap={tapCell} systemId={session.grade_system} />)}
         </div>
         {/* Left zone (4er) */}
         <div className="absolute left-0 top-[30%] bottom-[30%] w-[21%] grid grid-rows-3 gap-1.5 p-1.5 z-10">
-          {byZone("left").map((c) => <ZoneCell key={c.index} c={c} active={active} cellRefs={cellRefs} onTap={tapCell} />)}
+          {byZone("left").map((c) => <ZoneCell key={c.index} c={c} active={active} cellRefs={cellRefs} onTap={tapCell} systemId={session.grade_system} />)}
         </div>
         {/* Right zone (2er) */}
         <div className="absolute right-0 top-[30%] bottom-[30%] w-[21%] grid grid-rows-3 gap-1.5 p-1.5 z-10">
-          {byZone("right").map((c) => <ZoneCell key={c.index} c={c} active={active} cellRefs={cellRefs} onTap={tapCell} />)}
+          {byZone("right").map((c) => <ZoneCell key={c.index} c={c} active={active} cellRefs={cellRefs} onTap={tapCell} systemId={session.grade_system} />)}
         </div>
         {/* Flank 6 (left of card) */}
         <div className="absolute left-[21%] top-[35%] bottom-[35%] w-[14%] p-1.5 z-10">
-          {flankLeft && <ZoneCell c={flankLeft} active={active} cellRefs={cellRefs} onTap={tapCell} />}
+          {flankLeft && <ZoneCell c={flankLeft} active={active} cellRefs={cellRefs} onTap={tapCell} systemId={session.grade_system} />}
         </div>
         {/* Flank 5 (right of card) */}
         <div className="absolute right-[21%] top-[35%] bottom-[35%] w-[14%] p-1.5 z-10">
-          {flankRight && <ZoneCell c={flankRight} active={active} cellRefs={cellRefs} onTap={tapCell} />}
+          {flankRight && <ZoneCell c={flankRight} active={active} cellRefs={cellRefs} onTap={tapCell} systemId={session.grade_system} />}
         </div>
 
         {/* Card */}
@@ -301,20 +301,20 @@ export default function Grade() {
   );
 }
 
-function ZoneCell({ c, active, cellRefs, onTap }) {
-  const st = ZONE_STYLES[c.zone];
+function ZoneCell({ c, active, cellRefs, onTap, systemId }) {
   const isActive = active === c.index;
+  const color = gradeColorClasses(c.value, systemId);
   return (
     <button
       ref={(el) => (cellRefs.current[c.index] = el)}
       onClick={() => onTap(c.index)}
       data-testid={`grade-cell-${c.value}`}
-      className={`relative w-full h-full rounded-2xl border-2 border-stone-900/10 flex flex-col items-center justify-center transition-all duration-150 ${
-        isActive ? st.active : st.idle
+      className={`relative w-full h-full rounded-2xl border-2 flex flex-col items-center justify-center transition-all duration-150 ${color} ${
+        isActive ? "ring-4 ring-stone-900 z-30 scale-[1.03]" : ""
       }`}
     >
       <span className="font-mono font-black text-3xl sm:text-5xl leading-none">{c.value}</span>
-      <span className="font-mono font-bold text-xs sm:text-base opacity-50 mt-1">{c.alt}</span>
+      <span className="font-mono font-bold text-xs sm:text-base opacity-70 mt-1">{c.alt}</span>
     </button>
   );
 }

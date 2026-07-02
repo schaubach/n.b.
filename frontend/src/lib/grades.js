@@ -111,6 +111,16 @@ export function gradeColorClasses(value, systemId) {
   return TIER_COLORS[t] || "bg-stone-100 text-stone-300 border-stone-200";
 }
 
+// Solid accent hex per tier (matches TIER_COLORS) for the assign flash.
+export const TIER_ACCENT = {
+  1: "#10b981", 2: "#a3e635", 3: "#fbbf24", 4: "#fb923c", 5: "#ef4444", 6: "#991b1b",
+};
+
+export function gradeAccent(value, systemId) {
+  const t = gradeTier(value, systemId);
+  return TIER_ACCENT[t] || "#78716c";
+}
+
 export function initials(first, last) {
   const a = (first || "").trim()[0] || "";
   const b = (last || "").trim()[0] || "";
