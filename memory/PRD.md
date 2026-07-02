@@ -45,6 +45,17 @@ Bewertung schnell und einfach. Single-User, lokal auf iPad.
 - Getestet: Backend 16/16 pytest, Frontend Multi-Round/Export/Share-Flow 100%
   (testing agent iteration_2). Keine offenen Bugs.
 
+## Update (2026-07-02) – Große Notenbereiche + Fixes
+- Datei-Import: `accept`-Filter entfernt (`.idoceo` war im iPad-Dialog ausgegraut).
+- Alle nativen `window.confirm` durch **In-App-ConfirmModal** ersetzt (Sandbox-iframe
+  blockierte native Dialoge → Löschen/Export „funktionierte nicht").
+- **Klasse löschen**: Sicherheitsabfrage immer; bei nicht exportierten Bewertungen
+  Zusatzoption „Exportieren, dann löschen" / „Ohne Export löschen".
+- **Neues großflächiges Grading-Layout** (Rahmen): Oben 1er (1+/1/1- = 15/14/13),
+  Rechts 2er (12/11/10), Unten 3er (9/8/7), Links 4er (6/5/4), **Tippen auf Karte = 5
+  (3 Punkte)**. Jede Zelle zeigt primären Wert groß + Alt-System klein. Swipe in Zone
+  oder Tippen vergibt Note. Verifiziert für beide Systeme + Zone→Note-Mapping.
+
 ## User persona
 Lehrer*in mit iDoceo auf dem iPad, will mündliche Mitarbeit o.ä. sehr schnell benoten.
 
