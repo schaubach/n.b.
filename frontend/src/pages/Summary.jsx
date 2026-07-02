@@ -5,6 +5,7 @@ import { ArrowLeft, Loader2, FileSpreadsheet, Share2, Plus, CheckCircle2, Pencil
 import api from "../lib/api";
 import { initials } from "../lib/grades";
 import { exportAndDelete, shareAndDelete, canShareFiles } from "../lib/exportClass";
+import ConfirmModal from "../components/ConfirmModal";
 
 export default function Summary() {
   const { sessionId } = useParams();
@@ -14,6 +15,8 @@ export default function Summary() {
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
+  const [modal, setModal] = useState({ open: false });
+  const closeModal = () => setModal({ open: false });
 
   useEffect(() => {
     (async () => {
@@ -32,11 +35,8 @@ export default function Summary() {
     navigate(`/grade/${res.data.id}`);
   };
 
-  const handleExport = async () => {
-    if (!window.confirm(
-      "Alle gesammelten Benotungen werden als CSV exportiert und anschließend gelöscht. Fortfahren?"
-    )) return;
-    setError(null); setBusy(true);
+  const doExport = async () => {
+    closeModal(); setError(null); setBusy(true);
     try {
       await exportAndDelete(session.class_id, session.class_name);
       navigate("/");
@@ -45,17 +45,38 @@ export default function Summary() {
     } finally { setBusy(false); }
   };
 
-  const handleShare = async () => {
-    if (!window.confirm(
-      "Alle gesammelten Benotungen werden geteilt und anschließend gelöscht. Fortfahren?"
-    )) return;
-    setError(null); setBusy(true);
+  const doShare = async () => {
+    closeModal(); setError(null); setBusy(true);
     try {
       const ok = await shareAndDelete(session.class_id, session.class_name);
       if (ok) navigate("/");
     } catch (e) {
       setError("Teilen fehlgeschlagen. Bitte erneut versuchen.");
     } finally { setBusy(false); }
+  };
+
+  const handleExport = () => {
+    setModal({
+      open: true,
+      title: "Bewertungen exportieren & löschen?",
+      description: "Alle gesammelten Runden werden als CSV exportiert (je eine Spalte) und der Sammelbestand anschließend geleert.",
+      actions: [
+        { key: "ok", testid: "modal-confirm-export", variant: "primary", label: "Exportieren & löschen", onClick: doExport },
+        { key: "cancel", testid: "modal-cancel", variant: "ghost", label: "Abbrechen", onClick: closeModal },
+      ],
+    });
+  };
+
+  const handleShare = () => {
+    setModal({
+      open: true,
+      title: `${canShareFiles() ? "Teilen" : "Herunterladen"} & löschen?`,
+      description: `Alle gesammelten Runden werden ${canShareFiles() ? "geteilt" : "heruntergeladen"} und der Sammelbestand anschließend geleert.`,
+      actions: [
+        { key: "ok", testid: "modal-confirm-share", variant: "success", label: `${canShareFiles() ? "Teilen" : "Herunterladen"} & löschen`, onClick: doShare },
+        { key: "cancel", testid: "modal-cancel", variant: "ghost", label: "Abbrechen", onClick: closeModal },
+      ],
+    });
   };
 
   if (loading) {
@@ -182,6 +203,8 @@ export default function Summary() {
           </p>
         </div>
       </div>
+
+      <ConfirmModal {...modal} onClose={closeModal} />
     </div>
   );
 }

@@ -7,7 +7,8 @@ import {
 } from "lucide-react";
 import api from "../lib/api";
 import { GRADE_SYSTEMS } from "../lib/grades";
-import { exportAndDelete, shareAndDelete, canShareFiles } from "../lib/exportClass";
+import { exportAndDelete, shareAndDelete, canShareFiles, downloadClassCsv } from "../lib/exportClass";
+import ConfirmModal from "../components/ConfirmModal";
 
 export default function Home() {
   const navigate = useNavigate();
@@ -17,7 +18,10 @@ export default function Home() {
   const [dragOver, setDragOver] = useState(false);
   const [result, setResult] = useState(null);
   const [error, setError] = useState(null);
+  const [modal, setModal] = useState({ open: false });
   const fileRef = useRef(null);
+
+  const closeModal = () => setModal({ open: false });
 
   const load = async () => {
     setLoading(true);
@@ -65,26 +69,74 @@ export default function Home() {
     navigate(`/grade/${res.data.id}`);
   };
 
-  const removeClass = async (classId) => {
-    if (!window.confirm("Klasse wirklich löschen? Alle Bewertungen gehen verloren.")) return;
-    await api.delete(`/classes/${classId}`);
-    await load();
+  const removeClass = (cls) => {
+    const hasGrades = (cls.session_count || 0) > 0;
+    const actions = [];
+    if (hasGrades) {
+      actions.push({
+        key: "export-del", testid: "modal-export-then-delete", variant: "success",
+        label: "Exportieren, dann löschen",
+        onClick: async () => {
+          closeModal();
+          await downloadClassCsv(cls.id, cls.name);
+          await api.delete(`/classes/${cls.id}`);
+          await load();
+        },
+      });
+      actions.push({
+        key: "del-only", testid: "modal-delete-without-export", variant: "danger",
+        label: "Ohne Export löschen",
+        onClick: async () => { closeModal(); await api.delete(`/classes/${cls.id}`); await load(); },
+      });
+    } else {
+      actions.push({
+        key: "del", testid: "modal-confirm-delete", variant: "danger",
+        label: "Klasse löschen",
+        onClick: async () => { closeModal(); await api.delete(`/classes/${cls.id}`); await load(); },
+      });
+    }
+    actions.push({ key: "cancel", testid: "modal-cancel", variant: "ghost", label: "Abbrechen", onClick: closeModal });
+
+    setModal({
+      open: true,
+      title: `Klasse „${cls.name}" löschen?`,
+      description: hasGrades
+        ? `Es gibt ${cls.session_count} noch nicht exportierte Bewertung${cls.session_count === 1 ? "" : "en"}. Möchtest du sie vorher exportieren? Beim Löschen gehen Klasse, Schüler*innen und alle Bewertungen unwiderruflich verloren.`
+        : "Die Klasse und alle Schüler*innen werden unwiderruflich gelöscht.",
+      actions,
+    });
   };
 
-  const handleExport = async (cls) => {
-    if (!window.confirm(
-      `Alle gesammelten Benotungen von „${cls.name}" werden als CSV exportiert und anschließend gelöscht. Fortfahren?`
-    )) return;
-    await exportAndDelete(cls.id, cls.name);
-    await load();
+  const handleExport = (cls) => {
+    setModal({
+      open: true,
+      title: "Bewertungen exportieren & löschen?",
+      description: `Alle gesammelten Benotungen von „${cls.name}" werden als CSV exportiert und der Sammelbestand anschließend geleert.`,
+      actions: [
+        {
+          key: "ok", testid: "modal-confirm-export", variant: "primary",
+          label: "Exportieren & löschen",
+          onClick: async () => { closeModal(); await exportAndDelete(cls.id, cls.name); await load(); },
+        },
+        { key: "cancel", testid: "modal-cancel", variant: "ghost", label: "Abbrechen", onClick: closeModal },
+      ],
+    });
   };
 
-  const handleShare = async (cls) => {
-    if (!window.confirm(
-      `Alle gesammelten Benotungen von „${cls.name}" werden geteilt und anschließend gelöscht. Fortfahren?`
-    )) return;
-    const ok = await shareAndDelete(cls.id, cls.name);
-    if (ok) await load();
+  const handleShare = (cls) => {
+    setModal({
+      open: true,
+      title: `${canShareFiles() ? "Teilen" : "Herunterladen"} & löschen?`,
+      description: `Alle gesammelten Benotungen von „${cls.name}" werden ${canShareFiles() ? "geteilt" : "heruntergeladen"} und der Sammelbestand anschließend geleert.`,
+      actions: [
+        {
+          key: "ok", testid: "modal-confirm-share", variant: "success",
+          label: `${canShareFiles() ? "Teilen" : "Herunterladen"} & löschen`,
+          onClick: async () => { closeModal(); const ok = await shareAndDelete(cls.id, cls.name); if (ok) await load(); },
+        },
+        { key: "cancel", testid: "modal-cancel", variant: "ghost", label: "Abbrechen", onClick: closeModal },
+      ],
+    });
   };
 
   return (
@@ -188,7 +240,7 @@ export default function Home() {
                 key={c.id} c={c}
                 onSetSystem={setSystem}
                 onStart={() => startRound(c.id)}
-                onDelete={() => removeClass(c.id)}
+                onDelete={() => removeClass(c)}
                 onExport={() => handleExport(c)}
                 onShare={() => handleShare(c)}
               />
@@ -196,6 +248,8 @@ export default function Home() {
           </div>
         )}
       </main>
+
+      <ConfirmModal {...modal} onClose={closeModal} />
     </div>
   );
 }

@@ -42,6 +42,12 @@ export async function deleteClassSessions(classId) {
   await api.delete(`/classes/${classId}/sessions`);
 }
 
+// Download the aggregated CSV without deleting anything.
+export async function downloadClassCsv(classId, className) {
+  const file = await getClassCsvFile(classId, className);
+  triggerDownload(file);
+}
+
 // Download the aggregated CSV, then delete all collected gradings.
 export async function exportAndDelete(classId, className) {
   const file = await getClassCsvFile(classId, className);
