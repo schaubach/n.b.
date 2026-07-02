@@ -54,6 +54,11 @@ Bewertung schnell und einfach. Single-User, lokal auf iPad.
 - **Notenliste: Klick auf Zeile → GradePicker** (alle 14 Noten mit Punktwert,
   aktuelle hervorgehoben, „Note entfernen"). Verifiziert für beide Systeme.
 
+## Update (2026-07-02c)
+- **Karten-Tap = Überspringen** (keine Note; nächste*r Schüler*in). Pill „Tippen = überspringen".
+- **Farbcodierung** der Noten in der Übersichtsliste: Tier 1 dunkelgrün → 6 dunkelrot
+  (emerald→lime→amber→orange→red→dark red), für beide Systeme (Punkte per Tier-Mapping).
+
 ## Update (2026-07-02) – Große Notenbereiche + Fixes
 - Datei-Import: `accept`-Filter entfernt (`.idoceo` war im iPad-Dialog ausgegraut).
 - Alle nativen `window.confirm` durch **In-App-ConfirmModal** ersetzt (Sandbox-iframe

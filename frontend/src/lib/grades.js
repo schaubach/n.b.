@@ -85,6 +85,32 @@ export function allGrades(systemId) {
   return out;
 }
 
+// Color coding by grade tier: 1 = dark green ... 6 = dark red.
+export const TIER_COLORS = {
+  1: "bg-emerald-500 text-white border-emerald-700",
+  2: "bg-lime-400 text-stone-900 border-lime-600",
+  3: "bg-amber-400 text-stone-900 border-amber-600",
+  4: "bg-orange-400 text-white border-orange-600",
+  5: "bg-red-500 text-white border-red-700",
+  6: "bg-red-800 text-white border-red-950",
+};
+
+export function gradeTier(value, systemId) {
+  if (value === null || value === undefined || value === "") return null;
+  if (systemId === "points_0_15") {
+    const p = parseInt(value, 10);
+    if (isNaN(p)) return null;
+    return p >= 13 ? 1 : p >= 10 ? 2 : p >= 7 ? 3 : p >= 4 ? 4 : p >= 2 ? 5 : 6;
+  }
+  const m = String(value).match(/\d/);
+  return m ? parseInt(m[0], 10) : null;
+}
+
+export function gradeColorClasses(value, systemId) {
+  const t = gradeTier(value, systemId);
+  return TIER_COLORS[t] || "bg-stone-100 text-stone-300 border-stone-200";
+}
+
 export function initials(first, last) {
   const a = (first || "").trim()[0] || "";
   const b = (last || "").trim()[0] || "";

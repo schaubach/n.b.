@@ -125,6 +125,19 @@ export default function Grade() {
     assign(cells[i].value, exitVecFor(i), ZONE_ACCENT[cells[i].zone]);
   };
 
+  const skipCard = () => {
+    if (draggingRef.current || assigningRef.current) return;
+    const student = students[index];
+    if (!student) return;
+    assigningRef.current = true;
+    setActive(null);
+    setExitDir({ x: 0, y: window.innerHeight * 0.7 });
+    setHistory((h) => [...h, { studentId: student.id, index }]);
+    setIndex((i) => i + 1);
+    vibrate(10);
+    setTimeout(() => { assigningRef.current = false; }, 260);
+  };
+
   const undo = async () => {
     if (history.length === 0) return;
     const last = history[history.length - 1];
@@ -227,6 +240,7 @@ export default function Grade() {
                 dragElastic={0.7}
                 onDrag={onDrag}
                 onDragEnd={onDragEnd}
+                onTap={skipCard}
                 custom={exitDir}
                 initial={{ scale: 0.85, opacity: 0, y: 24 }}
                 animate={{ scale: 1, opacity: 1, y: 0 }}
@@ -254,6 +268,9 @@ export default function Grade() {
                   </span>
                   <span className="font-heading text-lg sm:text-2xl font-black text-stone-900 leading-none truncate max-w-full">
                     {student.last_name}
+                  </span>
+                  <span className="mt-1.5 inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-stone-200 text-stone-600 font-bold text-[11px] uppercase tracking-wide border-2 border-stone-900/10">
+                    Tippen = überspringen
                   </span>
                 </div>
 

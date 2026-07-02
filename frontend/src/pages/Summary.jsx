@@ -3,7 +3,7 @@ import { useParams, useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { ArrowLeft, Loader2, FileSpreadsheet, Share2, Plus, CheckCircle2, Pencil, X, Trash2 } from "lucide-react";
 import api from "../lib/api";
-import { initials, allGrades } from "../lib/grades";
+import { initials, allGrades, gradeColorClasses } from "../lib/grades";
 import { exportAndDelete, shareAndDelete, canShareFiles } from "../lib/exportClass";
 import ConfirmModal from "../components/ConfirmModal";
 
@@ -173,7 +173,7 @@ export default function Summary() {
                 data-testid={`summary-grade-${s.id}`}
                 className={`min-w-[3rem] text-center px-3 py-1.5 rounded-xl font-mono font-black text-lg border-2 ${
                   s.grade
-                    ? "bg-emerald-100 text-emerald-900 border-stone-900"
+                    ? gradeColorClasses(s.grade, session.grade_system)
                     : "bg-stone-100 text-stone-300 border-stone-200"
                 }`}
               >
