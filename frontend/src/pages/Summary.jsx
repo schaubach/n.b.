@@ -113,7 +113,9 @@ export default function Summary() {
     <div className="min-h-screen bg-stone-50 bg-dots">
       <main className="px-4 sm:px-10 max-w-3xl mx-auto pb-64 pt-8">
         <div className="mt-2">
-          <p className="text-xs font-bold uppercase tracking-[0.2em] text-stone-400">Zusammenfassung</p>
+          <p className="text-xs font-bold uppercase tracking-[0.2em] text-stone-400">
+            {session.category === "klausur" ? "Klausur" : "Sonstige Leistung"}
+          </p>
           <h1 className="font-heading text-3xl sm:text-4xl font-black text-stone-900">
             {session.class_name}
           </h1>
@@ -223,6 +225,7 @@ export default function Summary() {
       <SessionSetupModal
         open={setupOpen}
         className={session.class_name}
+        category={session.category}
         onStart={async (opts) => { setSetupOpen(false); await newRound(opts); }}
         onClose={() => setSetupOpen(false)}
       />

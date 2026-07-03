@@ -16,25 +16,28 @@ function isoToDE(iso) {
 
 // Modal shown before starting a grading round. Pre-filled with defaults so the
 // teacher can simply hit "Bewertung starten".
-export default function SessionSetupModal({ open, className, onStart, onClose }) {
-  const [title, setTitle] = useState("mündliche Mitarbeit");
+export default function SessionSetupModal({ open, className, category = "sonstige", onStart, onClose }) {
+  const isKlausur = category === "klausur";
+  const defaultName = isKlausur ? "Klausur" : "mündliche Mitarbeit";
+  const [title, setTitle] = useState(defaultName);
   const [weight, setWeight] = useState("1");
   const [date, setDate] = useState(todayISO());
 
   useEffect(() => {
     if (open) {
-      setTitle("mündliche Mitarbeit");
+      setTitle(isKlausur ? "Klausur" : "mündliche Mitarbeit");
       setWeight("1");
       setDate(todayISO());
     }
-  }, [open]);
+  }, [open, isKlausur]);
 
   const start = () => {
     const w = parseFloat(String(weight).replace(",", ".")) || 1;
     onStart({
-      title: title.trim() || "mündliche Mitarbeit",
+      title: title.trim() || defaultName,
       weight: w,
       date: isoToDE(date),
+      category,
     });
   };
 
@@ -68,7 +71,9 @@ export default function SessionSetupModal({ open, className, onStart, onClose })
                 <ClipboardList className="w-6 h-6 text-stone-900" />
               </div>
               <div>
-                <p className="text-xs font-bold uppercase tracking-[0.2em] text-stone-400">Neue Bewertung</p>
+                <p className="text-xs font-bold uppercase tracking-[0.2em] text-stone-400">
+                  {isKlausur ? "Neue Klausur" : "Neue sonstige Leistung"}
+                </p>
                 <h3 className="font-heading text-2xl font-black text-stone-900 leading-none">{className}</h3>
               </div>
             </div>

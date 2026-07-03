@@ -74,6 +74,7 @@ class SessionCreate(BaseModel):
     title: Optional[str] = None
     weight: Optional[float] = 1.0
     date: Optional[str] = None
+    category: Optional[str] = "sonstige"
 
 
 class GradeIn(BaseModel):
@@ -116,8 +117,27 @@ async def grade_systems():
     return GRADE_SYSTEMS
 
 
+@api.post("/import/peek")
+async def import_peek(file: UploadFile = File(...), password: str = Form("test")):
+    raw = await file.read()
+    try:
+        parsed = parse_idoceo(raw, password)
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=f"Datei ungültig: {exc}")
+    nid = parsed["class"]["idoceo_nid"]
+    existing = await db.classes.find_one({"idoceo_nid": nid})
+    return {
+        "nid": nid,
+        "name": parsed["class"]["name"],
+        "exists": existing is not None,
+        "grade_system": (existing or {}).get("grade_system"),
+        "student_count": len(parsed["students"]),
+    }
+
+
 @api.post("/import/idoceo")
-async def import_idoceo(file: UploadFile = File(...), password: str = Form("test")):
+async def import_idoceo(file: UploadFile = File(...), password: str = Form("test"),
+                        grade_system: str = Form("grades_1_6")):
     raw = await file.read()
     try:
         parsed = parse_idoceo(raw, password)
@@ -126,11 +146,12 @@ async def import_idoceo(file: UploadFile = File(...), password: str = Form("test
 
     cinfo = parsed["class"]
     nid = cinfo["idoceo_nid"]
+    gs = grade_system if grade_system in GRADE_SYSTEMS else "grades_1_6"
 
     existing = await db.classes.find_one({"idoceo_nid": nid})
     new_class = existing is None
     if new_class:
-        cls = SchoolClass(idoceo_nid=nid, name=cinfo["name"])
+        cls = SchoolClass(idoceo_nid=nid, name=cinfo["name"], grade_system=gs)
         res = await db.classes.insert_one(cls.model_dump(exclude={"id"}, by_alias=False))
         class_id = str(res.inserted_id)
     else:
@@ -174,9 +195,12 @@ async def import_idoceo(file: UploadFile = File(...), password: str = Form("test
 async def list_classes():
     out = []
     async for c in db.classes.find().sort("created_at", -1):
-        count = await db.students.count_documents({"class_id": str(c["_id"])})
-        sessions = await db.sessions.count_documents({"class_id": str(c["_id"])})
-        out.append({**class_out(c, count), "session_count": sessions})
+        cid = str(c["_id"])
+        count = await db.students.count_documents({"class_id": cid})
+        klausur = await db.sessions.count_documents({"class_id": cid, "category": "klausur"})
+        sonstige = await db.sessions.count_documents({"class_id": cid, "category": {"$ne": "klausur"}})
+        out.append({**class_out(c, count), "session_count": sonstige + klausur,
+                    "sonstige_count": sonstige, "klausur_count": klausur})
     return out
 
 
@@ -188,8 +212,10 @@ async def get_class(class_id: str):
     students = []
     async for s in db.students.find({"class_id": class_id}).sort("order", 1):
         students.append(student_out(s))
-    sessions = await db.sessions.count_documents({"class_id": class_id})
-    return {**class_out(c, len(students)), "session_count": sessions, "students": students}
+    klausur = await db.sessions.count_documents({"class_id": class_id, "category": "klausur"})
+    sonstige = await db.sessions.count_documents({"class_id": class_id, "category": {"$ne": "klausur"}})
+    return {**class_out(c, len(students)), "session_count": sonstige + klausur,
+            "sonstige_count": sonstige, "klausur_count": klausur, "students": students}
 
 
 @api.put("/classes/{class_id}/grade-system")
@@ -221,6 +247,8 @@ async def export_class_csv(class_id: str):
         raise HTTPException(404, "Klasse nicht gefunden")
 
     sessions = [s async for s in db.sessions.find({"class_id": class_id}).sort("created_at", 1)]
+    # group: sonstige first, then klausuren
+    sessions.sort(key=lambda s: (s.get("category") == "klausur", s.get("created_at", "")))
 
     # build unique column headers from session dates
     headers = []  # list of (session_id, label)
@@ -230,7 +258,8 @@ async def export_class_csv(class_id: str):
         date = s.get("date", "")
         weight = s.get("weight", 1.0)
         w = int(weight) if float(weight).is_integer() else weight
-        base = f"{title} {date} (x{w})"
+        cat = "Klausur" if s.get("category") == "klausur" else "SoLe"
+        base = f"[{cat}] {title} {date} (x{w})"
         seen[base] = seen.get(base, 0) + 1
         label = base if seen[base] == 1 else f"{base} #{seen[base]}"
         headers.append((str(s["_id"]), label))
@@ -281,11 +310,13 @@ async def create_session(body: SessionCreate):
     title = (body.title or "").strip() or "mündliche Mitarbeit"
     date = (body.date or "").strip() or now.strftime("%d.%m.%Y")
     weight = body.weight if body.weight is not None else 1.0
+    category = "klausur" if body.category == "klausur" else "sonstige"
     doc = {
         "class_id": body.class_id,
         "title": title,
         "date": date,
         "weight": weight,
+        "category": category,
         "created_at": now.isoformat(),
     }
     res = await db.sessions.insert_one(doc)
@@ -302,6 +333,7 @@ async def list_sessions(class_id: Optional[str] = None):
         out.append({"id": str(s["_id"]), "class_id": s["class_id"],
                     "title": s["title"], "date": s["date"],
                     "weight": s.get("weight", 1.0),
+                    "category": s.get("category", "sonstige"),
                     "created_at": s["created_at"], "graded_count": graded})
     return out
 
@@ -339,7 +371,8 @@ async def get_session(session_id: str):
         students.append({**student_out(st), "grade": grades.get(str(st["_id"]))})
     cls = await db.classes.find_one({"_id": ObjectId(s["class_id"])})
     return {"id": str(s["_id"]), "class_id": s["class_id"], "title": s["title"],
-            "date": s["date"], "weight": s.get("weight", 1.0), "students": students,
+            "date": s["date"], "weight": s.get("weight", 1.0),
+            "category": s.get("category", "sonstige"), "students": students,
             "class_name": (cls or {}).get("name", ""),
             "grade_system": (cls or {}).get("grade_system", "grades_1_6")}
 

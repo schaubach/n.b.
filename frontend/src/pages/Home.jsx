@@ -37,16 +37,15 @@ export default function Home() {
 
   useEffect(() => { load(); }, []);
 
-  const handleFiles = async (files) => {
-    if (!files || files.length === 0) return;
-    setError(null);
-    setResult(null);
+  const doImport = async (arr, gs) => {
     setImporting(true);
+    setError(null);
     try {
-      for (const file of files) {
+      for (const file of arr) {
         const fd = new FormData();
         fd.append("file", file);
         fd.append("password", "test");
+        fd.append("grade_system", gs);
         const res = await api.post("/import/idoceo", fd, {
           headers: { "Content-Type": "multipart/form-data" },
         });
@@ -57,13 +56,47 @@ export default function Home() {
       setError(e?.response?.data?.detail || "Import fehlgeschlagen.");
     } finally {
       setImporting(false);
-      if (fileRef.current) fileRef.current.value = "";
     }
   };
 
-  const setSystem = async (classId, system) => {
-    setClasses((cs) => cs.map((c) => (c.id === classId ? { ...c, grade_system: system } : c)));
-    await api.put(`/classes/${classId}/grade-system`, { grade_system: system });
+  const handleFiles = async (files) => {
+    if (!files || files.length === 0) return;
+    const arr = Array.from(files);
+    setError(null);
+    setResult(null);
+    setImporting(true);
+    try {
+      let anyNew = false;
+      for (const file of arr) {
+        const fd = new FormData();
+        fd.append("file", file);
+        fd.append("password", "test");
+        const pk = await api.post("/import/peek", fd);
+        if (!pk.data.exists) anyNew = true;
+      }
+      setImporting(false);
+      if (anyNew) {
+        setModal({
+          open: true,
+          title: "Notensystem der neuen Klasse",
+          description: "Diese Auswahl wird für die Klasse gespeichert und gilt für alle Bewertungen dieser Klasse.",
+          actions: [
+            { key: "g16", testid: "gs-grades-1-6", variant: "primary", label: "Noten 1–6 (mit Tendenzen)",
+              onClick: () => { closeModal(); doImport(arr, "grades_1_6"); } },
+            { key: "p15", testid: "gs-points-0-15", variant: "primary", label: "Punkte 0–15",
+              onClick: () => { closeModal(); doImport(arr, "points_0_15"); } },
+            { key: "cancel", testid: "modal-cancel", variant: "ghost", label: "Abbrechen", onClick: closeModal },
+          ],
+        });
+      } else {
+        await doImport(arr, "grades_1_6");
+      }
+    } catch (e) {
+      setImporting(false);
+      setError(e?.response?.data?.detail || "Datei konnte nicht gelesen werden.");
+    } finally {
+      if (fileRef.current) fileRef.current.value = "";
+    }
   };
 
   const startRound = async (classId, opts) => {
@@ -240,8 +273,7 @@ export default function Home() {
             {classes.map((c) => (
               <ClassCard
                 key={c.id} c={c}
-                onSetSystem={setSystem}
-                onStart={() => setSetup(c)}
+                onStart={(cat) => setSetup({ cls: c, category: cat })}
                 onDelete={() => removeClass(c)}
                 onExport={() => handleExport(c)}
                 onShare={() => handleShare(c)}
@@ -254,22 +286,28 @@ export default function Home() {
       <ConfirmModal {...modal} onClose={closeModal} />
       <SessionSetupModal
         open={!!setup}
-        className={setup?.name}
-        onStart={async (opts) => { const c = setup; setSetup(null); await startRound(c.id, opts); }}
+        className={setup?.cls?.name}
+        category={setup?.category}
+        onStart={async (opts) => { const c = setup.cls; setSetup(null); await startRound(c.id, opts); }}
         onClose={() => setSetup(null)}
       />
     </div>
   );
 }
 
-function ClassCard({ c, onSetSystem, onStart, onDelete, onExport, onShare }) {
+function ClassCard({ c, onStart, onDelete, onExport, onShare }) {
   const [busy, setBusy] = useState(false);
   const sessions = c.session_count || 0;
+  const sonstige = c.sonstige_count || 0;
+  const klausur = c.klausur_count || 0;
+  const sysLabel = (GRADE_SYSTEMS[c.grade_system] || {}).short || c.grade_system;
 
   const run = async (fn) => {
     setBusy(true);
     try { await fn(); } finally { setBusy(false); }
   };
+
+  const disabled = c.student_count === 0 || busy;
 
   return (
     <motion.div
@@ -289,54 +327,47 @@ function ClassCard({ c, onSetSystem, onStart, onDelete, onExport, onShare }) {
         </button>
       </div>
 
-      <div className="mt-2 flex items-center gap-2 text-stone-500 font-medium">
-        <Users className="w-4 h-4" /> {c.student_count} Schüler*innen
+      <div className="mt-2 flex items-center gap-3 text-stone-500 font-medium text-sm">
+        <span className="flex items-center gap-1.5"><Users className="w-4 h-4" /> {c.student_count}</span>
+        <span className="px-2 py-0.5 rounded-full bg-stone-100 text-stone-600 font-bold text-xs" data-testid={`class-system-${c.id}`}>
+          {sysLabel}
+        </span>
       </div>
 
-      <div className="mt-3" data-testid={`session-count-${c.id}`}>
-        {sessions > 0 ? (
-          <span className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-emerald-100 border-2 border-emerald-900/10 text-emerald-900 font-bold text-sm">
-            <CheckCircle2 className="w-4 h-4" />
-            {sessions} Bewertung{sessions === 1 ? "" : "en"} gesammelt
-          </span>
-        ) : (
-          <span className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-stone-100 text-stone-500 font-bold text-sm">
-            Noch keine Bewertung
-          </span>
-        )}
+      {/* Sonstige Leistungen */}
+      <div className="mt-5 rounded-2xl border-2 border-stone-200 p-3">
+        <p className="text-xs font-bold uppercase tracking-[0.14em] text-stone-400">Sonstige Leistungen</p>
+        <p className="mt-0.5 font-bold text-stone-800 text-sm" data-testid={`sonstige-count-${c.id}`}>
+          {sonstige} Bewertung{sonstige === 1 ? "" : "en"}
+        </p>
+        <button
+          onClick={() => onStart("sonstige")}
+          data-testid={`start-sonstige-${c.id}`}
+          disabled={disabled}
+          className="mt-2 w-full px-4 py-2.5 bg-emerald-400 text-stone-900 font-heading font-extrabold rounded-xl border-2 border-stone-900 shadow-brutal-sm hover:-translate-y-0.5 active:translate-y-0 active:shadow-none transition-all flex items-center justify-center gap-2 text-sm disabled:opacity-40 disabled:hover:translate-y-0"
+        >
+          <Plus className="w-4 h-4" /> Neue sonstige Leistung
+        </button>
       </div>
 
-      <div className="mt-5">
-        <p className="text-xs font-bold uppercase tracking-[0.18em] text-stone-400 mb-2">Notensystem</p>
-        <div className="grid grid-cols-2 gap-2">
-          {Object.values(GRADE_SYSTEMS).map((sys) => (
-            <button
-              key={sys.id}
-              onClick={() => onSetSystem(c.id, sys.id)}
-              data-testid={`system-${sys.id}-${c.id}`}
-              className={`px-3 py-2 rounded-xl text-sm font-bold border-2 transition-all ${
-                c.grade_system === sys.id
-                  ? "bg-stone-900 text-white border-stone-900"
-                  : "bg-white text-stone-600 border-stone-200 hover:border-stone-400"
-              }`}
-            >
-              {sys.short}
-            </button>
-          ))}
-        </div>
+      {/* Klausuren */}
+      <div className="mt-3 rounded-2xl border-2 border-stone-200 p-3">
+        <p className="text-xs font-bold uppercase tracking-[0.14em] text-stone-400">Klausuren</p>
+        <p className="mt-0.5 font-bold text-stone-800 text-sm" data-testid={`klausur-count-${c.id}`}>
+          {klausur} Bewertung{klausur === 1 ? "" : "en"}
+        </p>
+        <button
+          onClick={() => onStart("klausur")}
+          data-testid={`start-klausur-${c.id}`}
+          disabled={disabled}
+          className="mt-2 w-full px-4 py-2.5 bg-sky-400 text-stone-900 font-heading font-extrabold rounded-xl border-2 border-stone-900 shadow-brutal-sm hover:-translate-y-0.5 active:translate-y-0 active:shadow-none transition-all flex items-center justify-center gap-2 text-sm disabled:opacity-40 disabled:hover:translate-y-0"
+        >
+          <Plus className="w-4 h-4" /> Neue Klausur
+        </button>
       </div>
-
-      <button
-        onClick={onStart}
-        data-testid={`start-round-${c.id}`}
-        disabled={c.student_count === 0 || busy}
-        className="mt-6 w-full px-5 py-4 bg-emerald-400 text-stone-900 font-heading font-extrabold rounded-2xl border-2 border-stone-900 shadow-brutal-sm hover:-translate-y-0.5 hover:shadow-brutal active:translate-y-0 active:shadow-none transition-all flex items-center justify-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:translate-y-0 disabled:hover:shadow-brutal-sm"
-      >
-        <Plus className="w-5 h-5" /> Neue Bewertung
-      </button>
 
       {sessions > 0 && (
-        <div className="mt-3 pt-3 border-t-2 border-stone-100 space-y-2">
+        <div className="mt-4 pt-3 border-t-2 border-stone-100 space-y-2">
           <button
             onClick={() => run(onExport)}
             disabled={busy}
