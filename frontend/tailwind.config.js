@@ -4,9 +4,9 @@ module.exports = {
   theme: {
     extend: {
       fontFamily: {
-        heading: ["Outfit", "sans-serif"],
-        body: ["Satoshi", "Outfit", "sans-serif"],
-        mono: ["JetBrains Mono", "monospace"],
+        heading: ["ui-sans-serif", "system-ui", "-apple-system", "BlinkMacSystemFont", "Segoe UI", "sans-serif"],
+        body: ["ui-sans-serif", "system-ui", "-apple-system", "BlinkMacSystemFont", "Segoe UI", "sans-serif"],
+        mono: ["ui-monospace", "SFMono-Regular", "SF Mono", "Consolas", "Liberation Mono", "monospace"],
       },
       boxShadow: {
         brutal: "8px 8px 0 0 #1c1917",

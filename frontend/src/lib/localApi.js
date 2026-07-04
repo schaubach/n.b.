@@ -1,0 +1,588 @@
+import { getState, mutateState } from "./cryptoStore";
+import { GRADE_SYSTEMS } from "./grades";
+import { parseClassCsv } from "./csvImport";
+
+function id() {
+  if (crypto.randomUUID) return crypto.randomUUID();
+  const bytes = new Uint8Array(16);
+  crypto.getRandomValues(bytes);
+  return Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+function nowIso() {
+  return new Date().toISOString();
+}
+
+function todayDe() {
+  const d = new Date();
+  const p = (n) => String(n).padStart(2, "0");
+  return `${p(d.getDate())}.${p(d.getMonth() + 1)}.${d.getFullYear()}`;
+}
+
+function httpError(message, status = 400) {
+  const error = new Error(message);
+  error.response = { status, data: { detail: message } };
+  throw error;
+}
+
+function normalizePath(url) {
+  const raw = String(url || "");
+  const path = raw.split("?")[0].replace(/^\/api/, "");
+  return path || "/";
+}
+
+function sourceIdForClassName(name) {
+  return `csv:${String(name || "").trim().toLowerCase()}`;
+}
+
+function classOut(state, cls) {
+  const classId = cls.id;
+  const studentCount = state.students.filter((student) => student.class_id === classId).length;
+  const sessions = state.sessions.filter((session) => session.class_id === classId);
+  const klausur = sessions.filter((session) => session.category === "klausur").length;
+  const sonstige = sessions.length - klausur;
+  return {
+    id: cls.id,
+    source_id: cls.source_id || sourceIdForClassName(cls.name),
+    name: cls.name || "",
+    grade_system: cls.grade_system || "grades_1_6",
+    created_at: cls.created_at,
+    student_count: studentCount,
+    photo_count: state.students.filter((student) => student.class_id === classId && student.photo).length,
+    session_count: sessions.length,
+    sonstige_count: sonstige,
+    klausur_count: klausur,
+  };
+}
+
+function compareStudents(a, b) {
+  const last = String(a.last_name || "").localeCompare(String(b.last_name || ""), "de", { sensitivity: "base" });
+  if (last !== 0) return last;
+  const first = String(a.first_name || "").localeCompare(String(b.first_name || ""), "de", { sensitivity: "base" });
+  if (first !== 0) return first;
+  return (a.order || 0) - (b.order || 0);
+}
+function studentOut(student) {
+  return {
+    id: student.id,
+    class_id: student.class_id,
+    source_key: student.source_key || student.csv_key || "",
+    first_name: student.first_name || "",
+    last_name: student.last_name || "",
+    order: student.order || 0,
+    email: student.email || "",
+    photo: student.photo || null,
+  };
+}
+
+function findClass(state, classId) {
+  const cls = state.classes.find((item) => item.id === classId);
+  if (!cls) httpError("Klasse nicht gefunden", 404);
+  return cls;
+}
+
+function findSession(state, sessionId) {
+  const session = state.sessions.find((item) => item.id === sessionId);
+  if (!session) httpError("Bewertungsrunde nicht gefunden", 404);
+  return session;
+}
+
+function findStudent(state, studentId) {
+  const student = state.students.find((item) => item.id === studentId);
+  if (!student) httpError("Lernende*r nicht gefunden", 404);
+  return student;
+}
+
+async function parseCsvForm(formData) {
+  const file = formData.get("file");
+  if (!file || !file.text) httpError("Keine CSV-Datei uebergeben.");
+  const fallback = String(file.name || "Klasse").replace(/\.[^.]+$/, "") || "Klasse";
+  try {
+    return parseClassCsv(await file.text(), fallback);
+  } catch (error) {
+    httpError(`CSV ungueltig: ${error.message || error}`);
+  }
+}
+
+function csvEscape(value) {
+  const s = String(value ?? "");
+  return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+}
+
+function classCsvBlob(state, classId) {
+  const cls = findClass(state, classId);
+  const sessions = state.sessions
+    .filter((session) => session.class_id === classId)
+    .sort((a, b) => {
+      const group = (session) => session.category === "klausur" ? 2 : (session.sl_type === "written" ? 1 : 0);
+      const dateKey = (session) => {
+        const match = String(session.date || "").match(/^(\d{1,2})\.(\d{1,2})\.(\d{4})$/);
+        return match ? Number(`${match[3]}${match[2].padStart(2, "0")}${match[1].padStart(2, "0")}`) : Number.MAX_SAFE_INTEGER;
+      };
+      return group(a) - group(b) || dateKey(a) - dateKey(b) || String(a.created_at || "").localeCompare(String(b.created_at || ""));
+    });
+
+  const seen = new Map();
+  const headers = sessions.map((session) => {
+    const title = session.title || "Bewertung";
+    const date = session.date || "";
+    const weight = session.weight ?? 1;
+    const weightLabel = Number.isInteger(Number(weight)) ? String(Number(weight)) : String(weight);
+    const category = session.category === "klausur" ? "Klausur" : (session.sl_type === "written" ? "SL schriftl." : "SL mündl.");
+    const base = `[${category}] ${title} ${date} (x${weightLabel})`;
+    const count = (seen.get(base) || 0) + 1;
+    seen.set(base, count);
+    return { sessionId: session.id, label: count === 1 ? base : `${base} #${count}` };
+  });
+
+  const lines = [["Vorname", "Nachname", ...headers.map((h) => h.label)].map(csvEscape).join(",")];
+  const students = state.students.filter((student) => student.class_id === classId).sort(compareStudents);
+  for (const student of students) {
+    const row = headers.map((header) => {
+      const grade = state.grades.find((item) => item.session_id === header.sessionId && item.student_id === student.id);
+      return grade?.value || "";
+    });
+    if (!row.some(Boolean)) continue;
+    lines.push([student.first_name || "", student.last_name || "", ...row].map(csvEscape).join(","));
+  }
+
+  return new Blob(["\ufeff", lines.join("\n")], { type: "text/csv;charset=utf-8" });
+}
+
+function importParsedCsv(state, parsed, gradeSystem) {
+  const results = [];
+  for (const incomingClass of parsed.classes) {
+    const sourceId = sourceIdForClassName(incomingClass.name);
+    let cls = state.classes.find((item) => (item.source_id || sourceIdForClassName(item.name)) === sourceId);
+    const isNew = !cls;
+    if (!cls) {
+      cls = {
+        id: id(),
+        source_id: sourceId,
+        name: incomingClass.name,
+        grade_system: GRADE_SYSTEMS[gradeSystem] ? gradeSystem : "grades_1_6",
+        created_at: nowIso(),
+      };
+      state.classes.push(cls);
+    } else {
+      cls.name = incomingClass.name;
+      cls.source_id = sourceId;
+    }
+
+    let added = 0;
+    let updated = 0;
+    for (const incoming of incomingClass.students) {
+      const sourceKey = incoming.source_key || incoming.csv_key;
+      let student = state.students.find((item) => item.class_id === cls.id && (item.source_key || item.csv_key) === sourceKey);
+      if (!student) {
+        student = {
+          id: id(),
+          class_id: cls.id,
+          source_key: sourceKey,
+          first_name: incoming.first_name,
+          last_name: incoming.last_name,
+          order: incoming.order,
+          email: incoming.email || "",
+          photo: null,
+          created_at: nowIso(),
+        };
+        state.students.push(student);
+        added += 1;
+      } else {
+        student.source_key = sourceKey;
+        student.first_name = incoming.first_name;
+        student.last_name = incoming.last_name;
+        student.order = incoming.order;
+        student.email = incoming.email || student.email || "";
+        updated += 1;
+      }
+    }
+
+    results.push({
+      class_id: cls.id,
+      class_name: cls.name,
+      new_class: isNew,
+      added_students: added,
+      updated_students: updated,
+      total_students: state.students.filter((student) => student.class_id === cls.id).length,
+    });
+  }
+  return results;
+}
+
+async function get(url) {
+  const path = normalizePath(url);
+  const state = await getState();
+
+  if (path === "/") return { data: { app: "n.b.", status: "ok", storage: "local-encrypted" } };
+  if (path === "/grade-systems") return { data: GRADE_SYSTEMS };
+  if (path === "/teacher-config") {
+    const config = state.teacher_config || {};
+    return { data: { name: config.name || "", email: config.email || "", password: config.password || "" } };
+  }
+  if (path === "/classes") {
+    const data = state.classes
+      .slice()
+      .sort((a, b) => String(b.created_at || "").localeCompare(String(a.created_at || "")))
+      .map((cls) => classOut(state, cls));
+    return { data };
+  }
+
+  const classExport = path.match(/^\/classes\/([^/]+)\/export\.csv$/);
+  if (classExport) return { data: classCsvBlob(state, classExport[1]) };
+
+
+  const classGradebook = path.match(/^\/classes\/([^/]+)\/gradebook$/);
+  if (classGradebook) {
+    const cls = findClass(state, classGradebook[1]);
+    const students = state.students
+      .filter((student) => student.class_id === cls.id)
+      .sort(compareStudents)
+      .map(studentOut);
+    const sessions = state.sessions
+      .filter((session) => session.class_id === cls.id)
+      .sort((a, b) => String(a.created_at || "").localeCompare(String(b.created_at || "")))
+      .map((session) => ({
+        id: session.id,
+        class_id: session.class_id,
+        title: session.title,
+        date: session.date,
+        weight: session.weight ?? 1,
+        category: session.category || "sonstige",
+        sl_type: session.category === "klausur" ? null : (session.sl_type === "written" ? "written" : "oral"),
+        created_at: session.created_at,
+      }));
+    const sessionIds = new Set(sessions.map((session) => session.id));
+    const grades = state.grades
+      .filter((grade) => sessionIds.has(grade.session_id))
+      .map((grade) => ({ session_id: grade.session_id, student_id: grade.student_id, value: grade.value }));
+    const average_overrides = (state.gradebook_overrides || [])
+      .filter((override) => override.class_id === cls.id)
+      .map((override) => ({ student_id: override.student_id, column: override.column, value: override.value }));
+    const average_weights = (state.gradebook_weights || [])
+      .filter((item) => item.class_id === cls.id)
+      .map((item) => ({ column: item.column, weight: item.weight }));
+    return {
+      data: {
+        class_id: cls.id,
+        class_name: cls.name || "",
+        grade_system: cls.grade_system || "grades_1_6",
+        students,
+        sessions,
+        grades,
+        average_overrides,
+        average_weights,
+      },
+    };
+  }
+  const classOne = path.match(/^\/classes\/([^/]+)$/);
+  if (classOne) {
+    const cls = findClass(state, classOne[1]);
+    const students = state.students
+      .filter((student) => student.class_id === cls.id)
+      .sort(compareStudents)
+      .map(studentOut);
+    return { data: { ...classOut(state, cls), students } };
+  }
+
+  const sessionOne = path.match(/^\/sessions\/([^/]+)$/);
+  if (sessionOne) {
+    const session = findSession(state, sessionOne[1]);
+    const cls = findClass(state, session.class_id);
+    const students = state.students
+      .filter((student) => student.class_id === session.class_id)
+      .sort(compareStudents)
+      .map((student) => {
+        const grade = state.grades.find((item) => item.session_id === session.id && item.student_id === student.id);
+        return { ...studentOut(student), grade: grade?.value || null };
+      });
+    return {
+      data: {
+        id: session.id,
+        class_id: session.class_id,
+        title: session.title,
+        date: session.date,
+        weight: session.weight ?? 1,
+        category: session.category || "sonstige",
+        sl_type: session.category === "klausur" ? null : (session.sl_type === "written" ? "written" : "oral"),
+        created_at: session.created_at,
+        students,
+        class_name: cls.name || "",
+        grade_system: cls.grade_system || "grades_1_6",
+      },
+    };
+  }
+
+  if (path === "/teacher-config") {
+    return mutateState((state) => {
+      const email = String(body.email || "").trim().toLowerCase();
+      state.teacher_config = {
+        name: String(body.name || "").trim(),
+        email,
+        password: String(body.password || ""),
+        updated_at: nowIso(),
+      };
+      return { data: { ok: true, name: state.teacher_config.name, email: state.teacher_config.email } };
+    });
+  }
+
+  if (path === "/mail/gradebook") {
+    httpError("SMTP-Versand ist in dieser Browser/iPad-Version nicht direkt möglich. Dafür braucht die App einen nativen Mail-Bridge-Teil oder einen lokalen Backend-Prozess im Schulnetz.", 501);
+  }
+
+  if (path === "/sessions") {
+    const params = new URLSearchParams(String(url).split("?")[1] || "");
+    const classId = params.get("class_id");
+    const sessions = state.sessions.filter((session) => !classId || session.class_id === classId);
+    return { data: sessions.slice().sort((a, b) => String(b.created_at || "").localeCompare(String(a.created_at || ""))) };
+  }
+
+  httpError(`Unbekannter lokaler GET-Endpunkt: ${path}`, 404);
+}
+
+async function post(url, body) {
+  const path = normalizePath(url);
+
+  if (path === "/import/peek") {
+    const parsed = await parseCsvForm(body);
+    const state = await getState();
+    const classes = parsed.classes.map((cls) => {
+      const sourceId = sourceIdForClassName(cls.name);
+      const existing = state.classes.find((item) => (item.source_id || sourceIdForClassName(item.name)) === sourceId);
+      return {
+        name: cls.name,
+        exists: !!existing,
+        grade_system: existing?.grade_system,
+        student_count: cls.students.length,
+      };
+    });
+    return { data: { classes, any_new: classes.some((cls) => !cls.exists) } };
+  }
+
+  if (path === "/import/csv") {
+    const parsed = await parseCsvForm(body);
+    const gradeSystem = body.get("grade_system") || "grades_1_6";
+    return mutateState((state) => {
+      const results = importParsedCsv(state, parsed, gradeSystem);
+      const totals = results.reduce((acc, item) => ({
+        added_students: acc.added_students + item.added_students,
+        updated_students: acc.updated_students + item.updated_students,
+        total_students: acc.total_students + item.total_students,
+      }), { added_students: 0, updated_students: 0, total_students: 0 });
+      return {
+        data: {
+          class_id: results[0]?.class_id,
+          class_name: results.length === 1 ? results[0].class_name : `${results.length} Klassen`,
+          new_class: results.some((item) => item.new_class),
+          class_count: results.length,
+          results,
+          ...totals,
+        },
+      };
+    });
+  }
+
+  if (path === "/sessions") {
+    return mutateState((state) => {
+      const cls = findClass(state, body.class_id);
+      const session = {
+        id: id(),
+        class_id: cls.id,
+        title: (body.title || "").trim() || "muendliche Mitarbeit",
+        date: (body.date || "").trim() || todayDe(),
+        weight: body.weight ?? 1,
+        category: body.category === "klausur" ? "klausur" : "sonstige",
+        sl_type: body.category === "klausur" ? null : (body.sl_type === "written" ? "written" : "oral"),
+        created_at: nowIso(),
+      };
+      state.sessions.push(session);
+      return { data: session };
+    });
+  }
+
+  const gradePost = path.match(/^\/sessions\/([^/]+)\/grades$/);
+  if (gradePost) {
+    return mutateState((state) => {
+      const session = findSession(state, gradePost[1]);
+      const student = state.students.find((item) => item.id === body.student_id && item.class_id === session.class_id);
+      if (!student) httpError("Lernende*r nicht gefunden", 404);
+      let grade = state.grades.find((item) => item.session_id === session.id && item.student_id === student.id);
+      if (!grade) {
+        grade = { id: id(), session_id: session.id, student_id: student.id, value: body.value, updated_at: nowIso() };
+        state.grades.push(grade);
+      } else {
+        grade.value = body.value;
+        grade.updated_at = nowIso();
+      }
+      return { data: { ok: true } };
+    });
+  }
+
+  httpError(`Unbekannter lokaler POST-Endpunkt: ${path}`, 404);
+}
+
+async function put(url, body) {
+  const path = normalizePath(url);
+
+  const sessionUpdate = path.match(/^\/sessions\/([^/]+)$/);
+  if (sessionUpdate) {
+    return mutateState((state) => {
+      const session = findSession(state, sessionUpdate[1]);
+      const title = String(body.title || "").trim();
+      if (title) session.title = title;
+      const date = String(body.date || "").trim();
+      if (date) session.date = date;
+      const weight = Number(body.weight);
+      session.weight = weight > 0 ? weight : 1;
+      if (session.category !== "klausur" && body.sl_type) {
+        session.sl_type = body.sl_type === "written" ? "written" : "oral";
+      }
+      session.updated_at = nowIso();
+      return {
+        data: {
+          id: session.id,
+          class_id: session.class_id,
+          title: session.title,
+          date: session.date,
+          weight: session.weight ?? 1,
+          category: session.category || "sonstige",
+          sl_type: session.category === "klausur" ? null : (session.sl_type === "written" ? "written" : "oral"),
+          created_at: session.created_at,
+        },
+      };
+    });
+  }
+  const gradeSystem = path.match(/^\/classes\/([^/]+)\/grade-system$/);
+  if (gradeSystem) {
+    return mutateState((state) => {
+      const cls = findClass(state, gradeSystem[1]);
+      if (!GRADE_SYSTEMS[body.grade_system]) httpError("Unbekanntes Notensystem");
+      cls.grade_system = body.grade_system;
+      return { data: { ok: true, grade_system: body.grade_system } };
+    });
+  }
+
+  const gradebookWeights = path.match(/^\/classes\/([^/]+)\/gradebook-weights$/);
+  if (gradebookWeights) {
+    return mutateState((state) => {
+      const cls = findClass(state, gradebookWeights[1]);
+      const column = ["sl_oral", "sl_written"].includes(body.column) ? body.column : null;
+      if (!column) httpError("Unbekannte Gewichtungsspalte", 400);
+      const weight = Number(body.weight);
+      if (!(weight > 0)) httpError("Gewichtung muss groesser als 0 sein", 400);
+      state.gradebook_weights = state.gradebook_weights || [];
+      state.gradebook_weights = state.gradebook_weights.filter((item) => !(item.class_id === cls.id && item.column === column));
+      state.gradebook_weights.push({
+        id: id(),
+        class_id: cls.id,
+        column,
+        weight,
+        updated_at: nowIso(),
+      });
+      return { data: { ok: true, column, weight } };
+    });
+  }
+
+  const gradebookOverride = path.match(/^\/classes\/([^/]+)\/gradebook-overrides$/);
+  if (gradebookOverride) {
+    return mutateState((state) => {
+      const cls = findClass(state, gradebookOverride[1]);
+      const student = state.students.find((item) => item.id === body.student_id && item.class_id === cls.id);
+      if (!student) httpError("Lernende*r nicht gefunden", 404);
+      const column = ["sl_oral", "sl_written", "sl", "ka", "final"].includes(body.column) ? body.column : null;
+      if (!column) httpError("Unbekannte Notenstand-Spalte", 400);
+      const value = String(body.value || "").trim();
+      state.gradebook_overrides = state.gradebook_overrides || [];
+      state.gradebook_overrides = state.gradebook_overrides.filter((override) => !(override.class_id === cls.id && override.student_id === student.id && override.column === column));
+      if (value) {
+        state.gradebook_overrides.push({
+          id: id(),
+          class_id: cls.id,
+          student_id: student.id,
+          column,
+          value,
+          updated_at: nowIso(),
+        });
+      }
+      return { data: { ok: true, value } };
+    });
+  }
+  const studentPhoto = path.match(/^\/students\/([^/]+)\/photo$/);
+  if (studentPhoto) {
+    return mutateState((state) => {
+      const student = findStudent(state, studentPhoto[1]);
+      student.photo = body.photo || null;
+      student.photo_updated_at = nowIso();
+      return { data: { ok: true, student: studentOut(student) } };
+    });
+  }
+
+  httpError(`Unbekannter lokaler PUT-Endpunkt: ${path}`, 404);
+}
+
+async function del(url) {
+  const path = normalizePath(url);
+
+  const studentPhoto = path.match(/^\/students\/([^/]+)\/photo$/);
+  if (studentPhoto) {
+    return mutateState((state) => {
+      const student = findStudent(state, studentPhoto[1]);
+      student.photo = null;
+      student.photo_updated_at = nowIso();
+      return { data: { ok: true } };
+    });
+  }
+
+  const sessionDelete = path.match(/^\/sessions\/([^/]+)$/);
+  if (sessionDelete) {
+    return mutateState((state) => {
+      const session = findSession(state, sessionDelete[1]);
+      state.grades = state.grades.filter((grade) => grade.session_id !== session.id);
+      state.sessions = state.sessions.filter((item) => item.id !== session.id);
+      return { data: { ok: true } };
+    });
+  }
+
+  const classSessions = path.match(/^\/classes\/([^/]+)\/sessions$/);
+  if (classSessions) {
+    return mutateState((state) => {
+      const sessionIds = state.sessions.filter((session) => session.class_id === classSessions[1]).map((session) => session.id);
+      state.grades = state.grades.filter((grade) => !sessionIds.includes(grade.session_id));
+      state.sessions = state.sessions.filter((session) => session.class_id !== classSessions[1]);
+      state.gradebook_overrides = (state.gradebook_overrides || []).filter((override) => override.class_id !== classSessions[1]);
+      return { data: { ok: true, deleted_sessions: sessionIds.length } };
+    });
+  }
+  const classOne = path.match(/^\/classes\/([^/]+)$/);
+  if (classOne) {
+    return mutateState((state) => {
+      const classId = classOne[1];
+      const sessionIds = state.sessions.filter((session) => session.class_id === classId).map((session) => session.id);
+      const studentIds = state.students.filter((student) => student.class_id === classId).map((student) => student.id);
+      state.classes = state.classes.filter((cls) => cls.id !== classId);
+      state.students = state.students.filter((student) => student.class_id !== classId);
+      state.sessions = state.sessions.filter((session) => session.class_id !== classId);
+      state.grades = state.grades.filter((grade) => !sessionIds.includes(grade.session_id) && !studentIds.includes(grade.student_id));
+      state.gradebook_overrides = (state.gradebook_overrides || []).filter((override) => override.class_id !== classId && !studentIds.includes(override.student_id));
+      state.gradebook_weights = (state.gradebook_weights || []).filter((item) => item.class_id !== classId);
+      return { data: { ok: true } };
+    });
+  }
+
+  const gradeDelete = path.match(/^\/sessions\/([^/]+)\/grades\/([^/]+)$/);
+  if (gradeDelete) {
+    return mutateState((state) => {
+      state.grades = state.grades.filter((grade) => !(grade.session_id === gradeDelete[1] && grade.student_id === gradeDelete[2]));
+      return { data: { ok: true } };
+    });
+  }
+
+  httpError(`Unbekannter lokaler DELETE-Endpunkt: ${path}`, 404);
+}
+
+const api = { get, post, put, delete: del };
+export default api;
+
+
+
+

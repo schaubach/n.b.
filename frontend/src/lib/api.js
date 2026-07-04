@@ -1,8 +1,5 @@
-import axios from "axios";
+import api from "./localApi";
 
-const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
-export const API = `${BACKEND_URL}/api`;
-
-export const api = axios.create({ baseURL: API });
-
+export const API = "local-encrypted-indexeddb";
+export { isUnlocked, lockVault } from "./cryptoStore";
 export default api;

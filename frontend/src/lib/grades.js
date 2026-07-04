@@ -89,7 +89,7 @@ export function allGrades(systemId) {
 export const TIER_COLORS = {
   1: "bg-emerald-500 text-white border-emerald-700",
   2: "bg-lime-400 text-stone-900 border-lime-600",
-  3: "bg-amber-400 text-stone-900 border-amber-600",
+  3: "bg-yellow-500 text-stone-900 border-yellow-700",
   4: "bg-orange-400 text-white border-orange-600",
   5: "bg-red-500 text-white border-red-700",
   6: "bg-red-800 text-white border-red-950",
@@ -113,7 +113,7 @@ export function gradeColorClasses(value, systemId) {
 
 // Solid accent hex per tier (matches TIER_COLORS) for the assign flash.
 export const TIER_ACCENT = {
-  1: "#10b981", 2: "#a3e635", 3: "#fbbf24", 4: "#fb923c", 5: "#ef4444", 6: "#991b1b",
+  1: "#10b981", 2: "#a3e635", 3: "#eab308", 4: "#fb923c", 5: "#ef4444", 6: "#991b1b",
 };
 
 export function gradeAccent(value, systemId) {
