@@ -1,0 +1,206 @@
+import React, { useEffect, useMemo, useRef, useState } from "react";
+import { useNavigate, useParams } from "react-router-dom";
+import { ArrowLeft, Loader2, Plus, Save, Trash2 } from "lucide-react";
+import api from "../lib/api";
+import { gradeColorClasses } from "../lib/grades";
+import { evaluatePercent, findGradeScale, pointsNeededForBetter } from "../lib/gradeScales";
+
+function numberValue(value) {
+  const n = Number(String(value ?? "").replace(",", "."));
+  return Number.isFinite(n) ? n : 0;
+}
+
+function formatNumber(value, digits = 1) {
+  if (typeof value !== "number" || !Number.isFinite(value)) return "-";
+  const rounded = Number(value.toFixed(digits));
+  return String(rounded).replace(".", ",");
+}
+
+function entryKey(studentId, columnId) {
+  return studentId + "::" + columnId;
+}
+
+function makeColumn(index) {
+  return { id: crypto.randomUUID ? crypto.randomUUID() : String(Date.now() + Math.random()), title: "Teil " + index, max_points: 0 };
+}
+
+export default function PointsGrade() {
+  const { sessionId } = useParams();
+  const navigate = useNavigate();
+  const [data, setData] = useState(null);
+  const [columns, setColumns] = useState([]);
+  const [entries, setEntries] = useState({});
+  const [scaleId, setScaleId] = useState("MEDA");
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  const [savedTick, setSavedTick] = useState(0);
+  const dirtyRef = useRef(false);
+
+  useEffect(() => {
+    (async () => {
+      setLoading(true);
+      try {
+        const res = await api.get("/sessions/" + sessionId + "/points");
+        setData(res.data);
+        setColumns(res.data.columns || []);
+        setScaleId(res.data.session.grade_scale_id || res.data.grade_scale?.id || "MEDA");
+        const map = {};
+        (res.data.entries || []).forEach((entry) => { map[entryKey(entry.student_id, entry.column_id)] = String(entry.points ?? ""); });
+        setEntries(map);
+        dirtyRef.current = false;
+      } catch (err) {
+        setError("Punkteansicht konnte nicht geladen werden.");
+      } finally {
+        setLoading(false);
+      }
+    })();
+  }, [sessionId]);
+
+  const scale = useMemo(() => findGradeScale(data?.grade_scales || [], scaleId), [data?.grade_scales, scaleId]);
+
+  const rows = useMemo(() => {
+    const max = columns.reduce((sum, column) => sum + numberValue(column.max_points), 0);
+    return (data?.students || []).map((student) => {
+      const achieved = columns.reduce((sum, column) => sum + numberValue(entries[entryKey(student.id, column.id)]), 0);
+      const percent = max > 0 ? achieved / max * 100 : null;
+      const evaluated = evaluatePercent(percent, scale, data?.session?.grade_system);
+      const better = pointsNeededForBetter(achieved, max, scale, evaluated.rowIndex);
+      return { student, achieved, max, percent, grade: evaluated.value, better };
+    });
+  }, [columns, entries, data?.students, data?.session?.grade_system, scale]);
+
+  const markDirty = () => { dirtyRef.current = true; };
+
+  const save = async () => {
+    if (!data || !dirtyRef.current) return;
+    setSaving(true);
+    setError("");
+    try {
+      const payloadEntries = [];
+      Object.entries(entries).forEach(([key, value]) => {
+        const [student_id, column_id] = key.split("::");
+        if (value !== "") payloadEntries.push({ student_id, column_id, points: numberValue(value) });
+      });
+      await api.put("/sessions/" + sessionId + "/points", { grade_scale_id: scaleId, columns, entries: payloadEntries });
+      dirtyRef.current = false;
+      setSavedTick((tick) => tick + 1);
+    } catch (err) {
+      setError("Punkte konnten nicht gespeichert werden.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!data || !dirtyRef.current) return undefined;
+    const timer = setTimeout(save, 500);
+    return () => clearTimeout(timer);
+  }, [columns, entries, scaleId]);
+
+  const addColumn = () => {
+    setColumns((current) => [...current, makeColumn(current.length + 1)]);
+    markDirty();
+  };
+
+  const removeColumn = (columnId) => {
+    setColumns((current) => current.filter((column) => column.id !== columnId));
+    setEntries((current) => Object.fromEntries(Object.entries(current).filter(([key]) => !key.endsWith("::" + columnId))));
+    markDirty();
+  };
+
+  const updateColumn = (columnId, patch) => {
+    setColumns((current) => current.map((column) => column.id === columnId ? { ...column, ...patch } : column));
+    markDirty();
+  };
+
+  const updateEntry = (studentId, columnId, value) => {
+    setEntries((current) => ({ ...current, [entryKey(studentId, columnId)]: value }));
+    markDirty();
+  };
+
+  if (loading) {
+    return <div className="flex h-screen items-center justify-center bg-stone-50"><Loader2 className="h-8 w-8 animate-spin text-stone-400" /></div>;
+  }
+
+  if (!data) {
+    return <div className="flex h-screen items-center justify-center bg-stone-50 font-bold text-rose-700">{error || "Nicht gefunden"}</div>;
+  }
+
+  return (
+    <div className="flex h-screen flex-col overflow-hidden bg-stone-50 bg-dots">
+      <header className="flex shrink-0 items-center gap-3 border-b-2 border-stone-900 bg-white px-4 py-3 sm:px-6">
+        <button onClick={() => navigate("/summary/" + sessionId)} className="flex items-center gap-2 rounded-full border-2 border-stone-900 bg-white px-3 py-2 font-bold text-stone-900 shadow-brutal-sm">
+          <ArrowLeft className="h-5 w-5" /> Übersicht
+        </button>
+        <div className="min-w-0 flex-1 text-center">
+          <p className="text-xs font-bold uppercase tracking-[0.18em] text-stone-400">Punkte -> Noten</p>
+          <h1 className="truncate font-heading text-xl font-black text-stone-900">{data.session.class_name} · {data.session.title}</h1>
+        </div>
+        <button onClick={save} disabled={saving || !dirtyRef.current} className="flex items-center gap-2 rounded-xl border-2 border-stone-900 bg-stone-900 px-4 py-2.5 font-heading font-extrabold text-white disabled:opacity-40">
+          {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />} Speichern
+        </button>
+      </header>
+
+      <div className="flex shrink-0 flex-col gap-3 border-b-2 border-stone-200 bg-white px-4 py-3 sm:flex-row sm:items-center sm:px-6">
+        <label className="flex items-center gap-2 font-bold text-stone-700">
+          Skala
+          <select value={scaleId} onChange={(event) => { setScaleId(event.target.value); markDirty(); }} className="rounded-xl border-2 border-stone-300 bg-white px-3 py-2 font-bold text-stone-900">
+            {(data.grade_scales || []).map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
+          </select>
+        </label>
+        <button onClick={addColumn} className="flex items-center justify-center gap-2 rounded-xl border-2 border-stone-900 bg-amber-300 px-4 py-2.5 font-heading font-extrabold text-stone-900 shadow-brutal-sm">
+          <Plus className="h-4 w-4" /> Spalte hinzufügen
+        </button>
+        <div className="text-sm font-bold text-stone-500">{saving ? "Speichert ..." : savedTick ? "Gespeichert" : "Änderungen werden automatisch gespeichert"}</div>
+      </div>
+
+      {error && <div className="mx-4 mt-3 rounded-2xl border-2 border-rose-300 bg-rose-100 px-4 py-3 font-bold text-rose-900">{error}</div>}
+
+      <main className="min-h-0 flex-1 overflow-auto p-4 sm:p-6">
+        <div className="min-w-max overflow-hidden rounded-2xl border-2 border-stone-900 bg-white shadow-brutal-sm">
+          <table className="w-full border-separate border-spacing-0 text-sm">
+            <thead>
+              <tr>
+                <th className="sticky left-0 top-0 z-40 min-w-56 border-b-2 border-stone-900 bg-stone-900 px-4 py-3 text-left font-heading font-black text-white">Lernende*r</th>
+                {columns.map((column, index) => (
+                  <th key={column.id} className="sticky top-0 z-30 min-w-36 border-b-2 border-l border-stone-900 bg-amber-300 p-2 text-stone-900">
+                    <input value={column.title} onChange={(event) => updateColumn(column.id, { title: event.target.value })} className="w-full rounded-lg border-2 border-stone-900/20 bg-white/80 px-2 py-1 text-center font-bold" />
+                    <div className="mt-1 flex items-center gap-1">
+                      <input type="number" min="0" step="0.5" value={column.max_points} onChange={(event) => updateColumn(column.id, { max_points: event.target.value })} className="w-24 rounded-lg border-2 border-stone-900/20 bg-white/80 px-2 py-1 text-center font-mono font-black" />
+                      <button onClick={() => removeColumn(column.id)} className="rounded-lg border-2 border-rose-300 bg-white p-1 text-rose-700" aria-label={"Spalte " + (index + 1) + " löschen"}><Trash2 className="h-4 w-4" /></button>
+                    </div>
+                  </th>
+                ))}
+                <th className="sticky top-0 z-30 min-w-56 border-b-2 border-l-2 border-stone-900 bg-stone-800 px-4 py-3 text-center font-heading font-black text-white">Auswertung</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((row, rowIndex) => {
+                const bg = rowIndex % 2 === 0 ? "bg-white" : "bg-stone-50";
+                const near = row.better && row.better.points >= 0.5 && row.better.points <= 1;
+                return (
+                  <tr key={row.student.id} className={bg}>
+                    <td className={"sticky left-0 z-20 border-t-2 border-stone-200 px-4 py-3 font-bold text-stone-900 " + bg}>{row.student.first_name} <span className="font-black">{row.student.last_name}</span></td>
+                    {columns.map((column) => (
+                      <td key={column.id} className="border-l border-t-2 border-stone-200 px-2 py-2 text-center">
+                        <input type="number" min="0" step="0.5" value={entries[entryKey(row.student.id, column.id)] || ""} onChange={(event) => updateEntry(row.student.id, column.id, event.target.value)} className="w-24 rounded-xl border-2 border-stone-200 px-2 py-2 text-center font-mono font-black outline-none focus:border-stone-900" />
+                      </td>
+                    ))}
+                    <td className="border-l-2 border-t-2 border-stone-200 px-3 py-2 text-center">
+                      <div className="flex items-center justify-center gap-2">
+                        {row.grade ? <span className={"rounded-xl border-2 px-3 py-1 font-mono text-xl font-black " + gradeColorClasses(row.grade, data.session.grade_system)}>{row.grade}</span> : <span className="font-bold text-stone-300">-</span>}
+                        <span className="font-mono text-sm font-bold text-stone-600">{formatNumber(row.achieved)} / {formatNumber(row.max)} · {formatNumber(row.percent)}%</span>
+                      </div>
+                      {row.better && <div className={"mt-1 inline-flex rounded-full px-2 py-0.5 text-xs font-black " + (near ? "bg-amber-300 text-stone-900 ring-2 ring-stone-900" : "bg-stone-100 text-stone-600")}>{formatNumber(row.better.points)} P. bis besser</div>}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </main>
+    </div>
+  );
+}

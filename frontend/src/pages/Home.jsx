@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Users, Trash2, CheckCircle2,
-  Loader2, FileUp, X, Plus, Camera, Table2, Mail, UserRound,
+  Loader2, FileUp, X, Plus, Camera, Table2, Mail, UserRound, Percent,
 } from "lucide-react";
 import api from "../lib/api";
 import { GRADE_SYSTEMS } from "../lib/grades";
@@ -13,6 +13,7 @@ import SessionSetupModal from "../components/SessionSetupModal";
 import PhotoManager from "../components/PhotoManager";
 import GradebookModal from "../components/GradebookModal";
 import TeacherConfigModal from "../components/TeacherConfigModal";
+import GradeScaleManager from "../components/GradeScaleManager";
 
 export default function Home() {
   const navigate = useNavigate();
@@ -26,6 +27,9 @@ export default function Home() {
   const [photoClass, setPhotoClass] = useState(null);
   const [gradebookClass, setGradebookClass] = useState(null);
   const [teacherConfigOpen, setTeacherConfigOpen] = useState(false);
+  const [gradeScaleOpen, setGradeScaleOpen] = useState(false);
+  const [gradeScales, setGradeScales] = useState([]);
+  const [importOptions, setImportOptions] = useState(null);
   const fileRef = useRef(null);
 
   const closeModal = () => setModal({ open: false });
@@ -33,8 +37,9 @@ export default function Home() {
   const load = async () => {
     setLoading(true);
     try {
-      const res = await api.get("/classes");
+      const [res, scaleRes] = await Promise.all([api.get("/classes"), api.get("/grade-scales")]);
       setClasses(res.data);
+      setGradeScales(scaleRes.data);
     } finally {
       setLoading(false);
     }
@@ -42,7 +47,7 @@ export default function Home() {
 
   useEffect(() => { load(); }, []);
 
-  const doImport = async (arr, gs) => {
+  const doImport = async (arr, gs, gradeScaleId = "MEDA") => {
     setImporting(true);
     setError(null);
     try {
@@ -50,6 +55,7 @@ export default function Home() {
         const fd = new FormData();
         fd.append("file", file);
         fd.append("grade_system", gs);
+        fd.append("grade_scale_id", gradeScaleId);
         const res = await api.post("/import/csv", fd);
         setResult(res.data);
       }
@@ -77,20 +83,9 @@ export default function Home() {
       }
       setImporting(false);
       if (anyNew) {
-        setModal({
-          open: true,
-          title: "Notensystem der neuen Klasse",
-          description: "Diese Auswahl wird für die Klasse gespeichert und gilt für alle Bewertungen dieser Klasse.",
-          actions: [
-            { key: "g16", testid: "gs-grades-1-6", variant: "primary", label: "Noten 1–6 (mit Tendenzen)",
-              onClick: () => { closeModal(); doImport(arr, "grades_1_6"); } },
-            { key: "p15", testid: "gs-points-0-15", variant: "primary", label: "Punkte 0–15",
-              onClick: () => { closeModal(); doImport(arr, "points_0_15"); } },
-            { key: "cancel", testid: "modal-cancel", variant: "ghost", label: "Abbrechen", onClick: closeModal },
-          ],
-        });
+        setImportOptions({ files: arr, gradeSystem: "grades_1_6", gradeScaleId: gradeScales[0]?.id || "MEDA" });
       } else {
-        await doImport(arr, "grades_1_6");
+        await doImport(arr, "grades_1_6", gradeScales[0]?.id || "MEDA");
       }
     } catch (e) {
       setImporting(false);
@@ -102,7 +97,7 @@ export default function Home() {
 
   const startRound = async (classId, opts) => {
     const res = await api.post("/sessions", { class_id: classId, ...opts });
-    navigate(`/grade/${res.data.id}`);
+    navigate(res.data.points_mode ? `/points/${res.data.id}` : `/grade/${res.data.id}`);
   };
 
   const removeClass = (cls) => {
@@ -180,6 +175,16 @@ export default function Home() {
             </div>
           </div>
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+            <button
+              type="button"
+              onClick={() => setGradeScaleOpen(true)}
+              data-testid="grade-scale-button"
+              className="inline-flex items-center justify-center gap-2 rounded-2xl border-2 border-stone-900 bg-amber-300 px-4 py-3 font-heading font-extrabold text-stone-900 shadow-brutal-sm transition-all active:translate-y-0.5 active:shadow-none"
+              aria-label="Notenskalen"
+            >
+              <Percent className="w-5 h-5" />
+              <span className="hidden sm:inline">Skalen</span>
+            </button>
             <button
               type="button"
               onClick={() => setTeacherConfigOpen(true)}
@@ -293,11 +298,25 @@ export default function Home() {
         open={teacherConfigOpen}
         onClose={() => setTeacherConfigOpen(false)}
       />
+      <GradeScaleManager
+        open={gradeScaleOpen}
+        onClose={() => setGradeScaleOpen(false)}
+        onChanged={load}
+      />
+      <ImportOptionsModal
+        options={importOptions}
+        scales={gradeScales}
+        onChange={setImportOptions}
+        onCancel={() => setImportOptions(null)}
+        onImport={(next) => { setImportOptions(null); doImport(next.files, next.gradeSystem, next.gradeScaleId); }}
+      />
       <SessionSetupModal
         open={!!setup}
         className={setup?.cls?.name}
         category={setup?.category}
         gradeSystem={setup?.cls?.grade_system}
+        gradeScaleId={setup?.cls?.grade_scale_id}
+        gradeScales={gradeScales}
         onStart={async (opts) => { const c = setup.cls; setSetup(null); await startRound(c.id, opts); }}
         onClose={() => setSetup(null)}
       />
@@ -353,6 +372,9 @@ function ClassCard({ c, onStart, onDelete, onDeleteGrades, onPhotos, onGradebook
         <span className="flex items-center gap-1.5"><Camera className="w-4 h-4" /> {c.photo_count || 0}</span>
         <span className="px-2 py-0.5 rounded-full bg-stone-100 text-stone-600 font-bold text-xs" data-testid={`class-system-${c.id}`}>
           {sysLabel}
+        </span>
+        <span className="px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 font-bold text-xs">
+          {c.grade_scale_name || "MEDA"}
         </span>
       </div>
 
@@ -415,3 +437,37 @@ function ClassCard({ c, onStart, onDelete, onDeleteGrades, onPhotos, onGradebook
 }
 
 
+
+
+function ImportOptionsModal({ options, scales, onChange, onCancel, onImport }) {
+  if (!options) return null;
+  const update = (patch) => onChange({ ...options, ...patch });
+  return (
+    <div className="fixed inset-0 z-[130] flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-stone-900/45 backdrop-blur-sm" onClick={onCancel} />
+      <div className="relative w-full max-w-md rounded-3xl border-2 border-stone-900 bg-white p-6 shadow-brutal">
+        <h3 className="font-heading text-2xl font-black text-stone-900">Neue Klasse importieren</h3>
+        <p className="mt-1 text-sm font-bold text-stone-500">Wähle Notenschema und Standardnotenskala für die neue Klasse.</p>
+        <div className="mt-5 space-y-4">
+          <label className="block">
+            <span className="text-sm font-bold text-stone-700">Notenschema</span>
+            <select value={options.gradeSystem} onChange={(e) => update({ gradeSystem: e.target.value })} className="mt-1 w-full rounded-xl border-2 border-stone-300 bg-white px-4 py-3 font-bold text-stone-900">
+              <option value="grades_1_6">Noten 1-6</option>
+              <option value="points_0_15">Punkte 0-15</option>
+            </select>
+          </label>
+          <label className="block">
+            <span className="text-sm font-bold text-stone-700">Standardnotenskala</span>
+            <select value={options.gradeScaleId} onChange={(e) => update({ gradeScaleId: e.target.value })} className="mt-1 w-full rounded-xl border-2 border-stone-300 bg-white px-4 py-3 font-bold text-stone-900">
+              {(scales || []).map((scale) => <option key={scale.id} value={scale.id}>{scale.name}</option>)}
+            </select>
+          </label>
+        </div>
+        <div className="mt-6 grid gap-2 sm:grid-cols-2">
+          <button type="button" onClick={onCancel} className="rounded-xl border-2 border-stone-300 bg-white px-4 py-3 font-heading font-extrabold text-stone-700">Abbrechen</button>
+          <button type="button" onClick={() => onImport(options)} className="rounded-xl border-2 border-stone-900 bg-stone-900 px-4 py-3 font-heading font-extrabold text-white">Importieren</button>
+        </div>
+      </div>
+    </div>
+  );
+}
