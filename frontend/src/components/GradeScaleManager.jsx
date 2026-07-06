@@ -251,7 +251,7 @@ export default function GradeScaleManager({ open, onClose, onChanged }) {
                     </tbody>
                   </table>
                 </div>
-                <p className="mt-3 rounded-2xl border-2 border-amber-300 bg-amber-100 px-4 py-3 text-sm font-bold text-amber-950">Noten und Punkte sind fest gekoppelt. In der GUI werden nur die Prozentgrenzen verändert; bestehende Bewertungen übernehmen Änderungen nicht automatisch.</p>
+                <p className="mt-3 rounded-2xl border-2 border-amber-300 bg-amber-100 px-4 py-3 text-sm font-bold text-amber-950">Bestehende Bewertungen übernehmen Änderungen nicht automatisch.</p>
                 <p className="mt-2 text-sm font-bold text-stone-500">{saving ? "Speichert automatisch ..." : "Änderungen werden automatisch gespeichert."}</p>
                 {message && <p className="mt-3 rounded-xl border-2 border-emerald-300 bg-emerald-100 px-4 py-3 font-bold text-emerald-900">{message}</p>}
                 {error && <p className="mt-3 rounded-xl border-2 border-rose-300 bg-rose-100 px-4 py-3 font-bold text-rose-900">{error}</p>}
