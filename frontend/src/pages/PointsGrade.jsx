@@ -184,15 +184,6 @@ export default function PointsGrade() {
     markDirty();
   };
 
-  const addScaleRow = () => {
-    setLocalScale((current) => {
-      const base = normalizeScale(current || selectedScale);
-      base.rows = [...base.rows, { grade: "", points: "", minPercent: 0 }];
-      return base;
-    });
-    markDirty();
-  };
-
   const removeScaleRow = (index) => {
     setLocalScale((current) => {
       const base = normalizeScale(current || selectedScale);
@@ -340,7 +331,6 @@ export default function PointsGrade() {
                 })}
               </tbody>
             </table>
-            <button type="button" onClick={addScaleRow} className="m-3 inline-flex items-center gap-2 rounded-xl border-2 border-stone-900 bg-white px-4 py-2 font-bold"><Plus className="h-4 w-4" /> Zeile hinzufügen</button>
           </div>
         </section>
       </main>

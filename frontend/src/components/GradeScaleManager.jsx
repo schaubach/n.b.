@@ -6,10 +6,6 @@ import { gradeColorClasses } from "../lib/grades";
 import { gradeScaleCsv, parseGradeScaleCsv } from "../lib/gradeScales";
 import { triggerDownload } from "../lib/exportClass";
 
-function emptyRow() {
-  return { grade: "", points: "", minPercent: 0 };
-}
-
 function scaleToRows(scale) {
   return (scale?.rows || []).map((row) => ({ grade: row.grade || "", points: row.points || "", minPercent: row.minPercent ?? 0 }));
 }
@@ -151,8 +147,7 @@ export default function GradeScaleManager({ open, onClose, onChanged }) {
                     </tbody>
                   </table>
                 </div>
-                <button type="button" onClick={() => setRows((current) => [...current, emptyRow()])} className="mt-3 rounded-xl border-2 border-stone-900 bg-white px-4 py-2 font-bold">Zeile hinzufügen</button>
-                <p className="mt-2 text-sm font-bold text-stone-500">Format beim Export: <code>Note;Punkte;Prozent_ab</code>.</p>
+                <p className="mt-3 rounded-2xl border-2 border-amber-300 bg-amber-100 px-4 py-3 text-sm font-bold text-amber-950">Änderungen an Notenskalen werden nicht automatisch in bereits bestehende Bewertungen übernommen.</p>
                 {message && <p className="mt-3 rounded-xl border-2 border-emerald-300 bg-emerald-100 px-4 py-3 font-bold text-emerald-900">{message}</p>}
                 {error && <p className="mt-3 rounded-xl border-2 border-rose-300 bg-rose-100 px-4 py-3 font-bold text-rose-900">{error}</p>}
                 <div className="mt-4 grid gap-2 sm:grid-cols-2">
