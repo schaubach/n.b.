@@ -112,6 +112,7 @@ export default function PointsGrade() {
   }, [activeScale, data?.session?.grade_system, maxPoints, rows]);
 
   const scaleChanged = useMemo(() => scaleSignature(activeScale) !== scaleSignature(selectedScale), [activeScale, selectedScale]);
+  const showScalePoints = data?.session?.grade_system === "points_0_15";
 
   const save = async () => {
     if (!data || !dirtyRef.current) return;
@@ -312,7 +313,7 @@ export default function PointsGrade() {
               <thead>
                 <tr>
                   <th className="bg-stone-100 px-2 py-2 text-left font-heading font-black text-stone-900">Note</th>
-                  <th className="bg-stone-100 px-2 py-2 text-left font-heading font-black text-stone-900">Punkte</th>
+                  {showScalePoints && <th className="bg-stone-100 px-2 py-2 text-left font-heading font-black text-stone-900">Punkte</th>}
                   <th className="bg-stone-100 px-2 py-2 text-left font-heading font-black text-stone-900">%</th>
                   <th className="bg-stone-100 px-2 py-2"></th>
                 </tr>
@@ -323,7 +324,7 @@ export default function PointsGrade() {
                   return (
                     <tr key={index}>
                       <td className="border-t-2 border-stone-200 p-2"><input value={row.grade} onChange={(event) => updateScaleRow(index, { grade: event.target.value })} className={"w-20 rounded-xl border-2 px-2 py-2 text-center font-mono font-black " + gradeColorClasses(value, data.session.grade_system)} /></td>
-                      <td className="border-t-2 border-stone-200 p-2"><input value={row.points} onChange={(event) => updateScaleRow(index, { points: event.target.value })} className="w-20 rounded-xl border-2 border-stone-200 px-2 py-2 text-center font-mono font-black" /></td>
+                      {showScalePoints && <td className="border-t-2 border-stone-200 p-2"><input value={row.points} onChange={(event) => updateScaleRow(index, { points: event.target.value })} className="w-20 rounded-xl border-2 border-stone-200 px-2 py-2 text-center font-mono font-black" /></td>}
                       <td className="border-t-2 border-stone-200 p-2"><input type="number" step="0.1" value={row.minPercent} onChange={(event) => updateScaleRow(index, { minPercent: event.target.value })} className="w-24 rounded-xl border-2 border-stone-200 px-2 py-2 text-center font-mono font-black" /></td>
                       <td className="border-t-2 border-stone-200 p-2"><button type="button" onClick={() => removeScaleRow(index)} className="rounded-xl border-2 border-rose-300 bg-white p-2 text-rose-700"><Trash2 className="h-4 w-4" /></button></td>
                     </tr>
