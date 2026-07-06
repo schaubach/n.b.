@@ -112,7 +112,6 @@ function buildRows(data) {
     const kaAverage = weightedAverage(sessionCells
       .filter((cell) => cell.session.category === "klausur")
       .map((cell) => ({ value: cell.numeric, weight: cell.session.weight })));
-    const slAverage = weightedPair(slOralAverage, slWrittenAverage, weights.sl_oral, weights.sl_written);
     const overridesForStudent = {
       sl_oral: overrideMap.get(`${student.id}:sl_oral`) || "",
       sl_written: overrideMap.get(`${student.id}:sl_written`) || "",
@@ -132,7 +131,7 @@ function buildRows(data) {
       sessionCells,
       slOralAverage,
       slWrittenAverage,
-      slAverage,
+      slAverage: computedEffectiveSl,
       kaAverage,
       finalGrade,
       overrides: overridesForStudent,
