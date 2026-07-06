@@ -87,6 +87,10 @@ function weightedPair(first, second, firstWeight, secondWeight) {
   return null;
 }
 
+function roundedAverageNumber(value, systemId) {
+  return gradeToNumber(displayValueFromAverage(value, systemId), systemId);
+}
+
 function buildRows(data) {
   const sessions = sortedSessions(data);
   const students = data.students || [];
@@ -119,8 +123,8 @@ function buildRows(data) {
       ka: overrideMap.get(`${student.id}:ka`) || "",
       final: overrideMap.get(`${student.id}:final`) || "",
     };
-    const effectiveSlOral = overridesForStudent.sl_oral ? gradeToNumber(overridesForStudent.sl_oral, data.grade_system) : slOralAverage;
-    const effectiveSlWritten = overridesForStudent.sl_written ? gradeToNumber(overridesForStudent.sl_written, data.grade_system) : slWrittenAverage;
+    const effectiveSlOral = overridesForStudent.sl_oral ? gradeToNumber(overridesForStudent.sl_oral, data.grade_system) : roundedAverageNumber(slOralAverage, data.grade_system);
+    const effectiveSlWritten = overridesForStudent.sl_written ? gradeToNumber(overridesForStudent.sl_written, data.grade_system) : roundedAverageNumber(slWrittenAverage, data.grade_system);
     const computedEffectiveSl = weightedPair(effectiveSlOral, effectiveSlWritten, weights.sl_oral, weights.sl_written);
     const effectiveSl = overridesForStudent.sl ? gradeToNumber(overridesForStudent.sl, data.grade_system) : computedEffectiveSl;
     const effectiveKa = overridesForStudent.ka ? gradeToNumber(overridesForStudent.ka, data.grade_system) : kaAverage;
