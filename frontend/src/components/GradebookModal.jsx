@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { AnimatePresence, motion } from "framer-motion";
 import { AlertTriangle, CheckCircle2, ChevronLeft, ChevronRight, Download, FileSpreadsheet, Loader2, Mail, Printer, Send, X } from "lucide-react";
 import api from "../lib/api";
@@ -91,14 +92,15 @@ function buildRows(data) {
   const grades = data.grades || [];
   const overrides = data.average_overrides || [];
   const weights = averageWeights(data);
-  const gradeMap = new Map(grades.map((grade) => [`${grade.session_id}:${grade.student_id}`, grade.value]));
+  const gradeMap = new Map(grades.map((grade) => [`${grade.session_id}:${grade.student_id}`, grade]));
   const overrideMap = new Map(overrides.map((override) => [`${override.student_id}:${override.column}`, override.value]));
 
   return students.map((student) => {
     const sessionCells = sessions.map((session) => {
-      const value = gradeMap.get(`${session.id}:${student.id}`) || "";
+      const grade = gradeMap.get(`${session.id}:${student.id}`);
+      const value = grade?.value || "";
       const numeric = gradeToNumber(value, data.grade_system);
-      return { session, value, numeric };
+      return { session, value, numeric, calculated_value: grade?.calculated_value || "", manual_override: !!grade?.manual_override };
     });
     const slOralAverage = weightedAverage(sessionCells
       .filter((cell) => cell.session.category !== "klausur" && slType(cell.session) === "oral")
@@ -404,6 +406,7 @@ function AverageCell({ row, column, tone, systemId, onEdit }) {
 
 function SessionGradeCell({ row, cell, systemId, onEdit }) {
   const toneBg = cell.session.category === "klausur" ? "bg-sky-50" : "bg-emerald-50";
+  const showCalculated = cell.calculated_value && (cell.manual_override || cell.calculated_value !== cell.value);
 
   return (
     <td className={`border-l border-t-2 border-stone-200 px-2 py-2 text-center align-middle ${toneBg}`}>
@@ -411,10 +414,11 @@ function SessionGradeCell({ row, cell, systemId, onEdit }) {
         <button
           type="button"
           onClick={() => onEdit(row, cell)}
-          className={`inline-flex min-w-12 justify-center rounded-xl border-2 px-2.5 py-1 font-mono text-base font-black shadow-brutal-sm transition-transform active:scale-95 ${gradeColorClasses(cell.value, systemId)}`}
+          className={`inline-flex min-w-12 flex-col items-center justify-center rounded-xl border-2 px-2.5 py-1 font-mono text-base font-black shadow-brutal-sm transition-transform active:scale-95 ${gradeColorClasses(cell.value, systemId)}`}
           title="Note anpassen"
         >
-          {cell.value}
+          <span>{cell.value}</span>
+          {showCalculated && <span className="mt-0.5 text-[10px] font-black opacity-80">ber. {cell.calculated_value}</span>}
         </button>
       ) : (
         <button
@@ -556,6 +560,7 @@ function HeaderEditor({ editor, onSaveSession, onDeleteSession, onSaveAverageWei
 }
 
 export default function GradebookModal({ classId, className, open, onClose }) {
+  const navigate = useNavigate();
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -655,7 +660,7 @@ export default function GradebookModal({ classId, className, open, onClose }) {
 
   const editGrade = (row, cell) => {
     const prefix = cell.session.category === "klausur" ? examTerms(data.grade_system).short : (slType(cell.session) === "written" ? "SL schrftl." : "SL mündl.");
-    setPicker({ kind: "grade", student: row.student, session: cell.session, label: `${prefix}: ${cell.session.title} ${cell.session.date}`, currentValue: cell.value || "" });
+    setPicker({ kind: "grade", student: row.student, session: cell.session, label: `${prefix}: ${cell.session.title} ${cell.session.date}`, currentValue: cell.value || "", currentCalculated: cell.calculated_value || "" });
   };
 
   const saveAverageOverride = async (value) => {
@@ -667,11 +672,19 @@ export default function GradebookModal({ classId, className, open, onClose }) {
   };
 
   const saveSessionGrade = async (value) => {
-    if (value) await api.post(`/sessions/${picker.session.id}/grades`, { student_id: picker.student.id, value });
-    else await api.delete(`/sessions/${picker.session.id}/grades/${picker.student.id}`);
+    const isPoints = !!picker.session.points_mode;
+    const calculated = picker.currentCalculated || "";
+    if (value) {
+      await api.post(`/sessions/${picker.session.id}/grades`, { student_id: picker.student.id, value, calculated_value: calculated, manual_override: isPoints });
+    } else if (isPoints && calculated) {
+      await api.post(`/sessions/${picker.session.id}/grades`, { student_id: picker.student.id, value: calculated, calculated_value: calculated, manual_override: false });
+    } else {
+      await api.delete(`/sessions/${picker.session.id}/grades/${picker.student.id}`);
+    }
     setData((current) => {
       const rest = (current.grades || []).filter((grade) => !(grade.session_id === picker.session.id && grade.student_id === picker.student.id));
-      return { ...current, grades: value ? [...rest, { session_id: picker.session.id, student_id: picker.student.id, value }] : rest };
+      const nextValue = value || (isPoints ? calculated : "");
+      return { ...current, grades: nextValue ? [...rest, { session_id: picker.session.id, student_id: picker.student.id, value: nextValue, calculated_value: calculated, manual_override: !!(isPoints && value) }] : rest };
     });
   };
 
@@ -763,8 +776,8 @@ export default function GradebookModal({ classId, className, open, onClose }) {
                             const kind = isKa ? examTerms(data.grade_system).short : (slType(session) === "written" ? "SL schrftl." : "SL mündl.");
                             return (
                               <th key={session.id} className={`sticky top-0 z-40 min-w-32 border-b-2 border-l border-stone-900 text-center align-bottom text-stone-900 ${isKa ? "bg-sky-400" : "bg-emerald-400"}`}>
-                                <button type="button" onClick={() => setHeaderEditor({ kind: "sessionHeader", session })} className="block h-full w-full px-3 py-2 text-stone-900 hover:bg-white/25" title="Spalte bearbeiten">
-                                  <span className="inline-flex rounded-full border border-stone-900/20 bg-white/70 px-2 py-0.5 text-[10px] font-black uppercase tracking-wide text-stone-900">{kind}</span>
+                                <button type="button" onClick={() => (session.points_mode ? navigate(`/points/${session.id}`) : setHeaderEditor({ kind: "sessionHeader", session }))} className="block h-full w-full px-3 py-2 text-stone-900 hover:bg-white/25" title={session.points_mode ? "Punkte->Noten öffnen" : "Spalte bearbeiten"}>
+                                  <span className="inline-flex rounded-full border border-stone-900/20 bg-white/70 px-2 py-0.5 text-[10px] font-black uppercase tracking-wide text-stone-900">{kind}{session.points_mode ? " · P→N" : ""}</span>
                                   <div className="mt-1 font-bold leading-tight">{session.title}</div>
                                   <div className="mt-0.5 text-xs font-bold text-stone-700">{session.date} · x{session.weight ?? 1}</div>
                                 </button>

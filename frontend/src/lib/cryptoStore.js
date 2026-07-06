@@ -108,7 +108,7 @@ async function decryptJson(key, box) {
 }
 
 function emptyState() {
-  return { classes: [], students: [], sessions: [], grades: [], gradebook_overrides: [], gradebook_weights: [] };
+  return { classes: [], students: [], sessions: [], grades: [], gradebook_overrides: [], gradebook_weights: [], grade_scales: [], point_sessions: [] };
 }
 
 export async function hasVault() {
