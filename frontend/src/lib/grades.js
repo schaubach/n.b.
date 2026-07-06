@@ -7,7 +7,7 @@
 //   Left   = 4er:  4+ 4 4-   (points  6  5  4)
 //   flankLeft  (directly left of the card)  = 6  (0 points)
 //   flankRight (directly right of the card) = 5  (2 points)
-// Grades 5 and 6 have no tendencies. There is NO grading by tapping the card.
+// Grades 5+/5- can be entered through correction and point-scale workflows. There is NO grading by tapping the card.
 
 export const GRADE_SYSTEMS = {
   grades_1_6: { id: "grades_1_6", label: "Noten 1–6", short: "1–6 Noten" },
@@ -100,7 +100,7 @@ export function gradeTier(value, systemId) {
   if (systemId === "points_0_15") {
     const p = parseInt(value, 10);
     if (isNaN(p)) return null;
-    return p >= 13 ? 1 : p >= 10 ? 2 : p >= 7 ? 3 : p >= 4 ? 4 : p >= 2 ? 5 : 6;
+    return p >= 13 ? 1 : p >= 10 ? 2 : p >= 7 ? 3 : p >= 4 ? 4 : p >= 1 ? 5 : 6;
   }
   const m = String(value).match(/\d/);
   return m ? parseInt(m[0], 10) : null;

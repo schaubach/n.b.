@@ -8,7 +8,9 @@ export const DEFAULT_GRADE_SCALES = [
       { grade: "2", points: "11", minPercent: 81 },
       { grade: "3", points: "8", minPercent: 67 },
       { grade: "4", points: "5", minPercent: 50 },
+      { grade: "5+", points: "3", minPercent: 40 },
       { grade: "5", points: "2", minPercent: 30 },
+      { grade: "5-", points: "1", minPercent: 15 },
       { grade: "6", points: "0", minPercent: 0 },
     ],
   },
@@ -21,7 +23,9 @@ export const DEFAULT_GRADE_SCALES = [
       { grade: "2", points: "11", minPercent: 80 },
       { grade: "3", points: "8", minPercent: 65 },
       { grade: "4", points: "5", minPercent: 50 },
+      { grade: "5+", points: "3", minPercent: 37.5 },
       { grade: "5", points: "2", minPercent: 25 },
+      { grade: "5-", points: "1", minPercent: 12.5 },
       { grade: "6", points: "0", minPercent: 0 },
     ],
   },
@@ -34,7 +38,9 @@ export const DEFAULT_GRADE_SCALES = [
       { grade: "2", points: "11", minPercent: 81 },
       { grade: "3", points: "8", minPercent: 67 },
       { grade: "4", points: "5", minPercent: 50 },
+      { grade: "5+", points: "3", minPercent: 40 },
       { grade: "5", points: "2", minPercent: 30 },
+      { grade: "5-", points: "1", minPercent: 15 },
       { grade: "6", points: "0", minPercent: 0 },
     ],
   },
@@ -47,7 +53,9 @@ export const DEFAULT_GRADE_SCALES = [
       { grade: "2", points: "11", minPercent: 75 },
       { grade: "3", points: "8", minPercent: 60 },
       { grade: "4", points: "5", minPercent: 45 },
+      { grade: "5+", points: "3", minPercent: 32.5 },
       { grade: "5", points: "2", minPercent: 20 },
+      { grade: "5-", points: "1", minPercent: 10 },
       { grade: "6", points: "0", minPercent: 0 },
     ],
   },
@@ -131,7 +139,7 @@ export function scaleValueForSystem(row, gradeSystem) {
   if (!row) return "";
   if (gradeSystem === "points_0_15") {
     if (row.points !== undefined && row.points !== "") return String(row.points);
-    const gradeToPoints = { "1": "14", "2": "11", "3": "8", "4": "5", "5": "2", "6": "0" };
+    const gradeToPoints = { "1": "14", "2": "11", "3": "8", "4": "5", "5+": "3", "5": "2", "5-": "1", "6": "0" };
     return gradeToPoints[String(row.grade)] || String(row.grade || "");
   }
   return String(row.grade || "");
