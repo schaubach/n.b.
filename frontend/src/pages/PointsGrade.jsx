@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { ArrowLeft, Loader2, Plus, Save, Trash2 } from "lucide-react";
 import api from "../lib/api";
-import { gradeColorClasses } from "../lib/grades";
+import { gradeColorClasses, gradeTier } from "../lib/grades";
 import { cloneScale, evaluatePercent, findGradeScale, pointsNeededForBetter, scaleValueForSystem } from "../lib/gradeScales";
 
 function numberValue(value) {
@@ -45,6 +45,12 @@ function maxPointsFromColumns(columns) {
 function thresholdPoints(row, maxPoints) {
   if (!(maxPoints > 0)) return 0;
   return Math.ceil(((Number(row.minPercent) || 0) / 100) * maxPoints * 10) / 10;
+}
+
+function shouldHighlightBetter(row, gradeSystem) {
+  if (!row.better || !(row.better.points > 0) || row.better.points > 1) return false;
+  if (gradeSystem === "points_0_15") return true;
+  return gradeTier(row.grade, gradeSystem) !== gradeTier(row.better.target, gradeSystem);
 }
 
 export default function PointsGrade() {
@@ -94,7 +100,7 @@ export default function PointsGrade() {
       const achieved = columns.reduce((sum, column) => sum + numberValue(entries[entryKey(student.id, column.id)]), 0);
       const percent = maxPoints > 0 ? achieved / maxPoints * 100 : null;
       const evaluated = evaluatePercent(percent, activeScale, data?.session?.grade_system);
-      const better = pointsNeededForBetter(achieved, maxPoints, activeScale, evaluated.rowIndex);
+      const better = pointsNeededForBetter(achieved, maxPoints, activeScale, evaluated.rowIndex, data?.session?.grade_system);
       return { student, achieved, max: maxPoints, percent, grade: evaluated.value, better };
     });
   }, [columns, entries, data?.students, data?.session?.grade_system, activeScale, maxPoints]);
@@ -259,7 +265,7 @@ export default function PointsGrade() {
             <tbody>
               {rows.map((row, rowIndex) => {
                 const bg = rowIndex % 2 === 0 ? "bg-white" : "bg-stone-50";
-                const near = row.better && row.better.points >= 0.5 && row.better.points <= 1;
+                const near = shouldHighlightBetter(row, data.session.grade_system);
                 return (
                   <tr key={row.student.id} className={bg}>
                     <td className={"sticky left-0 z-20 border-t-2 border-stone-200 px-4 py-3 font-bold text-stone-900 " + bg}>{row.student.first_name} <span className="font-black">{row.student.last_name}</span></td>

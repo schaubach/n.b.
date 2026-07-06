@@ -148,7 +148,7 @@ export function evaluatePercent(percent, scale, gradeSystem = "grades_1_6") {
   return { value: scaleValueForSystem(row, gradeSystem), row, rowIndex: index, percent };
 }
 
-export function pointsNeededForBetter(achieved, maxPoints, scale, rowIndex) {
+export function pointsNeededForBetter(achieved, maxPoints, scale, rowIndex, gradeSystem = "grades_1_6") {
   const rows = (scale?.rows || []).slice().sort((a, b) => b.minPercent - a.minPercent);
   if (!(maxPoints > 0) || rowIndex <= 0 || rowIndex >= rows.length) return null;
   const better = rows[rowIndex - 1];
@@ -157,7 +157,7 @@ export function pointsNeededForBetter(achieved, maxPoints, scale, rowIndex) {
   if (!(missing > 0)) return null;
   return {
     points: Math.ceil(missing * 10) / 10,
-    target: scaleValueForSystem(better),
+    target: scaleValueForSystem(better, gradeSystem),
     minPercent: better.minPercent,
   };
 }

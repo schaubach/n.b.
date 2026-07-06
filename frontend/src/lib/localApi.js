@@ -142,7 +142,7 @@ function pointSummary(state, session, studentId) {
   const scale = session.point_scale_override || findGradeScale(scales, session.grade_scale_id);
   const percent = achieved / max * 100;
   const evaluated = evaluatePercent(percent, scale, session.grade_system);
-  const better = pointsNeededForBetter(achieved, max, scale, evaluated.rowIndex);
+  const better = pointsNeededForBetter(achieved, max, scale, evaluated.rowIndex, session.grade_system);
   return { achieved, max, percent, calculated_value: evaluated.value, better };
 }
 
