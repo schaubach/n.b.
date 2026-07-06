@@ -1,14 +1,36 @@
 import React, { useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { Download, FilePlus2, Loader2, Percent, Plus, Trash2, X } from "lucide-react";
+import { Download, FilePlus2, Percent, Plus, X } from "lucide-react";
 import api from "../lib/api";
 import { gradeColorClasses } from "../lib/grades";
 import { gradeOptions } from "../lib/gradebook";
 import { gradeScaleCsv, parseGradeScaleCsv } from "../lib/gradeScales";
 import { triggerDownload } from "../lib/exportClass";
 
-function scaleToRows(scale) {
-  return (scale?.rows || []).map((row) => ({ grade: row.grade || "", points: row.points || "", minPercent: row.minPercent ?? 0 }));
+const FIXED_GRADES = gradeOptions("grades_1_6");
+const FIXED_POINTS = gradeOptions("points_0_15");
+
+function defaultPercent(index, total) {
+  return Math.max(0, Math.round((100 - (index * (100 / Math.max(1, total - 1)))) * 10) / 10);
+}
+
+function fixedRowsFrom(scale) {
+  const byGrade = new Map();
+  const byPoint = new Map();
+  (scale?.rows || []).forEach((row) => {
+    const clean = { grade: String(row.grade || "").trim(), points: String(row.points || "").trim(), minPercent: row.minPercent ?? 0 };
+    if (clean.grade) byGrade.set(clean.grade, clean);
+    if (clean.points) byPoint.set(clean.points, clean);
+  });
+  return FIXED_GRADES.map((grade, index) => {
+    const points = FIXED_POINTS[index] || "";
+    const source = byGrade.get(grade) || byPoint.get(points);
+    return {
+      grade,
+      points,
+      minPercent: source?.minPercent ?? defaultPercent(index, FIXED_GRADES.length),
+    };
+  });
 }
 
 export default function GradeScaleManager({ open, onClose, onChanged }) {
@@ -33,7 +55,7 @@ export default function GradeScaleManager({ open, onClose, onChanged }) {
   useEffect(() => {
     loadedRef.current = false;
     dirtyRef.current = false;
-    setRows(scaleToRows(selected));
+    setRows(fixedRowsFrom(selected));
     setTimeout(() => { loadedRef.current = true; }, 0);
   }, [selected]);
 
@@ -44,7 +66,7 @@ export default function GradeScaleManager({ open, onClose, onChanged }) {
     setSaving(true);
     setError("");
     try {
-      const res = await api.post("/grade-scales", { name: selected.name || "Skala", csv: gradeScaleCsv({ rows: nextRows }) });
+      const res = await api.post("/grade-scales", { name: selected.name || "Skala", csv: gradeScaleCsv({ rows: fixedRowsFrom({ rows: nextRows }) }) });
       setScales(res.data.scales || []);
       setSelected(res.data.scale);
       dirtyRef.current = false;
@@ -73,10 +95,10 @@ export default function GradeScaleManager({ open, onClose, onChanged }) {
     setMessage("");
     try {
       const parsed = parseGradeScaleCsv(await file.text(), file.name);
-      const res = await api.post("/grade-scales", { name: parsed.name, csv: gradeScaleCsv(parsed) });
+      const res = await api.post("/grade-scales", { name: parsed.name, csv: gradeScaleCsv({ rows: fixedRowsFrom(parsed) }) });
       setScales(res.data.scales || []);
       setSelected(res.data.scale);
-      setRows(scaleToRows(res.data.scale));
+      setRows(fixedRowsFrom(res.data.scale));
       dirtyRef.current = false;
       setMessage("CSV importiert und Notenskala gespeichert.");
       if (onChanged) onChanged(res.data.scale);
@@ -93,25 +115,15 @@ export default function GradeScaleManager({ open, onClose, onChanged }) {
     triggerDownload(new File(["\ufeff", csvText], selected.name + ".csv", { type: "text/csv;charset=utf-8" }));
   };
 
-  const updateRow = (index, patch) => {
+  const updatePercent = (index, minPercent) => {
     dirtyRef.current = true;
-    setRows((current) => current.map((row, i) => i === index ? { ...row, ...patch } : row));
+    setRows((current) => current.map((row, i) => i === index ? { ...row, minPercent } : row));
   };
 
-  const removeRow = (index) => {
-    dirtyRef.current = true;
-    setRows((current) => current.filter((_, i) => i !== index));
-  };
-
-  const createScale = async (systemId) => {
+  const createScale = async () => {
     const suffix = new Date().toLocaleString("de-DE").replace(/\D+/g, "").slice(0, 12);
-    const name = (systemId === "points_0_15" ? "Neue Punkteskala " : "Neue Notenskala ") + suffix;
-    const values = gradeOptions(systemId);
-    const rowsForSystem = values.map((value, index, list) => ({
-      grade: value,
-      points: systemId === "points_0_15" ? value : "",
-      minPercent: Math.max(0, Math.round((100 - (index * (100 / Math.max(1, list.length - 1)))) * 10) / 10),
-    }));
+    const name = "Neue Skala " + suffix;
+    const rowsForSystem = fixedRowsFrom({ rows: [] });
     setSaving(true);
     setError("");
     setMessage("");
@@ -119,7 +131,7 @@ export default function GradeScaleManager({ open, onClose, onChanged }) {
       const res = await api.post("/grade-scales", { name, csv: gradeScaleCsv({ rows: rowsForSystem }) });
       setScales(res.data.scales || []);
       setSelected(res.data.scale);
-      setRows(scaleToRows(res.data.scale));
+      setRows(fixedRowsFrom(res.data.scale));
       dirtyRef.current = false;
       setMessage("Neue Skala angelegt.");
       if (onChanged) onChanged(res.data.scale);
@@ -152,11 +164,8 @@ export default function GradeScaleManager({ open, onClose, onChanged }) {
                   </button>
                 ))}
                 <input ref={fileRef} type="file" accept=".csv,text/csv" className="hidden" onChange={(e) => importFile(e.target.files)} />
-                <button type="button" onClick={() => createScale("grades_1_6")} disabled={saving} className="mt-3 flex w-full items-center justify-center gap-2 rounded-xl border-2 border-stone-900 bg-amber-200 px-3 py-3 font-heading font-extrabold text-stone-900 disabled:opacity-50">
-                  <Plus className="h-4 w-4" /> Neue Skala 1-6
-                </button>
-                <button type="button" onClick={() => createScale("points_0_15")} disabled={saving} className="flex w-full items-center justify-center gap-2 rounded-xl border-2 border-stone-900 bg-sky-200 px-3 py-3 font-heading font-extrabold text-stone-900 disabled:opacity-50">
-                  <Plus className="h-4 w-4" /> Neue Skala 0-15
+                <button type="button" onClick={createScale} disabled={saving} className="mt-3 flex w-full items-center justify-center gap-2 rounded-xl border-2 border-stone-900 bg-amber-200 px-3 py-3 font-heading font-extrabold text-stone-900 disabled:opacity-50">
+                  <Plus className="h-4 w-4" /> Neue Skala
                 </button>
                 <button type="button" onClick={() => fileRef.current?.click()} disabled={saving} className="flex w-full items-center justify-center gap-2 rounded-xl border-2 border-stone-900 bg-white px-3 py-3 font-heading font-extrabold text-stone-900 disabled:opacity-50">
                   <FilePlus2 className="h-4 w-4" /> CSV importieren
@@ -170,24 +179,22 @@ export default function GradeScaleManager({ open, onClose, onChanged }) {
                         <th className="bg-stone-900 px-3 py-2 text-left font-heading font-black text-white">Note</th>
                         <th className="bg-stone-900 px-3 py-2 text-left font-heading font-black text-white">Punkte</th>
                         <th className="bg-stone-900 px-3 py-2 text-left font-heading font-black text-white">Prozent ab</th>
-                        <th className="bg-stone-900 px-3 py-2 text-white"></th>
                       </tr>
                     </thead>
                     <tbody>
                       {rows.map((row, index) => (
                         <tr key={index} className={index % 2 === 0 ? "bg-white" : "bg-stone-50"}>
                           <td className="border-t-2 border-stone-200 p-2">
-                            <input value={row.grade} onChange={(e) => updateRow(index, { grade: e.target.value })} className={"w-24 rounded-xl border-2 px-3 py-2 text-center font-mono font-black " + gradeColorClasses(row.grade, "grades_1_6")} />
+                            <span className={"inline-flex w-24 justify-center rounded-xl border-2 px-3 py-2 text-center font-mono font-black " + gradeColorClasses(row.grade, "grades_1_6")}>{row.grade}</span>
                           </td>
-                          <td className="border-t-2 border-stone-200 p-2"><input value={row.points} onChange={(e) => updateRow(index, { points: e.target.value })} className="w-24 rounded-xl border-2 border-stone-200 px-3 py-2 text-center font-mono font-black" /></td>
-                          <td className="border-t-2 border-stone-200 p-2"><input type="number" step="0.1" value={row.minPercent} onChange={(e) => updateRow(index, { minPercent: e.target.value })} className="w-28 rounded-xl border-2 border-stone-200 px-3 py-2 text-center font-mono font-black" /></td>
-                          <td className="border-t-2 border-stone-200 p-2 text-right"><button type="button" onClick={() => removeRow(index)} className="rounded-xl border-2 border-rose-300 bg-white p-2 text-rose-700"><Trash2 className="h-4 w-4" /></button></td>
+                          <td className="border-t-2 border-stone-200 p-2"><span className="inline-flex w-24 justify-center rounded-xl border-2 border-stone-200 bg-stone-50 px-3 py-2 text-center font-mono font-black text-stone-900">{row.points}</span></td>
+                          <td className="border-t-2 border-stone-200 p-2"><input type="number" step="0.1" value={row.minPercent} onChange={(e) => updatePercent(index, e.target.value)} className="w-28 rounded-xl border-2 border-stone-200 px-3 py-2 text-center font-mono font-black" /></td>
                         </tr>
                       ))}
                     </tbody>
                   </table>
                 </div>
-                <p className="mt-3 rounded-2xl border-2 border-amber-300 bg-amber-100 px-4 py-3 text-sm font-bold text-amber-950">Änderungen an Notenskalen werden nicht automatisch in bereits bestehende Bewertungen übernommen.</p>
+                <p className="mt-3 rounded-2xl border-2 border-amber-300 bg-amber-100 px-4 py-3 text-sm font-bold text-amber-950">Noten und Punkte sind fest gekoppelt. In der GUI werden nur die Prozentgrenzen verändert; bestehende Bewertungen übernehmen Änderungen nicht automatisch.</p>
                 <p className="mt-2 text-sm font-bold text-stone-500">{saving ? "Speichert automatisch ..." : "Änderungen werden automatisch gespeichert."}</p>
                 {message && <p className="mt-3 rounded-xl border-2 border-emerald-300 bg-emerald-100 px-4 py-3 font-bold text-emerald-900">{message}</p>}
                 {error && <p className="mt-3 rounded-xl border-2 border-rose-300 bg-rose-100 px-4 py-3 font-bold text-rose-900">{error}</p>}
