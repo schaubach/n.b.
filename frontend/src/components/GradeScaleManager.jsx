@@ -1,8 +1,9 @@
 import React, { useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { Download, FilePlus2, Loader2, Percent, Save, Trash2, X } from "lucide-react";
+import { Download, FilePlus2, Loader2, Percent, Plus, Trash2, X } from "lucide-react";
 import api from "../lib/api";
 import { gradeColorClasses } from "../lib/grades";
+import { gradeOptions } from "../lib/gradebook";
 import { gradeScaleCsv, parseGradeScaleCsv } from "../lib/gradeScales";
 import { triggerDownload } from "../lib/exportClass";
 
@@ -17,6 +18,8 @@ export default function GradeScaleManager({ open, onClose, onChanged }) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
+  const dirtyRef = useRef(false);
+  const loadedRef = useRef(false);
   const fileRef = useRef(null);
 
   const load = async () => {
@@ -27,25 +30,40 @@ export default function GradeScaleManager({ open, onClose, onChanged }) {
   };
 
   useEffect(() => { if (open) load(); }, [open]);
-  useEffect(() => { setRows(scaleToRows(selected)); }, [selected]);
+  useEffect(() => {
+    loadedRef.current = false;
+    dirtyRef.current = false;
+    setRows(scaleToRows(selected));
+    setTimeout(() => { loadedRef.current = true; }, 0);
+  }, [selected]);
 
   const csvText = gradeScaleCsv({ rows });
 
-  const save = async () => {
+  const saveRows = async (nextRows = rows) => {
+    if (!selected) return null;
     setSaving(true);
     setError("");
-    setMessage("");
     try {
-      const res = await api.post("/grade-scales", { name: selected?.name || "Skala", csv: csvText });
-      setMessage("Notenskala gespeichert.");
-      await load();
+      const res = await api.post("/grade-scales", { name: selected.name || "Skala", csv: gradeScaleCsv({ rows: nextRows }) });
+      setScales(res.data.scales || []);
+      setSelected(res.data.scale);
+      dirtyRef.current = false;
+      setMessage("Notenskala automatisch gespeichert.");
       if (onChanged) onChanged(res.data.scale);
+      return res.data.scale;
     } catch (err) {
       setError(err?.response?.data?.detail || "Notenskala konnte nicht gespeichert werden.");
+      return null;
     } finally {
       setSaving(false);
     }
   };
+
+  useEffect(() => {
+    if (!open || !selected || !loadedRef.current || !dirtyRef.current) return undefined;
+    const timer = setTimeout(() => { saveRows(rows); }, 500);
+    return () => clearTimeout(timer);
+  }, [rows, open, selected]);
 
   const importFile = async (files) => {
     const file = files?.[0];
@@ -59,6 +77,7 @@ export default function GradeScaleManager({ open, onClose, onChanged }) {
       setScales(res.data.scales || []);
       setSelected(res.data.scale);
       setRows(scaleToRows(res.data.scale));
+      dirtyRef.current = false;
       setMessage("CSV importiert und Notenskala gespeichert.");
       if (onChanged) onChanged(res.data.scale);
     } catch (err) {
@@ -74,7 +93,42 @@ export default function GradeScaleManager({ open, onClose, onChanged }) {
     triggerDownload(new File(["\ufeff", csvText], selected.name + ".csv", { type: "text/csv;charset=utf-8" }));
   };
 
-  const updateRow = (index, patch) => setRows((current) => current.map((row, i) => i === index ? { ...row, ...patch } : row));
+  const updateRow = (index, patch) => {
+    dirtyRef.current = true;
+    setRows((current) => current.map((row, i) => i === index ? { ...row, ...patch } : row));
+  };
+
+  const removeRow = (index) => {
+    dirtyRef.current = true;
+    setRows((current) => current.filter((_, i) => i !== index));
+  };
+
+  const createScale = async (systemId) => {
+    const suffix = new Date().toLocaleString("de-DE").replace(/\D+/g, "").slice(0, 12);
+    const name = (systemId === "points_0_15" ? "Neue Punkteskala " : "Neue Notenskala ") + suffix;
+    const values = gradeOptions(systemId);
+    const rowsForSystem = values.map((value, index, list) => ({
+      grade: value,
+      points: systemId === "points_0_15" ? value : "",
+      minPercent: Math.max(0, Math.round((100 - (index * (100 / Math.max(1, list.length - 1)))) * 10) / 10),
+    }));
+    setSaving(true);
+    setError("");
+    setMessage("");
+    try {
+      const res = await api.post("/grade-scales", { name, csv: gradeScaleCsv({ rows: rowsForSystem }) });
+      setScales(res.data.scales || []);
+      setSelected(res.data.scale);
+      setRows(scaleToRows(res.data.scale));
+      dirtyRef.current = false;
+      setMessage("Neue Skala angelegt.");
+      if (onChanged) onChanged(res.data.scale);
+    } catch (err) {
+      setError(err?.response?.data?.detail || "Neue Skala konnte nicht angelegt werden.");
+    } finally {
+      setSaving(false);
+    }
+  };
 
   return (
     <AnimatePresence>
@@ -98,7 +152,13 @@ export default function GradeScaleManager({ open, onClose, onChanged }) {
                   </button>
                 ))}
                 <input ref={fileRef} type="file" accept=".csv,text/csv" className="hidden" onChange={(e) => importFile(e.target.files)} />
-                <button type="button" onClick={() => fileRef.current?.click()} disabled={saving} className="mt-3 flex w-full items-center justify-center gap-2 rounded-xl border-2 border-stone-900 bg-white px-3 py-3 font-heading font-extrabold text-stone-900 disabled:opacity-50">
+                <button type="button" onClick={() => createScale("grades_1_6")} disabled={saving} className="mt-3 flex w-full items-center justify-center gap-2 rounded-xl border-2 border-stone-900 bg-amber-200 px-3 py-3 font-heading font-extrabold text-stone-900 disabled:opacity-50">
+                  <Plus className="h-4 w-4" /> Neue Skala 1-6
+                </button>
+                <button type="button" onClick={() => createScale("points_0_15")} disabled={saving} className="flex w-full items-center justify-center gap-2 rounded-xl border-2 border-stone-900 bg-sky-200 px-3 py-3 font-heading font-extrabold text-stone-900 disabled:opacity-50">
+                  <Plus className="h-4 w-4" /> Neue Skala 0-15
+                </button>
+                <button type="button" onClick={() => fileRef.current?.click()} disabled={saving} className="flex w-full items-center justify-center gap-2 rounded-xl border-2 border-stone-900 bg-white px-3 py-3 font-heading font-extrabold text-stone-900 disabled:opacity-50">
                   <FilePlus2 className="h-4 w-4" /> CSV importieren
                 </button>
               </div>
@@ -121,18 +181,18 @@ export default function GradeScaleManager({ open, onClose, onChanged }) {
                           </td>
                           <td className="border-t-2 border-stone-200 p-2"><input value={row.points} onChange={(e) => updateRow(index, { points: e.target.value })} className="w-24 rounded-xl border-2 border-stone-200 px-3 py-2 text-center font-mono font-black" /></td>
                           <td className="border-t-2 border-stone-200 p-2"><input type="number" step="0.1" value={row.minPercent} onChange={(e) => updateRow(index, { minPercent: e.target.value })} className="w-28 rounded-xl border-2 border-stone-200 px-3 py-2 text-center font-mono font-black" /></td>
-                          <td className="border-t-2 border-stone-200 p-2 text-right"><button type="button" onClick={() => setRows((current) => current.filter((_, i) => i !== index))} className="rounded-xl border-2 border-rose-300 bg-white p-2 text-rose-700"><Trash2 className="h-4 w-4" /></button></td>
+                          <td className="border-t-2 border-stone-200 p-2 text-right"><button type="button" onClick={() => removeRow(index)} className="rounded-xl border-2 border-rose-300 bg-white p-2 text-rose-700"><Trash2 className="h-4 w-4" /></button></td>
                         </tr>
                       ))}
                     </tbody>
                   </table>
                 </div>
                 <p className="mt-3 rounded-2xl border-2 border-amber-300 bg-amber-100 px-4 py-3 text-sm font-bold text-amber-950">Änderungen an Notenskalen werden nicht automatisch in bereits bestehende Bewertungen übernommen.</p>
+                <p className="mt-2 text-sm font-bold text-stone-500">{saving ? "Speichert automatisch ..." : "Änderungen werden automatisch gespeichert."}</p>
                 {message && <p className="mt-3 rounded-xl border-2 border-emerald-300 bg-emerald-100 px-4 py-3 font-bold text-emerald-900">{message}</p>}
                 {error && <p className="mt-3 rounded-xl border-2 border-rose-300 bg-rose-100 px-4 py-3 font-bold text-rose-900">{error}</p>}
-                <div className="mt-4 grid gap-2 sm:grid-cols-2">
-                  <button type="button" onClick={download} className="flex items-center justify-center gap-2 rounded-2xl border-2 border-stone-900 bg-white px-4 py-3 font-heading font-extrabold text-stone-900"><Download className="h-4 w-4" /> CSV exportieren</button>
-                  <button type="button" onClick={save} disabled={saving} className="flex items-center justify-center gap-2 rounded-2xl border-2 border-stone-900 bg-stone-900 px-4 py-3 font-heading font-extrabold text-white disabled:opacity-50">{saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />} Speichern</button>
+                <div className="mt-4">
+                  <button type="button" onClick={download} className="flex w-full items-center justify-center gap-2 rounded-2xl border-2 border-stone-900 bg-white px-4 py-3 font-heading font-extrabold text-stone-900"><Download className="h-4 w-4" /> CSV exportieren</button>
                 </div>
               </div>
             </div>

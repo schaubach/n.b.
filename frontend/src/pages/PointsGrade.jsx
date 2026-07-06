@@ -247,7 +247,10 @@ export default function PointsGrade() {
         <button onClick={addColumn} className="flex items-center justify-center gap-2 rounded-xl border-2 border-stone-900 bg-amber-300 px-4 py-2.5 font-heading font-extrabold text-stone-900 shadow-brutal-sm">
           <Plus className="h-4 w-4" /> Spalte hinzufügen
         </button>
-        <div className="text-sm font-bold text-stone-500">{saving ? "Speichert ..." : savedTick ? "Gespeichert" : "Änderungen werden automatisch gespeichert"}{scaleChanged ? " · Skala lokal angepasst" : ""}</div>
+        <div className="text-sm font-bold text-stone-500">
+          {saving ? "Speichert ..." : savedTick ? "Gespeichert" : "Änderungen werden automatisch gespeichert"}
+          {scaleChanged && <span className="ml-2 font-black text-rose-700">Notenskala lokal angepasst</span>}
+        </div>
       </div>
 
       {error && <div className="mx-4 mt-3 rounded-2xl border-2 border-rose-300 bg-rose-100 px-4 py-3 font-bold text-rose-900">{error}</div>}
