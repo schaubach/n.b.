@@ -139,7 +139,7 @@ function pointSummary(state, session, studentId) {
     .reduce((sum, entry) => sum + (Number(entry.points) || 0), 0);
   if (!(max > 0)) return { achieved, max, percent: null, calculated_value: "" };
   const scales = allGradeScales(state.grade_scales);
-  const scale = findGradeScale(scales, session.grade_scale_id);
+  const scale = session.point_scale_override || findGradeScale(scales, session.grade_scale_id);
   const percent = achieved / max * 100;
   const evaluated = evaluatePercent(percent, scale, session.grade_system);
   const better = pointsNeededForBetter(achieved, max, scale, evaluated.rowIndex);
@@ -284,12 +284,12 @@ async function get(url) {
     const cls = findClass(state, session.class_id);
     const record = pointSessionFor(state, session.id);
     const scales = allGradeScales(state.grade_scales);
-    const scale = findGradeScale(scales, session.grade_scale_id || cls.grade_scale_id || "MEDA");
+    const scale = session.point_scale_override || findGradeScale(scales, session.grade_scale_id || cls.grade_scale_id || "MEDA");
     const students = state.students.filter((student) => student.class_id === cls.id).sort(compareStudents).map((student) => {
       const grade = state.grades.find((item) => item.session_id === session.id && item.student_id === student.id);
       return { ...studentOut(student), grade: grade?.value || "", calculated_value: grade?.calculated_value || "", manual_override: !!grade?.manual_override, point_summary: pointSummary(state, session, student.id) };
     });
-    return { data: { session: { ...session, class_name: cls.name || "", grade_system: cls.grade_system || "grades_1_6", grade_scale_id: scale.id }, students, columns: record.columns || [], entries: record.entries || [], grade_scales: scales, grade_scale: scale } };
+    return { data: { session: { ...session, class_name: cls.name || "", grade_system: cls.grade_system || "grades_1_6", grade_scale_id: session.grade_scale_id || scale.id }, students, columns: record.columns || [], entries: record.entries || [], grade_scales: scales, grade_scale: scale } };
   }
 
   if (path === "/teacher-config") {
@@ -555,10 +555,18 @@ async function put(url, body) {
       const cls = findClass(state, session.class_id);
       session.points_mode = true;
       session.grade_scale_id = body.grade_scale_id || session.grade_scale_id || cls.grade_scale_id || "MEDA";
+      if (body.scale_override) {
+        session.point_scale_override = {
+          ...body.scale_override,
+          id: body.scale_override.id || session.grade_scale_id,
+          name: body.scale_override.name || "Bewertungsskala",
+          rows: (body.scale_override.rows || []).map((row) => ({ grade: String(row.grade || ""), points: String(row.points || ""), minPercent: Number(row.minPercent) || 0 })),
+        };
+      }
       const record = pointSessionFor(state, session.id);
       record.columns = (body.columns || []).map((column, index) => ({
         id: column.id || id(),
-        title: column.title || `Teil ${index + 1}`,
+        title: column.title || `Aufgabe ${index + 1}`,
         max_points: Number(column.max_points) || 0,
       }));
       const validColumns = new Set(record.columns.map((column) => column.id));

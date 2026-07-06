@@ -77,7 +77,9 @@ function delimiter(line) {
 }
 
 function parseRows(text) {
-  const input = String(text || "").replace(/^\uFEFF/, "").replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+  let input = String(text || "").replace(/^\uFEFF/, "");
+  if (!input.includes("\n") && input.includes("\\n")) input = input.replace(/\\n/g, "\n");
+  input = input.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
   const d = delimiter(input.split("\n").find((line) => line.trim()) || "");
   return input.split("\n")
     .map((line) => line.split(d).map((cell) => cell.trim().replace(/^"|"$/g, "")))
@@ -119,6 +121,10 @@ export function allGradeScales(customScales = []) {
 
 export function findGradeScale(scales, scaleId) {
   return (scales || []).find((scale) => scale.id === scaleId) || (scales || [])[0] || DEFAULT_GRADE_SCALES[0];
+}
+
+export function cloneScale(scale) {
+  return { ...scale, rows: (scale?.rows || []).map((row) => ({ ...row })) };
 }
 
 export function scaleValueForSystem(row, gradeSystem) {

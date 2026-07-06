@@ -3,7 +3,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import { ArrowLeft, Loader2, Plus, Save, Trash2 } from "lucide-react";
 import api from "../lib/api";
 import { gradeColorClasses } from "../lib/grades";
-import { evaluatePercent, findGradeScale, pointsNeededForBetter } from "../lib/gradeScales";
+import { cloneScale, evaluatePercent, findGradeScale, pointsNeededForBetter, scaleValueForSystem } from "../lib/gradeScales";
 
 function numberValue(value) {
   const n = Number(String(value ?? "").replace(",", "."));
@@ -21,7 +21,30 @@ function entryKey(studentId, columnId) {
 }
 
 function makeColumn(index) {
-  return { id: crypto.randomUUID ? crypto.randomUUID() : String(Date.now() + Math.random()), title: "Teil " + index, max_points: 0 };
+  return { id: crypto.randomUUID ? crypto.randomUUID() : String(Date.now() + Math.random()), title: "Aufgabe " + index, max_points: 0 };
+}
+
+function normalizeScale(scale) {
+  const copy = cloneScale(scale || {});
+  copy.rows = (copy.rows || []).map((row) => ({
+    grade: row.grade || "",
+    points: row.points || "",
+    minPercent: row.minPercent ?? 0,
+  }));
+  return copy;
+}
+
+function scaleSignature(scale) {
+  return JSON.stringify((scale?.rows || []).map((row) => [row.grade || "", row.points || "", Number(row.minPercent) || 0]));
+}
+
+function maxPointsFromColumns(columns) {
+  return columns.reduce((sum, column) => sum + numberValue(column.max_points), 0);
+}
+
+function thresholdPoints(row, maxPoints) {
+  if (!(maxPoints > 0)) return 0;
+  return Math.ceil(((Number(row.minPercent) || 0) / 100) * maxPoints * 10) / 10;
 }
 
 export default function PointsGrade() {
@@ -31,11 +54,14 @@ export default function PointsGrade() {
   const [columns, setColumns] = useState([]);
   const [entries, setEntries] = useState({});
   const [scaleId, setScaleId] = useState("MEDA");
+  const [localScale, setLocalScale] = useState(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [savedTick, setSavedTick] = useState(0);
   const dirtyRef = useRef(false);
+
+  const markDirty = () => { dirtyRef.current = true; };
 
   useEffect(() => {
     (async () => {
@@ -43,12 +69,14 @@ export default function PointsGrade() {
       try {
         const res = await api.get("/sessions/" + sessionId + "/points");
         setData(res.data);
-        setColumns(res.data.columns || []);
+        const loadedColumns = res.data.columns?.length ? res.data.columns : [makeColumn(1)];
+        setColumns(loadedColumns);
         setScaleId(res.data.session.grade_scale_id || res.data.grade_scale?.id || "MEDA");
+        setLocalScale(normalizeScale(res.data.grade_scale));
         const map = {};
         (res.data.entries || []).forEach((entry) => { map[entryKey(entry.student_id, entry.column_id)] = String(entry.points ?? ""); });
         setEntries(map);
-        dirtyRef.current = false;
+        dirtyRef.current = !res.data.columns?.length;
       } catch (err) {
         setError("Punkteansicht konnte nicht geladen werden.");
       } finally {
@@ -57,20 +85,33 @@ export default function PointsGrade() {
     })();
   }, [sessionId]);
 
-  const scale = useMemo(() => findGradeScale(data?.grade_scales || [], scaleId), [data?.grade_scales, scaleId]);
+  const selectedScale = useMemo(() => findGradeScale(data?.grade_scales || [], scaleId), [data?.grade_scales, scaleId]);
+  const activeScale = useMemo(() => localScale || normalizeScale(selectedScale), [localScale, selectedScale]);
+  const maxPoints = useMemo(() => maxPointsFromColumns(columns), [columns]);
 
   const rows = useMemo(() => {
-    const max = columns.reduce((sum, column) => sum + numberValue(column.max_points), 0);
     return (data?.students || []).map((student) => {
       const achieved = columns.reduce((sum, column) => sum + numberValue(entries[entryKey(student.id, column.id)]), 0);
-      const percent = max > 0 ? achieved / max * 100 : null;
-      const evaluated = evaluatePercent(percent, scale, data?.session?.grade_system);
-      const better = pointsNeededForBetter(achieved, max, scale, evaluated.rowIndex);
-      return { student, achieved, max, percent, grade: evaluated.value, better };
+      const percent = maxPoints > 0 ? achieved / maxPoints * 100 : null;
+      const evaluated = evaluatePercent(percent, activeScale, data?.session?.grade_system);
+      const better = pointsNeededForBetter(achieved, maxPoints, activeScale, evaluated.rowIndex);
+      return { student, achieved, max: maxPoints, percent, grade: evaluated.value, better };
     });
-  }, [columns, entries, data?.students, data?.session?.grade_system, scale]);
+  }, [columns, entries, data?.students, data?.session?.grade_system, activeScale, maxPoints]);
 
-  const markDirty = () => { dirtyRef.current = true; };
+  const scaleSummary = useMemo(() => {
+    const counts = new Map();
+    rows.forEach((row) => { if (row.grade) counts.set(String(row.grade), (counts.get(String(row.grade)) || 0) + 1); });
+    return (activeScale?.rows || [])
+      .slice()
+      .sort((a, b) => Number(b.minPercent) - Number(a.minPercent))
+      .map((row) => {
+        const value = scaleValueForSystem(row, data?.session?.grade_system);
+        return { ...row, value, minPoints: thresholdPoints(row, maxPoints), count: counts.get(String(value)) || 0 };
+      });
+  }, [activeScale, data?.session?.grade_system, maxPoints, rows]);
+
+  const scaleChanged = useMemo(() => scaleSignature(activeScale) !== scaleSignature(selectedScale), [activeScale, selectedScale]);
 
   const save = async () => {
     if (!data || !dirtyRef.current) return;
@@ -82,7 +123,12 @@ export default function PointsGrade() {
         const [student_id, column_id] = key.split("::");
         if (value !== "") payloadEntries.push({ student_id, column_id, points: numberValue(value) });
       });
-      await api.put("/sessions/" + sessionId + "/points", { grade_scale_id: scaleId, columns, entries: payloadEntries });
+      await api.put("/sessions/" + sessionId + "/points", {
+        grade_scale_id: scaleId,
+        scale_override: normalizeScale({ ...activeScale, id: scaleId, name: selectedScale?.name || activeScale?.name || "Bewertungsskala" }),
+        columns,
+        entries: payloadEntries,
+      });
       dirtyRef.current = false;
       setSavedTick((tick) => tick + 1);
     } catch (err) {
@@ -96,7 +142,14 @@ export default function PointsGrade() {
     if (!data || !dirtyRef.current) return undefined;
     const timer = setTimeout(save, 500);
     return () => clearTimeout(timer);
-  }, [columns, entries, scaleId]);
+  }, [columns, entries, scaleId, activeScale]);
+
+  const selectScale = (nextId) => {
+    const next = findGradeScale(data?.grade_scales || [], nextId);
+    setScaleId(nextId);
+    setLocalScale(normalizeScale(next));
+    markDirty();
+  };
 
   const addColumn = () => {
     setColumns((current) => [...current, makeColumn(current.length + 1)]);
@@ -104,7 +157,10 @@ export default function PointsGrade() {
   };
 
   const removeColumn = (columnId) => {
-    setColumns((current) => current.filter((column) => column.id !== columnId));
+    setColumns((current) => {
+      const next = current.filter((column) => column.id !== columnId);
+      return next.length ? next : [makeColumn(1)];
+    });
     setEntries((current) => Object.fromEntries(Object.entries(current).filter(([key]) => !key.endsWith("::" + columnId))));
     markDirty();
   };
@@ -116,6 +172,34 @@ export default function PointsGrade() {
 
   const updateEntry = (studentId, columnId, value) => {
     setEntries((current) => ({ ...current, [entryKey(studentId, columnId)]: value }));
+    markDirty();
+  };
+
+  const updateScaleRow = (index, patch) => {
+    setLocalScale((current) => {
+      const base = normalizeScale(current || selectedScale);
+      base.rows = base.rows.map((row, rowIndex) => rowIndex === index ? { ...row, ...patch } : row);
+      return base;
+    });
+    markDirty();
+  };
+
+  const addScaleRow = () => {
+    setLocalScale((current) => {
+      const base = normalizeScale(current || selectedScale);
+      base.rows = [...base.rows, { grade: "", points: "", minPercent: 0 }];
+      return base;
+    });
+    markDirty();
+  };
+
+  const removeScaleRow = (index) => {
+    setLocalScale((current) => {
+      const base = normalizeScale(current || selectedScale);
+      base.rows = base.rows.filter((_, rowIndex) => rowIndex !== index);
+      if (!base.rows.length) base.rows = [{ grade: "", points: "", minPercent: 0 }];
+      return base;
+    });
     markDirty();
   };
 
@@ -145,14 +229,14 @@ export default function PointsGrade() {
       <div className="flex shrink-0 flex-col gap-3 border-b-2 border-stone-200 bg-white px-4 py-3 sm:flex-row sm:items-center sm:px-6">
         <label className="flex items-center gap-2 font-bold text-stone-700">
           Skala
-          <select value={scaleId} onChange={(event) => { setScaleId(event.target.value); markDirty(); }} className="rounded-xl border-2 border-stone-300 bg-white px-3 py-2 font-bold text-stone-900">
+          <select value={scaleId} onChange={(event) => selectScale(event.target.value)} className="rounded-xl border-2 border-stone-300 bg-white px-3 py-2 font-bold text-stone-900">
             {(data.grade_scales || []).map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
           </select>
         </label>
         <button onClick={addColumn} className="flex items-center justify-center gap-2 rounded-xl border-2 border-stone-900 bg-amber-300 px-4 py-2.5 font-heading font-extrabold text-stone-900 shadow-brutal-sm">
           <Plus className="h-4 w-4" /> Spalte hinzufügen
         </button>
-        <div className="text-sm font-bold text-stone-500">{saving ? "Speichert ..." : savedTick ? "Gespeichert" : "Änderungen werden automatisch gespeichert"}</div>
+        <div className="text-sm font-bold text-stone-500">{saving ? "Speichert ..." : savedTick ? "Gespeichert" : "Änderungen werden automatisch gespeichert"}{scaleChanged ? " · Skala lokal angepasst" : ""}</div>
       </div>
 
       {error && <div className="mx-4 mt-3 rounded-2xl border-2 border-rose-300 bg-rose-100 px-4 py-3 font-bold text-rose-900">{error}</div>}
@@ -168,7 +252,7 @@ export default function PointsGrade() {
                     <input value={column.title} onChange={(event) => updateColumn(column.id, { title: event.target.value })} className="w-full rounded-lg border-2 border-stone-900/20 bg-white/80 px-2 py-1 text-center font-bold" />
                     <div className="mt-1 flex items-center gap-1">
                       <input type="number" min="0" step="0.5" value={column.max_points} onChange={(event) => updateColumn(column.id, { max_points: event.target.value })} className="w-24 rounded-lg border-2 border-stone-900/20 bg-white/80 px-2 py-1 text-center font-mono font-black" />
-                      <button onClick={() => removeColumn(column.id)} className="rounded-lg border-2 border-rose-300 bg-white p-1 text-rose-700" aria-label={"Spalte " + (index + 1) + " löschen"}><Trash2 className="h-4 w-4" /></button>
+                      <button onClick={() => removeColumn(column.id)} className="rounded-lg border-2 border-rose-300 bg-white p-1 text-rose-700" aria-label={"Spalte " + (index + 1) + " löschen"} disabled={columns.length <= 1}><Trash2 className="h-4 w-4" /></button>
                     </div>
                   </th>
                 ))}
@@ -200,6 +284,65 @@ export default function PointsGrade() {
             </tbody>
           </table>
         </div>
+
+        <section className="mt-5 grid gap-5 xl:grid-cols-[minmax(0,1fr)_420px]">
+          <div className="overflow-hidden rounded-2xl border-2 border-stone-900 bg-white shadow-brutal-sm">
+            <div className="border-b-2 border-stone-900 bg-stone-900 px-4 py-3">
+              <h2 className="font-heading text-lg font-black text-white">Notenschwellen</h2>
+            </div>
+            <table className="w-full border-separate border-spacing-0 text-sm">
+              <thead>
+                <tr>
+                  <th className="bg-stone-100 px-3 py-2 text-left font-heading font-black text-stone-900">Note</th>
+                  <th className="bg-stone-100 px-3 py-2 text-left font-heading font-black text-stone-900">ab Punktzahl</th>
+                  <th className="bg-stone-100 px-3 py-2 text-left font-heading font-black text-stone-900">Prozent</th>
+                  <th className="bg-stone-100 px-3 py-2 text-left font-heading font-black text-stone-900">vergeben</th>
+                </tr>
+              </thead>
+              <tbody>
+                {scaleSummary.map((item, index) => (
+                  <tr key={index}>
+                    <td className="border-t-2 border-stone-200 p-2"><span className={"inline-flex min-w-14 justify-center rounded-xl border-2 px-3 py-1 font-mono font-black " + gradeColorClasses(item.value, data.session.grade_system)}>{item.value || "-"}</span></td>
+                    <td className="border-t-2 border-stone-200 px-3 py-2 font-mono font-black text-stone-900">ab {formatNumber(item.minPoints)} P.</td>
+                    <td className="border-t-2 border-stone-200 px-3 py-2 font-mono font-bold text-stone-700">{formatNumber(Number(item.minPercent) || 0)}%</td>
+                    <td className="border-t-2 border-stone-200 px-3 py-2 font-heading text-lg font-black text-stone-900">{item.count}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          <div className="overflow-hidden rounded-2xl border-2 border-stone-900 bg-white shadow-brutal-sm">
+            <div className="border-b-2 border-stone-900 bg-amber-300 px-4 py-3">
+              <h2 className="font-heading text-lg font-black text-stone-900">Skala für diese Bewertung</h2>
+              <p className="text-xs font-bold text-stone-700">Änderungen gelten nur lokal für diese Spalte.</p>
+            </div>
+            <table className="w-full border-separate border-spacing-0 text-sm">
+              <thead>
+                <tr>
+                  <th className="bg-stone-100 px-2 py-2 text-left font-heading font-black text-stone-900">Note</th>
+                  <th className="bg-stone-100 px-2 py-2 text-left font-heading font-black text-stone-900">Punkte</th>
+                  <th className="bg-stone-100 px-2 py-2 text-left font-heading font-black text-stone-900">%</th>
+                  <th className="bg-stone-100 px-2 py-2"></th>
+                </tr>
+              </thead>
+              <tbody>
+                {(activeScale?.rows || []).map((row, index) => {
+                  const value = scaleValueForSystem(row, data.session.grade_system);
+                  return (
+                    <tr key={index}>
+                      <td className="border-t-2 border-stone-200 p-2"><input value={row.grade} onChange={(event) => updateScaleRow(index, { grade: event.target.value })} className={"w-20 rounded-xl border-2 px-2 py-2 text-center font-mono font-black " + gradeColorClasses(value, data.session.grade_system)} /></td>
+                      <td className="border-t-2 border-stone-200 p-2"><input value={row.points} onChange={(event) => updateScaleRow(index, { points: event.target.value })} className="w-20 rounded-xl border-2 border-stone-200 px-2 py-2 text-center font-mono font-black" /></td>
+                      <td className="border-t-2 border-stone-200 p-2"><input type="number" step="0.1" value={row.minPercent} onChange={(event) => updateScaleRow(index, { minPercent: event.target.value })} className="w-24 rounded-xl border-2 border-stone-200 px-2 py-2 text-center font-mono font-black" /></td>
+                      <td className="border-t-2 border-stone-200 p-2"><button type="button" onClick={() => removeScaleRow(index)} className="rounded-xl border-2 border-rose-300 bg-white p-2 text-rose-700"><Trash2 className="h-4 w-4" /></button></td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+            <button type="button" onClick={addScaleRow} className="m-3 inline-flex items-center gap-2 rounded-xl border-2 border-stone-900 bg-white px-4 py-2 font-bold"><Plus className="h-4 w-4" /> Zeile hinzufügen</button>
+          </div>
+        </section>
       </main>
     </div>
   );

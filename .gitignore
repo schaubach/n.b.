@@ -9,3 +9,6 @@ credentials.json
 frontend/node_modules/
 frontend/build/
 
+
+# Windows alternate data stream metadata
+*:Zone.Identifier

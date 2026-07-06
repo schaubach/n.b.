@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { AnimatePresence, motion } from "framer-motion";
-import { AlertTriangle, CheckCircle2, ChevronLeft, ChevronRight, Download, FileSpreadsheet, Loader2, Mail, Printer, Send, X } from "lucide-react";
+import { AlertTriangle, CheckCircle2, ChevronLeft, ChevronRight, Download, FileSpreadsheet, Loader2, Mail, Percent, Printer, Send, X } from "lucide-react";
 import api from "../lib/api";
 import { gradeColorClasses, gradeTier } from "../lib/grades";
 import {
@@ -776,11 +776,18 @@ export default function GradebookModal({ classId, className, open, onClose }) {
                             const kind = isKa ? examTerms(data.grade_system).short : (slType(session) === "written" ? "SL schrftl." : "SL mündl.");
                             return (
                               <th key={session.id} className={`sticky top-0 z-40 min-w-32 border-b-2 border-l border-stone-900 text-center align-bottom text-stone-900 ${isKa ? "bg-sky-400" : "bg-emerald-400"}`}>
-                                <button type="button" onClick={() => (session.points_mode ? navigate(`/points/${session.id}`) : setHeaderEditor({ kind: "sessionHeader", session }))} className="block h-full w-full px-3 py-2 text-stone-900 hover:bg-white/25" title={session.points_mode ? "Punkte->Noten öffnen" : "Spalte bearbeiten"}>
-                                  <span className="inline-flex rounded-full border border-stone-900/20 bg-white/70 px-2 py-0.5 text-[10px] font-black uppercase tracking-wide text-stone-900">{kind}{session.points_mode ? " · P→N" : ""}</span>
-                                  <div className="mt-1 font-bold leading-tight">{session.title}</div>
-                                  <div className="mt-0.5 text-xs font-bold text-stone-700">{session.date} · x{session.weight ?? 1}</div>
-                                </button>
+                                <div className="relative h-full">
+                                  <button type="button" onClick={() => setHeaderEditor({ kind: "sessionHeader", session })} className="block h-full w-full px-3 py-2 text-stone-900 hover:bg-white/25" title="Spalte bearbeiten">
+                                    <span className="inline-flex rounded-full border border-stone-900/20 bg-white/70 px-2 py-0.5 text-[10px] font-black uppercase tracking-wide text-stone-900">{kind}{session.points_mode ? " · P→N" : ""}</span>
+                                    <div className="mt-1 font-bold leading-tight">{session.title}</div>
+                                    <div className="mt-0.5 text-xs font-bold text-stone-700">{session.date} · x{session.weight ?? 1}</div>
+                                  </button>
+                                  {session.points_mode && (
+                                    <button type="button" onClick={(event) => { event.stopPropagation(); navigate(`/points/${session.id}`); }} className="absolute right-1.5 top-1.5 rounded-lg border-2 border-stone-900 bg-white p-1 text-stone-900 shadow-brutal-sm hover:bg-amber-100" title="Punkte -> Noten öffnen" aria-label="Punkte -> Noten öffnen">
+                                      <Percent className="h-3.5 w-3.5" />
+                                    </button>
+                                  )}
+                                </div>
                               </th>
                             );
                           })}
