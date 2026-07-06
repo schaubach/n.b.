@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { Download, FilePlus2, Loader2, Percent, RefreshCw, Save, Trash2, X } from "lucide-react";
+import { Download, FilePlus2, Loader2, Percent, Save, Trash2, X } from "lucide-react";
 import api from "../lib/api";
 import { gradeColorClasses } from "../lib/grades";
 import { gradeScaleCsv, parseGradeScaleCsv } from "../lib/gradeScales";
@@ -15,7 +15,6 @@ export default function GradeScaleManager({ open, onClose, onChanged }) {
   const [selected, setSelected] = useState(null);
   const [rows, setRows] = useState([]);
   const [saving, setSaving] = useState(false);
-  const [updating, setUpdating] = useState(false);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
   const fileRef = useRef(null);
@@ -48,41 +47,25 @@ export default function GradeScaleManager({ open, onClose, onChanged }) {
     }
   };
 
-  const updateFromFolder = async () => {
-    setUpdating(true);
-    setError("");
-    setMessage("");
-    try {
-      const manifest = await fetch(process.env.PUBLIC_URL + "/notenskala/index.json", { cache: "no-store" }).then((res) => {
-        if (!res.ok) throw new Error("manifest");
-        return res.json();
-      });
-      let count = 0;
-      for (const fileName of manifest) {
-        if (!String(fileName).toLowerCase().endsWith(".csv")) continue;
-        const text = await fetch(process.env.PUBLIC_URL + "/notenskala/" + encodeURIComponent(fileName), { cache: "no-store" }).then((res) => res.text());
-        await api.post("/grade-scales", { name: fileName.replace(/\.csv$/i, ""), csv: text });
-        count += 1;
-      }
-      setMessage(count + " CSV-Datei" + (count === 1 ? "" : "en") + " aus /notenskala eingelesen.");
-      await load();
-      if (onChanged) onChanged();
-    } catch (err) {
-      setError("Update fehlgeschlagen. Prüfe /notenskala/index.json und die CSV-Dateien.");
-    } finally {
-      setUpdating(false);
-    }
-  };
-
   const importFile = async (files) => {
     const file = files?.[0];
     if (!file) return;
+    setSaving(true);
+    setError("");
+    setMessage("");
     try {
       const parsed = parseGradeScaleCsv(await file.text(), file.name);
-      setSelected(parsed);
-      setRows(scaleToRows(parsed));
+      const res = await api.post("/grade-scales", { name: parsed.name, csv: gradeScaleCsv(parsed) });
+      setScales(res.data.scales || []);
+      setSelected(res.data.scale);
+      setRows(scaleToRows(res.data.scale));
+      setMessage("CSV importiert und Notenskala gespeichert.");
+      if (onChanged) onChanged(res.data.scale);
     } catch (err) {
-      setError(err.message || "CSV konnte nicht gelesen werden.");
+      setError(err.message || err?.response?.data?.detail || "CSV konnte nicht gelesen werden.");
+    } finally {
+      setSaving(false);
+      if (fileRef.current) fileRef.current.value = "";
     }
   };
 
@@ -115,10 +98,7 @@ export default function GradeScaleManager({ open, onClose, onChanged }) {
                   </button>
                 ))}
                 <input ref={fileRef} type="file" accept=".csv,text/csv" className="hidden" onChange={(e) => importFile(e.target.files)} />
-                <button type="button" onClick={updateFromFolder} disabled={updating} className="mt-3 flex w-full items-center justify-center gap-2 rounded-xl border-2 border-stone-900 bg-amber-300 px-3 py-3 font-heading font-extrabold text-stone-900 disabled:opacity-50">
-                  {updating ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />} Update
-                </button>
-                <button type="button" onClick={() => fileRef.current?.click()} className="flex w-full items-center justify-center gap-2 rounded-xl border-2 border-stone-900 bg-white px-3 py-3 font-heading font-extrabold text-stone-900">
+                <button type="button" onClick={() => fileRef.current?.click()} disabled={saving} className="mt-3 flex w-full items-center justify-center gap-2 rounded-xl border-2 border-stone-900 bg-white px-3 py-3 font-heading font-extrabold text-stone-900 disabled:opacity-50">
                   <FilePlus2 className="h-4 w-4" /> CSV importieren
                 </button>
               </div>

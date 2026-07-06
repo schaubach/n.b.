@@ -102,11 +102,16 @@ export function parseGradeScaleCsv(text, fallbackName = "Skala") {
   const pointsIndex = headers.findIndex((h) => ["punkte", "punktwert", "points"].includes(h));
   const percentIndex = headers.findIndex((h) => ["prozent_ab", "prozent ab", "mindestens %", "mindestens", "percent", "min_percent"].includes(h));
   if (gradeIndex < 0 || percentIndex < 0) throw new Error("CSV braucht die Spalten Note und Prozent_ab.");
-  const parsedRows = rows.slice(1).map((row) => ({
-    grade: String(row[gradeIndex] || "").trim(),
-    points: pointsIndex >= 0 ? String(row[pointsIndex] || "").trim() : "",
-    minPercent: Number(String(row[percentIndex] || "0").replace(",", ".")),
-  })).filter((row) => row.grade && Number.isFinite(row.minPercent));
+  const parsedRows = rows.slice(1).map((row) => {
+    const percentRaw = row.length > headers.length && percentIndex === headers.length - 1
+      ? row.slice(percentIndex).join(",")
+      : row[percentIndex];
+    return {
+      grade: String(row[gradeIndex] || "").trim(),
+      points: pointsIndex >= 0 ? String(row[pointsIndex] || "").trim() : "",
+      minPercent: Number(String(percentRaw || "0").replace(",", ".")),
+    };
+  }).filter((row) => row.grade && Number.isFinite(row.minPercent));
   if (parsedRows.length === 0) throw new Error("Notenskala enthält keine gültigen Werte.");
   parsedRows.sort((a, b) => b.minPercent - a.minPercent);
   const id = normalizeScaleId(fallbackName);
