@@ -4,6 +4,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { ArrowLeft, Undo2, Loader2 } from "lucide-react";
 import api from "../lib/api";
 import { buildCells, gradeColorClasses, gradeAccent, initials } from "../lib/grades";
+import { normalizeExamGradeValue } from "../lib/gradeScales";
 
 const THRESHOLD = 55; // px of drag before a grade registers
 
@@ -77,11 +78,12 @@ export default function Grade() {
   const assign = useCallback((value, exitVec, color) => {
     const student = students[index];
     if (!student || assigningRef.current) return;
+    const finalValue = normalizeExamGradeValue(value, session, session.grade_system);
     assigningRef.current = true;
-    setFlash({ value, color });
+    setFlash({ value: finalValue, color: gradeAccent(finalValue, session.grade_system) || color });
     setActive(null);
     vibrate(30);
-    api.post(`/sessions/${sessionId}/grades`, { student_id: student.id, value }).catch(() => {});
+    api.post(`/sessions/${sessionId}/grades`, { student_id: student.id, value: finalValue }).catch(() => {});
     setTimeout(() => {
       setExitDir(exitVec || { x: 0, y: 0 });
       setHistory((h) => [...h, { studentId: student.id, index }]);
@@ -89,7 +91,7 @@ export default function Grade() {
       setFlash(null);
       assigningRef.current = false;
     }, 240);
-  }, [students, index, sessionId]);
+  }, [students, index, session, sessionId]);
 
   const exitVecFor = (i) => {
     const c = centersRef.current[i];

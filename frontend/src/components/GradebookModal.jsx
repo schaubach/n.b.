@@ -15,6 +15,7 @@ import {
   overrideOptions,
   weightedAverage,
 } from "../lib/gradebook";
+import { normalizeExamGradeValue, shouldUseWholeExamGrades } from "../lib/gradeScales";
 import { triggerDownload } from "../lib/exportClass";
 
 function examTerms(systemId) {
@@ -436,10 +437,11 @@ function SessionGradeCell({ row, cell, systemId, onEdit }) {
 
 function PickerModal({ picker, systemId, onPick, onClear, onClose }) {
   const isAverage = picker?.kind === "average";
-  const options = isAverage ? overrideOptions(systemId) : gradeOptions(systemId);
+  const wholeExamGrades = shouldUseWholeExamGrades(picker?.session, systemId);
+  const options = wholeExamGrades ? overrideOptions(systemId) : (isAverage ? overrideOptions(systemId) : gradeOptions(systemId));
   const title = isAverage ? "Durchschnitt überschreiben" : "Note anpassen";
   const clearLabel = isAverage ? "Automatisch berechnen" : "Note entfernen";
-  const gridCols = systemId === "points_0_15" ? "grid-cols-4" : isAverage ? "grid-cols-3" : "grid-cols-3 sm:grid-cols-4";
+  const gridCols = systemId === "points_0_15" ? "grid-cols-4" : isAverage ? "grid-cols-3" : wholeExamGrades ? "grid-cols-3" : "grid-cols-3 sm:grid-cols-4";
 
   return (
     <AnimatePresence>
@@ -453,7 +455,7 @@ function PickerModal({ picker, systemId, onPick, onClear, onClose }) {
             <p className="mt-1 text-sm font-bold text-stone-500">{picker.label}</p>
             <div className={`mt-5 grid gap-2 ${gridCols}`}>
               {options.map((option) => (
-                <button key={option} onClick={() => onPick(option)} className={`rounded-xl border-2 px-3 py-3 font-mono text-xl font-black transition-all active:scale-95 ${picker.currentValue === option ? "border-stone-900 bg-stone-900 text-white" : isAverage ? "border-stone-200 bg-stone-50 text-stone-900 hover:border-stone-900" : gradeColorClasses(option, systemId)}`}>{option}</button>
+                <button key={option} onClick={() => onPick(option)} className={`rounded-xl border-2 px-3 py-3 font-mono text-xl font-black transition-all active:scale-95 ${gradeColorClasses(option, systemId)} ${picker.currentValue === option ? "ring-4 ring-stone-900" : ""}`}>{option}</button>
               ))}
             </div>
             <button onClick={onClear} className="mt-4 w-full rounded-xl border-2 border-stone-300 bg-white px-4 py-3 font-bold text-stone-600 hover:border-stone-900">{clearLabel}</button>
@@ -673,9 +675,10 @@ export default function GradebookModal({ classId, className, open, onClose }) {
 
   const saveSessionGrade = async (value) => {
     const isPoints = !!picker.session.points_mode;
-    const calculated = picker.currentCalculated || "";
-    if (value) {
-      await api.post(`/sessions/${picker.session.id}/grades`, { student_id: picker.student.id, value, calculated_value: calculated, manual_override: isPoints });
+    const calculated = normalizeExamGradeValue(picker.currentCalculated || "", picker.session, data.grade_system);
+    const normalizedValue = normalizeExamGradeValue(value, picker.session, data.grade_system);
+    if (normalizedValue) {
+      await api.post(`/sessions/${picker.session.id}/grades`, { student_id: picker.student.id, value: normalizedValue, calculated_value: calculated, manual_override: isPoints });
     } else if (isPoints && calculated) {
       await api.post(`/sessions/${picker.session.id}/grades`, { student_id: picker.student.id, value: calculated, calculated_value: calculated, manual_override: false });
     } else {
@@ -683,8 +686,8 @@ export default function GradebookModal({ classId, className, open, onClose }) {
     }
     setData((current) => {
       const rest = (current.grades || []).filter((grade) => !(grade.session_id === picker.session.id && grade.student_id === picker.student.id));
-      const nextValue = value || (isPoints ? calculated : "");
-      return { ...current, grades: nextValue ? [...rest, { session_id: picker.session.id, student_id: picker.student.id, value: nextValue, calculated_value: calculated, manual_override: !!(isPoints && value) }] : rest };
+      const nextValue = normalizedValue || (isPoints ? calculated : "");
+      return { ...current, grades: nextValue ? [...rest, { session_id: picker.session.id, student_id: picker.student.id, value: nextValue, calculated_value: calculated, manual_override: !!(isPoints && normalizedValue) }] : rest };
     });
   };
 

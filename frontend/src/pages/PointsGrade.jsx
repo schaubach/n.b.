@@ -3,7 +3,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import { ArrowLeft, Loader2, Plus, Save, Trash2 } from "lucide-react";
 import api from "../lib/api";
 import { gradeColorClasses, gradeTier } from "../lib/grades";
-import { cloneScale, evaluatePercent, findGradeScale, pointsNeededForBetter, scaleValueForSystem } from "../lib/gradeScales";
+import { cloneScale, evaluatePercent, findGradeScale, normalizeExamGradeValue, pointsNeededForBetter, scaleValueForSystem, shouldUseWholeExamGrades } from "../lib/gradeScales";
 
 function numberValue(value) {
   const n = Number(String(value ?? "").replace(",", "."));
@@ -99,8 +99,8 @@ export default function PointsGrade() {
     return (data?.students || []).map((student) => {
       const achieved = columns.reduce((sum, column) => sum + numberValue(entries[entryKey(student.id, column.id)]), 0);
       const percent = maxPoints > 0 ? achieved / maxPoints * 100 : null;
-      const evaluated = evaluatePercent(percent, activeScale, data?.session?.grade_system);
-      const better = pointsNeededForBetter(achieved, maxPoints, activeScale, evaluated.rowIndex, data?.session?.grade_system);
+      const evaluated = evaluatePercent(percent, activeScale, data?.session?.grade_system, data?.session);
+      const better = pointsNeededForBetter(achieved, maxPoints, activeScale, evaluated.rowIndex, data?.session?.grade_system, data?.session);
       return { student, achieved, max: maxPoints, percent, grade: evaluated.value, better };
     });
   }, [columns, entries, data?.students, data?.session?.grade_system, activeScale, maxPoints]);
@@ -108,14 +108,22 @@ export default function PointsGrade() {
   const scaleSummary = useMemo(() => {
     const counts = new Map();
     rows.forEach((row) => { if (row.grade) counts.set(String(row.grade), (counts.get(String(row.grade)) || 0) + 1); });
-    return (activeScale?.rows || [])
+    const items = (activeScale?.rows || [])
       .slice()
       .sort((a, b) => Number(b.minPercent) - Number(a.minPercent))
       .map((row) => {
-        const value = scaleValueForSystem(row, data?.session?.grade_system);
+        const value = normalizeExamGradeValue(scaleValueForSystem(row, data?.session?.grade_system), data?.session, data?.session?.grade_system);
         return { ...row, value, minPoints: thresholdPoints(row, maxPoints), count: counts.get(String(value)) || 0 };
       });
-  }, [activeScale, data?.session?.grade_system, maxPoints, rows]);
+    if (!shouldUseWholeExamGrades(data?.session, data?.session?.grade_system)) return items;
+    const grouped = new Map();
+    items.forEach((item) => {
+      const current = grouped.get(item.value);
+      if (!current) grouped.set(item.value, { ...item });
+      else grouped.set(item.value, { ...current, minPercent: Math.min(Number(current.minPercent) || 0, Number(item.minPercent) || 0), minPoints: Math.min(current.minPoints, item.minPoints) });
+    });
+    return Array.from(grouped.values()).sort((a, b) => Number(b.minPercent) - Number(a.minPercent));
+  }, [activeScale, data?.session, data?.session?.grade_system, maxPoints, rows]);
 
   const scaleChanged = useMemo(() => scaleSignature(activeScale) !== scaleSignature(selectedScale), [activeScale, selectedScale]);
   const showScalePoints = data?.session?.grade_system === "points_0_15";

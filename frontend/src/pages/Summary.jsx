@@ -4,6 +4,8 @@ import { motion, AnimatePresence } from "framer-motion";
 import { ArrowLeft, ArrowRight, Loader2, CheckCircle2, Pencil, X, Trash2, Table2 } from "lucide-react";
 import api from "../lib/api";
 import { initials, allGrades, gradeColorClasses } from "../lib/grades";
+import { overrideOptions } from "../lib/gradebook";
+import { normalizeExamGradeValue, shouldUseWholeExamGrades } from "../lib/gradeScales";
 import GradebookModal from "../components/GradebookModal";
 
 export default function Summary() {
@@ -17,14 +19,15 @@ export default function Summary() {
 
   const updateGrade = async (studentId, value) => {
     try {
-      if (value === null) {
+      const normalizedValue = value === null ? null : normalizeExamGradeValue(value, session, session.grade_system);
+      if (normalizedValue === null) {
         await api.delete(`/sessions/${sessionId}/grades/${studentId}`);
       } else {
-        await api.post(`/sessions/${sessionId}/grades`, { student_id: studentId, value });
+        await api.post(`/sessions/${sessionId}/grades`, { student_id: studentId, value: normalizedValue });
       }
       setSession((s) => ({
         ...s,
-        students: s.students.map((st) => (st.id === studentId ? { ...st, grade: value } : st)),
+        students: s.students.map((st) => (st.id === studentId ? { ...st, grade: normalizedValue } : st)),
       }));
     } catch (e) {}
     setPicker(null);
@@ -145,6 +148,7 @@ export default function Summary() {
 
       <GradePicker
         student={picker}
+        session={session}
         systemId={session.grade_system}
         onPick={(v) => updateGrade(picker.id, v)}
         onRemove={() => updateGrade(picker.id, null)}
@@ -154,8 +158,10 @@ export default function Summary() {
   );
 }
 
-function GradePicker({ student, systemId, onPick, onRemove, onClose }) {
-  const grades = allGrades(systemId);
+function GradePicker({ student, session, systemId, onPick, onRemove, onClose }) {
+  const grades = shouldUseWholeExamGrades(session, systemId)
+    ? overrideOptions(systemId).map((value) => ({ value, alt: "" }))
+    : allGrades(systemId);
   return (
     <AnimatePresence>
       {student && (
@@ -193,8 +199,8 @@ function GradePicker({ student, systemId, onPick, onRemove, onClose }) {
                   data-testid={`picker-grade-${g.value}`}
                   className={`py-3 rounded-xl border-2 font-mono font-black flex flex-col items-center justify-center transition-all active:scale-95 ${
                     student.grade === g.value
-                      ? "bg-stone-900 text-white border-stone-900"
-                      : "bg-stone-50 text-stone-900 border-stone-200 hover:border-stone-900"
+                      ? "ring-4 ring-stone-900 " + gradeColorClasses(g.value, systemId)
+                      : gradeColorClasses(g.value, systemId)
                   }`}
                 >
                   <span className="text-xl leading-none">{g.value}</span>

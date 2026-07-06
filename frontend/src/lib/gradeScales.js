@@ -145,7 +145,18 @@ export function scaleValueForSystem(row, gradeSystem) {
   return String(row.grade || "");
 }
 
-export function evaluatePercent(percent, scale, gradeSystem = "grades_1_6") {
+export function shouldUseWholeExamGrades(session, gradeSystem) {
+  return gradeSystem !== "points_0_15" && session?.category === "klausur";
+}
+
+export function normalizeExamGradeValue(value, session, gradeSystem) {
+  const text = String(value || "");
+  if (!shouldUseWholeExamGrades(session, gradeSystem)) return text;
+  const match = text.match(/\d/);
+  return match ? match[0] : text;
+}
+
+export function evaluatePercent(percent, scale, gradeSystem = "grades_1_6", session = null) {
   const rows = (scale?.rows || []).slice().sort((a, b) => b.minPercent - a.minPercent);
   if (typeof percent !== "number" || !Number.isFinite(percent) || rows.length === 0) {
     return { value: "", row: null, rowIndex: -1, percent: null };
@@ -153,19 +164,21 @@ export function evaluatePercent(percent, scale, gradeSystem = "grades_1_6") {
   const rowIndex = rows.findIndex((row) => percent >= Number(row.minPercent));
   const index = rowIndex >= 0 ? rowIndex : rows.length - 1;
   const row = rows[index];
-  return { value: scaleValueForSystem(row, gradeSystem), row, rowIndex: index, percent };
+  return { value: normalizeExamGradeValue(scaleValueForSystem(row, gradeSystem), session, gradeSystem), row, rowIndex: index, percent };
 }
 
-export function pointsNeededForBetter(achieved, maxPoints, scale, rowIndex, gradeSystem = "grades_1_6") {
+export function pointsNeededForBetter(achieved, maxPoints, scale, rowIndex, gradeSystem = "grades_1_6", session = null) {
   const rows = (scale?.rows || []).slice().sort((a, b) => b.minPercent - a.minPercent);
   if (!(maxPoints > 0) || rowIndex <= 0 || rowIndex >= rows.length) return null;
-  const better = rows[rowIndex - 1];
+  const currentValue = normalizeExamGradeValue(scaleValueForSystem(rows[rowIndex], gradeSystem), session, gradeSystem);
+  const better = rows.slice(0, rowIndex).reverse().find((row) => normalizeExamGradeValue(scaleValueForSystem(row, gradeSystem), session, gradeSystem) !== currentValue);
+  if (!better) return null;
   const neededTotal = (Number(better.minPercent) / 100) * maxPoints;
   const missing = neededTotal - Number(achieved || 0);
   if (!(missing > 0)) return null;
   return {
     points: Math.ceil(missing * 10) / 10,
-    target: scaleValueForSystem(better, gradeSystem),
+    target: normalizeExamGradeValue(scaleValueForSystem(better, gradeSystem), session, gradeSystem),
     minPercent: better.minPercent,
   };
 }

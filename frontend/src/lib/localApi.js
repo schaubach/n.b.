@@ -5,6 +5,7 @@ import {
   allGradeScales,
   evaluatePercent,
   findGradeScale,
+  normalizeExamGradeValue,
   parseGradeScaleCsv,
   pointsNeededForBetter,
 } from "./gradeScales";
@@ -141,8 +142,8 @@ function pointSummary(state, session, studentId) {
   const scales = allGradeScales(state.grade_scales);
   const scale = session.point_scale_override || findGradeScale(scales, session.grade_scale_id);
   const percent = achieved / max * 100;
-  const evaluated = evaluatePercent(percent, scale, session.grade_system);
-  const better = pointsNeededForBetter(achieved, max, scale, evaluated.rowIndex, session.grade_system);
+  const evaluated = evaluatePercent(percent, scale, session.grade_system, session);
+  const better = pointsNeededForBetter(achieved, max, scale, evaluated.rowIndex, session.grade_system, session);
   return { achieved, max, percent, calculated_value: evaluated.value, better };
 }
 
@@ -500,13 +501,16 @@ async function post(url, body) {
       const session = findSession(state, gradePost[1]);
       const student = state.students.find((item) => item.id === body.student_id && item.class_id === session.class_id);
       if (!student) httpError("Lernende*r nicht gefunden", 404);
+      const cls = findClass(state, session.class_id);
+      const value = normalizeExamGradeValue(body.value, session, cls.grade_system);
+      const calculatedValue = normalizeExamGradeValue(body.calculated_value || "", session, cls.grade_system);
       let grade = state.grades.find((item) => item.session_id === session.id && item.student_id === student.id);
       if (!grade) {
-        grade = { id: id(), session_id: session.id, student_id: student.id, value: body.value, calculated_value: body.calculated_value || "", manual_override: !!body.manual_override, updated_at: nowIso() };
+        grade = { id: id(), session_id: session.id, student_id: student.id, value, calculated_value: calculatedValue, manual_override: !!body.manual_override, updated_at: nowIso() };
         state.grades.push(grade);
       } else {
-        grade.value = body.value;
-        if (body.calculated_value !== undefined) grade.calculated_value = body.calculated_value || "";
+        grade.value = value;
+        if (body.calculated_value !== undefined) grade.calculated_value = calculatedValue;
         if (body.manual_override !== undefined) grade.manual_override = !!body.manual_override;
         grade.updated_at = nowIso();
       }
