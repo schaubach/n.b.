@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { Download, FilePlus2, Percent, Plus, X } from "lucide-react";
+import { Download, FilePlus2, Percent, Plus, Trash2, X } from "lucide-react";
 import api from "../lib/api";
 import { gradeColorClasses } from "../lib/grades";
 import { gradeOptions } from "../lib/gradebook";
@@ -37,6 +37,8 @@ export default function GradeScaleManager({ open, onClose, onChanged }) {
   const [scales, setScales] = useState([]);
   const [selected, setSelected] = useState(null);
   const [rows, setRows] = useState([]);
+  const [scaleName, setScaleName] = useState("");
+  const [renaming, setRenaming] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
@@ -56,6 +58,7 @@ export default function GradeScaleManager({ open, onClose, onChanged }) {
     loadedRef.current = false;
     dirtyRef.current = false;
     setRows(fixedRowsFrom(selected));
+    setScaleName(selected?.name || "");
     setTimeout(() => { loadedRef.current = true; }, 0);
   }, [selected]);
 
@@ -120,6 +123,51 @@ export default function GradeScaleManager({ open, onClose, onChanged }) {
     setRows((current) => current.map((row, i) => i === index ? { ...row, minPercent } : row));
   };
 
+  const renameScale = async () => {
+    if (!selected) return;
+    const name = String(scaleName || "").trim();
+    if (!name || name === selected.name) return;
+    setRenaming(true);
+    setError("");
+    setMessage("");
+    try {
+      const res = await api.put("/grade-scales/" + encodeURIComponent(selected.id), { name });
+      setScales(res.data.scales || []);
+      setSelected(res.data.scale);
+      setMessage("Notenskala umbenannt.");
+      if (onChanged) onChanged(res.data.scale);
+    } catch (err) {
+      setError(err?.response?.data?.detail || "Notenskala konnte nicht umbenannt werden.");
+      setScaleName(selected.name || "");
+    } finally {
+      setRenaming(false);
+    }
+  };
+
+  const deleteScale = async () => {
+    if (!selected) return;
+    if (scales.length <= 1) {
+      setError("Die letzte Notenskala kann nicht gelöscht werden.");
+      return;
+    }
+    const ok = window.confirm("Notenskala '" + selected.name + "' wirklich löschen?");
+    if (!ok) return;
+    setSaving(true);
+    setError("");
+    setMessage("");
+    try {
+      const res = await api.delete("/grade-scales/" + encodeURIComponent(selected.id));
+      setScales(res.data.scales || []);
+      setSelected(res.data.selected || (res.data.scales || [])[0] || null);
+      setMessage("Notenskala gelöscht.");
+      if (onChanged) onChanged(res.data.selected);
+    } catch (err) {
+      setError(err?.response?.data?.detail || "Notenskala konnte nicht gelöscht werden.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const createScale = async () => {
     const suffix = new Date().toLocaleString("de-DE").replace(/\D+/g, "").slice(0, 12);
     const name = "Neue Skala " + suffix;
@@ -172,6 +220,15 @@ export default function GradeScaleManager({ open, onClose, onChanged }) {
                 </button>
               </div>
               <div className="min-w-0">
+                <div className="mb-4 grid gap-2 sm:grid-cols-[1fr_auto]">
+                  <label className="block">
+                    <span className="text-sm font-bold text-stone-700">Name der Skala</span>
+                    <input value={scaleName} onChange={(e) => setScaleName(e.target.value)} onBlur={renameScale} onKeyDown={(e) => { if (e.key === "Enter") e.currentTarget.blur(); }} disabled={!selected || renaming} className="mt-1 w-full rounded-xl border-2 border-stone-300 px-4 py-3 font-bold text-stone-900 outline-none focus:border-stone-900 disabled:opacity-50" />
+                  </label>
+                  <button type="button" onClick={deleteScale} disabled={!selected || saving || renaming || scales.length <= 1} className="self-end rounded-xl border-2 border-rose-300 bg-white px-4 py-3 font-heading font-extrabold text-rose-700 disabled:opacity-40" title="Skala löschen">
+                    <Trash2 className="h-5 w-5" />
+                  </button>
+                </div>
                 <div className="overflow-hidden rounded-2xl border-2 border-stone-900">
                   <table className="w-full border-separate border-spacing-0 text-sm">
                     <thead>

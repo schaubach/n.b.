@@ -49,7 +49,7 @@ function classOut(state, cls) {
   const sessions = state.sessions.filter((session) => session.class_id === classId);
   const klausur = sessions.filter((session) => session.category === "klausur").length;
   const sonstige = sessions.length - klausur;
-  const scales = allGradeScales(state.grade_scales);
+  const scales = gradeScalesForState(state);
   const gradeScale = findGradeScale(scales, cls.grade_scale_id || "MEDA");
   return {
     id: cls.id,
@@ -121,6 +121,18 @@ function csvEscape(value) {
   return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
 }
 
+function gradeScalesForState(state) {
+  return allGradeScales(state.grade_scales, state.hidden_grade_scales);
+}
+
+function hideGradeScale(state, scaleId) {
+  state.hidden_grade_scales = Array.from(new Set([...(state.hidden_grade_scales || []), scaleId]));
+}
+
+function unhideGradeScale(state, scaleId) {
+  state.hidden_grade_scales = (state.hidden_grade_scales || []).filter((id) => id !== scaleId);
+}
+
 function pointSessionFor(state, sessionId) {
   state.point_sessions = state.point_sessions || [];
   let record = state.point_sessions.find((item) => item.session_id === sessionId);
@@ -139,7 +151,7 @@ function pointSummary(state, session, studentId) {
     .filter((entry) => entry.student_id === studentId)
     .reduce((sum, entry) => sum + (Number(entry.points) || 0), 0);
   if (!(max > 0)) return { achieved, max, percent: null, calculated_value: "" };
-  const scales = allGradeScales(state.grade_scales);
+  const scales = gradeScalesForState(state);
   const scale = session.point_scale_override || findGradeScale(scales, session.grade_scale_id);
   const percent = achieved / max * 100;
   const evaluated = evaluatePercent(percent, scale, session.grade_system, session);
@@ -278,13 +290,13 @@ async function get(url) {
 
   if (path === "/") return { data: { app: "n.b.", status: "ok", storage: "local-encrypted" } };
   if (path === "/grade-systems") return { data: GRADE_SYSTEMS };
-  if (path === "/grade-scales") return { data: allGradeScales(state.grade_scales) };
+  if (path === "/grade-scales") return { data: gradeScalesForState(state) };
   const sessionPoints = path.match(/^\/sessions\/([^/]+)\/points$/);
   if (sessionPoints) {
     const session = findSession(state, sessionPoints[1]);
     const cls = findClass(state, session.class_id);
     const record = pointSessionFor(state, session.id);
-    const scales = allGradeScales(state.grade_scales);
+    const scales = gradeScalesForState(state);
     const scale = session.point_scale_override || findGradeScale(scales, session.grade_scale_id || cls.grade_scale_id || "MEDA");
     const students = state.students.filter((student) => student.class_id === cls.id).sort(compareStudents).map((student) => {
       const grade = state.grades.find((item) => item.session_id === session.id && item.student_id === student.id);
@@ -347,7 +359,7 @@ async function get(url) {
         class_name: cls.name || "",
         grade_system: cls.grade_system || "grades_1_6",
         grade_scale_id: cls.grade_scale_id || "MEDA",
-        grade_scales: allGradeScales(state.grade_scales),
+        grade_scales: gradeScalesForState(state),
         students,
         sessions,
         grades,
@@ -430,8 +442,9 @@ async function post(url, body) {
     return mutateState((state) => {
       const parsed = parseGradeScaleCsv(body.csv || "", body.name || "Skala");
       state.grade_scales = (state.grade_scales || []).filter((scale) => scale.id !== parsed.id);
+      unhideGradeScale(state, parsed.id);
       state.grade_scales.push(parsed);
-      return { data: { ok: true, scale: parsed, scales: allGradeScales(state.grade_scales) } };
+      return { data: { ok: true, scale: parsed, scales: gradeScalesForState(state) } };
     });
   }
 
@@ -523,6 +536,25 @@ async function post(url, body) {
 
 async function put(url, body) {
   const path = normalizePath(url);
+
+  const gradeScaleUpdate = path.match(/^\/grade-scales\/([^/]+)$/);
+  if (gradeScaleUpdate) {
+    return mutateState((state) => {
+      const scales = gradeScalesForState(state);
+      const current = scales.find((scale) => scale.id === gradeScaleUpdate[1]);
+      if (!current) httpError("Notenskala nicht gefunden", 404);
+      const name = String(body.name || "").trim();
+      if (!name) httpError("Name darf nicht leer sein", 400);
+      const parsed = parseGradeScaleCsv(gradeScaleCsv(current), name);
+      state.grade_scales = (state.grade_scales || []).filter((scale) => scale.id !== current.id && scale.id !== parsed.id);
+      if (current.id !== parsed.id) hideGradeScale(state, current.id);
+      unhideGradeScale(state, parsed.id);
+      state.grade_scales.push(parsed);
+      state.classes.forEach((cls) => { if (cls.grade_scale_id === current.id) cls.grade_scale_id = parsed.id; });
+      state.sessions.forEach((session) => { if (session.grade_scale_id === current.id) session.grade_scale_id = parsed.id; });
+      return { data: { ok: true, scale: parsed, scales: gradeScalesForState(state) } };
+    });
+  }
 
   const sessionUpdate = path.match(/^\/sessions\/([^/]+)$/);
   if (sessionUpdate) {
@@ -700,6 +732,23 @@ async function del(url) {
       state.gradebook_weights = (state.gradebook_weights || []).filter((item) => item.class_id !== classId);
       state.point_sessions = (state.point_sessions || []).filter((item) => !sessionIds.includes(item.session_id));
       return { data: { ok: true } };
+    });
+  }
+
+  const gradeScaleDelete = path.match(/^\/grade-scales\/([^/]+)$/);
+  if (gradeScaleDelete) {
+    return mutateState((state) => {
+      const scales = gradeScalesForState(state);
+      const current = scales.find((scale) => scale.id === gradeScaleDelete[1]);
+      if (!current) httpError("Notenskala nicht gefunden", 404);
+      if (scales.length <= 1) httpError("Die letzte Notenskala kann nicht gelöscht werden.", 400);
+      const fallback = scales.find((scale) => scale.id !== current.id) || scales[0];
+      state.grade_scales = (state.grade_scales || []).filter((scale) => scale.id !== current.id);
+      hideGradeScale(state, current.id);
+      state.classes.forEach((cls) => { if (cls.grade_scale_id === current.id) cls.grade_scale_id = fallback.id; });
+      state.sessions.forEach((session) => { if (session.grade_scale_id === current.id) session.grade_scale_id = fallback.id; });
+      const nextScales = gradeScalesForState(state);
+      return { data: { ok: true, selected: findGradeScale(nextScales, fallback.id), scales: nextScales } };
     });
   }
 

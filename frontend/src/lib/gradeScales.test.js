@@ -1,4 +1,4 @@
-import { parseGradeScaleCsv } from "./gradeScales";
+import { allGradeScales, parseGradeScaleCsv } from "./gradeScales";
 
 test("imports tendency grades from comma separated scale csv", () => {
   const scale = parseGradeScaleCsv("Note,Punkte,Prozent_ab\n2+,12,80\n2,11,75\n2-,10,70\n5+,3,33\n5,2,27\n5-,1,20\n", "MEDA.csv");
@@ -11,4 +11,11 @@ test("imports decimal comma in the last column of comma separated scale csv", ()
   const scale = parseGradeScaleCsv("Note,Punkte,Prozent_ab\n5+;3;37,5\n".replace(/;/g, ","), "GYM.csv");
   expect(scale.rows[0].grade).toBe("5+");
   expect(scale.rows[0].minPercent).toBe(37.5);
+});
+
+
+test("can hide built-in grade scales from merged scale list", () => {
+  const scales = allGradeScales([], ["MEDA"]);
+  expect(scales.some((scale) => scale.id === "MEDA")).toBe(false);
+  expect(scales.some((scale) => scale.id === "GYM")).toBe(true);
 });

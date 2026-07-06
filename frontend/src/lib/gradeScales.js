@@ -126,8 +126,11 @@ export function gradeScaleCsv(scale) {
   return lines.join("\n");
 }
 
-export function allGradeScales(customScales = []) {
-  const map = new Map(DEFAULT_GRADE_SCALES.map((scale) => [scale.id, scale]));
+export function allGradeScales(customScales = [], hiddenScaleIds = []) {
+  const hidden = new Set(hiddenScaleIds || []);
+  const map = new Map(DEFAULT_GRADE_SCALES
+    .filter((scale) => !hidden.has(scale.id))
+    .map((scale) => [scale.id, scale]));
   (customScales || []).forEach((scale) => map.set(scale.id, { ...scale, built_in: false }));
   return Array.from(map.values()).sort((a, b) => String(a.name).localeCompare(String(b.name), "de", { sensitivity: "base" }));
 }
