@@ -1,12 +1,10 @@
 import React, { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
-import { ArrowLeft, Loader2, FileSpreadsheet, Share2, Plus, CheckCircle2, Pencil, X, Trash2 } from "lucide-react";
+import { ArrowLeft, ArrowRight, Loader2, CheckCircle2, Pencil, X, Trash2, Table2 } from "lucide-react";
 import api from "../lib/api";
 import { initials, allGrades, gradeColorClasses } from "../lib/grades";
-import { exportAndDelete, shareAndDelete, canShareFiles } from "../lib/exportClass";
-import ConfirmModal from "../components/ConfirmModal";
-import SessionSetupModal from "../components/SessionSetupModal";
+import GradebookModal from "../components/GradebookModal";
 
 export default function Summary() {
   const { sessionId } = useParams();
@@ -14,12 +12,8 @@ export default function Summary() {
   const [session, setSession] = useState(null);
   const [sessionCount, setSessionCount] = useState(0);
   const [loading, setLoading] = useState(true);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState(null);
-  const [modal, setModal] = useState({ open: false });
   const [picker, setPicker] = useState(null); // student being corrected
-  const [setupOpen, setSetupOpen] = useState(false);
-  const closeModal = () => setModal({ open: false });
+  const [gradebookOpen, setGradebookOpen] = useState(false);
 
   const updateGrade = async (studentId, value) => {
     try {
@@ -36,7 +30,6 @@ export default function Summary() {
     setPicker(null);
   };
 
-
   useEffect(() => {
     (async () => {
       const res = await api.get(`/sessions/${sessionId}`);
@@ -48,55 +41,6 @@ export default function Summary() {
       setLoading(false);
     })();
   }, [sessionId]);
-
-  const newRound = async (opts) => {
-    const res = await api.post("/sessions", { class_id: session.class_id, ...opts });
-    navigate(`/grade/${res.data.id}`);
-  };
-
-  const doExport = async () => {
-    closeModal(); setError(null); setBusy(true);
-    try {
-      await exportAndDelete(session.class_id, session.class_name);
-      navigate("/");
-    } catch (e) {
-      setError("Export fehlgeschlagen. Bitte erneut versuchen.");
-    } finally { setBusy(false); }
-  };
-
-  const doShare = async () => {
-    closeModal(); setError(null); setBusy(true);
-    try {
-      const ok = await shareAndDelete(session.class_id, session.class_name);
-      if (ok) navigate("/");
-    } catch (e) {
-      setError("Teilen fehlgeschlagen. Bitte erneut versuchen.");
-    } finally { setBusy(false); }
-  };
-
-  const handleExport = () => {
-    setModal({
-      open: true,
-      title: "Bewertungen exportieren & löschen?",
-      description: "Alle gesammelten Runden werden als CSV exportiert (je eine Spalte) und der Sammelbestand anschließend geleert.",
-      actions: [
-        { key: "ok", testid: "modal-confirm-export", variant: "primary", label: "Exportieren & löschen", onClick: doExport },
-        { key: "cancel", testid: "modal-cancel", variant: "ghost", label: "Abbrechen", onClick: closeModal },
-      ],
-    });
-  };
-
-  const handleShare = () => {
-    setModal({
-      open: true,
-      title: `${canShareFiles() ? "Teilen" : "Herunterladen"} & löschen?`,
-      description: `Alle gesammelten Runden werden ${canShareFiles() ? "geteilt" : "heruntergeladen"} und der Sammelbestand anschließend geleert.`,
-      actions: [
-        { key: "ok", testid: "modal-confirm-share", variant: "success", label: `${canShareFiles() ? "Teilen" : "Herunterladen"} & löschen`, onClick: doShare },
-        { key: "cancel", testid: "modal-cancel", variant: "ghost", label: "Abbrechen", onClick: closeModal },
-      ],
-    });
-  };
 
   if (loading) {
     return (
@@ -111,7 +55,7 @@ export default function Summary() {
 
   return (
     <div className="min-h-screen bg-stone-50 bg-dots">
-      <main className="px-4 sm:px-10 max-w-3xl mx-auto pb-64 pt-8">
+      <main className="px-4 sm:px-10 max-w-3xl mx-auto pb-44 pt-8">
         <div className="mt-2">
           <p className="text-xs font-bold uppercase tracking-[0.2em] text-stone-400">
             {session.category === "klausur" ? "Klausur" : "Sonstige Leistung"}
@@ -171,63 +115,32 @@ export default function Summary() {
         </div>
       </main>
 
-      {/* Sticky action bar */}
       <div className="fixed bottom-0 inset-x-0 p-4 bg-gradient-to-t from-stone-50 via-stone-50 to-transparent">
-        <div className="max-w-3xl mx-auto">
-          {error && (
-            <p data-testid="export-error" className="text-center text-sm font-bold text-rose-700 mb-2">
-              {error}
-            </p>
+        <div className="max-w-3xl mx-auto space-y-2">
+          {graded.length > 0 && (
+            <button
+              onClick={() => setGradebookOpen(true)}
+              data-testid="summary-gradebook-button"
+              className="w-full px-5 py-3 bg-stone-900 text-white font-heading font-extrabold rounded-2xl border-2 border-stone-900 shadow-brutal-sm hover:-translate-y-0.5 active:translate-y-0 active:shadow-none transition-all flex items-center justify-center gap-2"
+            >
+              <Table2 className="w-5 h-5" /> Notenstand <ArrowRight className="w-5 h-5" />
+            </button>
           )}
-          <button
-            onClick={() => setSetupOpen(true)}
-            disabled={busy}
-            data-testid="summary-new-round-button"
-            className="w-full mb-3 px-5 py-3 bg-emerald-400 text-stone-900 font-heading font-extrabold rounded-2xl border-2 border-stone-900 shadow-brutal-sm hover:-translate-y-0.5 active:translate-y-0 active:shadow-none transition-all flex items-center justify-center gap-2 disabled:opacity-50"
-          >
-            <Plus className="w-5 h-5" /> Weitere Bewertung erstellen
-          </button>
-          <div className="flex gap-3">
-            <button
-              onClick={handleExport}
-              disabled={busy}
-              data-testid="export-csv-button"
-              className="flex-1 px-4 py-4 bg-stone-900 text-white font-heading font-extrabold rounded-2xl border-2 border-stone-900 shadow-brutal-sm hover:-translate-y-0.5 active:translate-y-0 active:shadow-none transition-all flex items-center justify-center gap-2 text-sm sm:text-base disabled:opacity-50"
-            >
-              {busy ? <Loader2 className="w-5 h-5 animate-spin" /> : <FileSpreadsheet className="w-5 h-5" />}
-              Exportieren &amp; löschen
-            </button>
-            <button
-              onClick={handleShare}
-              disabled={busy}
-              data-testid="export-share-button"
-              className="flex-1 px-4 py-4 bg-white text-stone-900 font-heading font-extrabold rounded-2xl border-2 border-stone-900 shadow-brutal-sm hover:-translate-y-0.5 active:translate-y-0 active:shadow-none transition-all flex items-center justify-center gap-2 text-sm sm:text-base disabled:opacity-50"
-            >
-              <Share2 className="w-5 h-5" />
-              {canShareFiles() ? "Teilen" : "Laden"} &amp; löschen
-            </button>
-          </div>
-          <p className="text-center text-xs text-stone-400 mt-2 font-medium">
-            Export enthält alle gesammelten Runden (je eine Spalte) · danach wird der Bestand geleert
-          </p>
           <button
             onClick={() => navigate("/")}
             data-testid="summary-back-button"
-            className="w-full mt-3 px-5 py-3 bg-white text-stone-900 font-heading font-extrabold rounded-2xl border-2 border-stone-900 shadow-brutal-sm hover:-translate-y-0.5 active:translate-y-0 active:shadow-none transition-all flex items-center justify-center gap-2"
+            className="w-full px-5 py-3 bg-white text-stone-900 font-heading font-extrabold rounded-2xl border-2 border-stone-900 shadow-brutal-sm hover:-translate-y-0.5 active:translate-y-0 active:shadow-none transition-all flex items-center justify-center gap-2"
           >
             <ArrowLeft className="w-5 h-5" /> Klassen
           </button>
         </div>
       </div>
 
-      <ConfirmModal {...modal} onClose={closeModal} />
-
-      <SessionSetupModal
-        open={setupOpen}
+      <GradebookModal
+        open={gradebookOpen}
+        classId={session.class_id}
         className={session.class_name}
-        category={session.category}
-        onStart={async (opts) => { setSetupOpen(false); await newRound(opts); }}
-        onClose={() => setSetupOpen(false)}
+        onClose={() => setGradebookOpen(false)}
       />
 
       <GradePicker

@@ -91,3 +91,17 @@ Bewerten (swipen) → CSV exportieren → in iDoceo per CSV-Import einlesen.
 - P2: PWA/„Zum Home-Bildschirm" + Offline-Cache für reines lokales Arbeiten.
 - P2: Notenzellen-Reihenfolge/Belegung pro Lehrer konfigurierbar.
 - P2: Stapel-Vorschau (nächste Karte) hinter aktueller Karte für mehr Tiefe.
+
+## Update (2026-07-03) - Lokale Offline-App ohne Backend
+- Backend-/MongoDB-Laufzeitpfad fuer die App entfernt: Das Frontend nutzt jetzt eine lokale axios-kompatible API-Schicht auf IndexedDB.
+- Lokaler Passwort-Tresor vor der App: PBKDF2-SHA-256 + AES-GCM, Passwort wird nicht gespeichert.
+- iDoceo-Parser nach JavaScript portiert; `.idoceo`-Import laeuft im Browser. Parser-Test nutzt `tests/sample.idoceo`.
+- Externe Fonts/CDNs entfernt; CSP blockiert externe Ressourcen/Verbindungen. Systemfonts statt Google/Fontshare.
+- PWA-Dateien ergaenzt: Manifest, Icon, Service Worker mit Asset-Manifest-Precache. `HashRouter` + `homepage: "."` fuer statische Auslieferung.
+- iPad-Einschraenkung: Fuer Home-Screen/PWA muss der Build einmal per lokalem/HTTPS-Webserver geoeffnet werden; reines `file://` ist fuer Service Worker nicht ausreichend.
+
+## Update (2026-07-03b) - CSV-Import und lokale Fotos
+- Aktueller Importpfad ist CSV statt `.idoceo`: Spalten `Gruppe;Nachname;Vorname`, jede Gruppe wird als Klasse angelegt/aktualisiert.
+- Foto-Button in jeder Klassenkachel ergaenzt. Pro Lernendenkarte kann lokal ein Foto aufgenommen/ausgewaehlt und verschluesselt gespeichert werden.
+- Fotos liegen am Lernenden-Datensatz und werden beim Klassenloeschen zusammen mit Namen, Sessions und Noten entfernt.
+- Alter Frontend-iDoceo-Parser und `fflate`-Runtime-Abhaengigkeit entfernt; neuer CSV-Parser ist getestet.

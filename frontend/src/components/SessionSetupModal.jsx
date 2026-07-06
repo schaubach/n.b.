@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { X, Play, ClipboardList } from "lucide-react";
+import { X, Play, ClipboardList, MessageCircle, Pencil } from "lucide-react";
 
 function todayISO() {
   const d = new Date();
@@ -16,28 +16,32 @@ function isoToDE(iso) {
 
 // Modal shown before starting a grading round. Pre-filled with defaults so the
 // teacher can simply hit "Bewertung starten".
-export default function SessionSetupModal({ open, className, category = "sonstige", onStart, onClose }) {
+export default function SessionSetupModal({ open, className, category = "sonstige", gradeSystem = "grades_1_6", onStart, onClose }) {
   const isKlausur = category === "klausur";
-  const defaultName = isKlausur ? "Klausur" : "mündliche Mitarbeit";
+  const examLabel = gradeSystem === "points_0_15" ? "Klausur" : "Klassenarbeit";
+  const defaultName = isKlausur ? examLabel : "mündliche Mitarbeit";
   const [title, setTitle] = useState(defaultName);
   const [weight, setWeight] = useState("1");
   const [date, setDate] = useState(todayISO());
+  const [slType, setSlType] = useState("oral");
 
   useEffect(() => {
     if (open) {
-      setTitle(isKlausur ? "Klausur" : "mündliche Mitarbeit");
+      setTitle(isKlausur ? examLabel : "mündliche Mitarbeit");
       setWeight("1");
       setDate(todayISO());
+      setSlType("oral");
     }
-  }, [open, isKlausur]);
+  }, [open, isKlausur, examLabel]);
 
   const start = () => {
     const w = parseFloat(String(weight).replace(",", ".")) || 1;
     onStart({
-      title: title.trim() || defaultName,
+      title: title.trim() || (slType === "written" ? "schriftlicher Test" : defaultName),
       weight: w,
       date: isoToDE(date),
       category,
+      sl_type: isKlausur ? null : slType,
     });
   };
 
@@ -72,7 +76,7 @@ export default function SessionSetupModal({ open, className, category = "sonstig
               </div>
               <div>
                 <p className="text-xs font-bold uppercase tracking-[0.2em] text-stone-400">
-                  {isKlausur ? "Neue Klausur" : "Neue sonstige Leistung"}
+                  {isKlausur ? `Neue ${examLabel}` : "Neue sonstige Leistung"}
                 </p>
                 <h3 className="font-heading text-2xl font-black text-stone-900 leading-none">{className}</h3>
               </div>
@@ -89,6 +93,36 @@ export default function SessionSetupModal({ open, className, category = "sonstig
                   className="mt-1 w-full px-4 py-3 rounded-xl border-2 border-stone-300 focus:border-stone-900 outline-none font-medium text-stone-900"
                 />
               </label>
+
+              {!isKlausur && (
+                <div>
+                  <span className="text-sm font-bold text-stone-700">Art</span>
+                  <div className="mt-1 grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (title.trim() === "schriftlicher Test") setTitle("mündliche Mitarbeit");
+                        setSlType("oral");
+                      }}
+                      data-testid="setup-sl-type-oral"
+                      className={`flex items-center justify-center gap-2 rounded-xl border-2 px-4 py-3 font-heading font-extrabold transition-all ${slType === "oral" ? "border-stone-900 bg-emerald-400 text-stone-900 shadow-brutal-sm" : "border-stone-300 bg-white text-stone-500"}`}
+                    >
+                      <MessageCircle className="w-5 h-5" /> mündl.
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (title.trim() === "mündliche Mitarbeit") setTitle("schriftlicher Test");
+                        setSlType("written");
+                      }}
+                      data-testid="setup-sl-type-written"
+                      className={`flex items-center justify-center gap-2 rounded-xl border-2 px-4 py-3 font-heading font-extrabold transition-all ${slType === "written" ? "border-stone-900 bg-emerald-400 text-stone-900 shadow-brutal-sm" : "border-stone-300 bg-white text-stone-500"}`}
+                    >
+                      <Pencil className="w-5 h-5" /> schrftl.
+                    </button>
+                  </div>
+                </div>
+              )}
 
               <div className="grid grid-cols-2 gap-3">
                 <label className="block">

@@ -1,0 +1,19 @@
+{
+  "short_name": "n.b.",
+  "name": "n.b. Lokal",
+  "description": "Noten blitzschnell vergeben",
+  "start_url": ".",
+  "scope": ".",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#fafaf9",
+  "theme_color": "#fafaf9",
+  "icons": [
+    {
+      "src": "logo.jpeg",
+      "sizes": "1254x1254",
+      "type": "image/jpeg",
+      "purpose": "any maskable"
+    }
+  ]
+}

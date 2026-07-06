@@ -5,3 +5,7 @@ credentials.json
 *.pem
 *.key
 .credentials
+# Frontend generated artifacts
+frontend/node_modules/
+frontend/build/
+
