@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { useParams, useNavigate } from "react-router-dom";
+import { useParams, useNavigate, useSearchParams } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { ArrowLeft, ArrowRight, Loader2, CheckCircle2, Pencil, X, Trash2, Table2 } from "lucide-react";
 import api from "../lib/api";
@@ -9,6 +9,7 @@ import GradebookModal from "../components/GradebookModal";
 export default function Summary() {
   const { sessionId } = useParams();
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [session, setSession] = useState(null);
   const [sessionCount, setSessionCount] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -28,6 +29,15 @@ export default function Summary() {
       }));
     } catch (e) {}
     setPicker(null);
+  };
+
+  useEffect(() => {
+    if (searchParams.get("gradebook") === "1") setGradebookOpen(true);
+  }, [searchParams]);
+
+  const closeGradebook = () => {
+    setGradebookOpen(false);
+    if (searchParams.get("gradebook") === "1") setSearchParams({});
   };
 
   useEffect(() => {
@@ -140,7 +150,7 @@ export default function Summary() {
         open={gradebookOpen}
         classId={session.class_id}
         className={session.class_name}
-        onClose={() => setGradebookOpen(false)}
+        onClose={closeGradebook}
       />
 
       <GradePicker

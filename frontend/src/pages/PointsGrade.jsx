@@ -205,8 +205,8 @@ export default function PointsGrade() {
   return (
     <div className="flex h-screen flex-col overflow-hidden bg-stone-50 bg-dots">
       <header className="flex shrink-0 items-center gap-3 border-b-2 border-stone-900 bg-white px-4 py-3 sm:px-6">
-        <button onClick={() => navigate("/summary/" + sessionId)} className="flex items-center gap-2 rounded-full border-2 border-stone-900 bg-white px-3 py-2 font-bold text-stone-900 shadow-brutal-sm">
-          <ArrowLeft className="h-5 w-5" /> Übersicht
+        <button onClick={() => navigate("/summary/" + sessionId + "?gradebook=1")} className="flex items-center gap-2 rounded-full border-2 border-stone-900 bg-white px-3 py-2 font-bold text-stone-900 shadow-brutal-sm">
+          <ArrowLeft className="h-5 w-5" /> Notenstand
         </button>
         <div className="min-w-0 flex-1 text-center">
           <p className="text-xs font-bold uppercase tracking-[0.18em] text-stone-400">Punkte -> Noten</p>
