@@ -5,6 +5,7 @@ import {
   allGradeScales,
   evaluatePercent,
   findGradeScale,
+  gradeScaleCsv,
   normalizeExamGradeValue,
   parseGradeScaleCsv,
   pointsNeededForBetter,
