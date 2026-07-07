@@ -46,6 +46,7 @@ if [ -z "$INSTALL_PASSWORD" ]; then
 fi
 
 mkdir -p certs nginx/auth webapp identity
+chmod 755 certs nginx nginx/auth webapp identity
 
 SAN_PREFIX="DNS"
 case "$SERVER_NAME" in
@@ -64,7 +65,9 @@ fi
 
 HASH="$(openssl passwd -apr1 "$INSTALL_PASSWORD")"
 printf "%s:%s\n" "$INSTALL_USER" "$HASH" > nginx/auth/.htpasswd
-chmod 600 nginx/auth/.htpasswd
+# The file is mounted read-only into the nginx container. It must be readable
+# by nginx workers whose UID does not match the host user that ran setup.sh.
+chmod 644 nginx/auth/.htpasswd
 
 if [ ! -f identity/private.pem ] || [ ! -f identity/public.pem ]; then
   openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:3072 -out identity/private.pem
@@ -80,7 +83,8 @@ cat > webapp/mail-backend-config.json <<EOF
   "backendIdentityPublicKey": $PUBLIC_KEY_JSON
 }
 EOF
-chmod 600 webapp/mail-backend-config.json
+# This config is intentionally shipped with the WebApp and must be readable by nginx.
+chmod 644 webapp/mail-backend-config.json
 
 cat <<EOF
 Setup fertig.
