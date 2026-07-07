@@ -174,10 +174,20 @@ SERVER_NAME=10.97.0.10
 INSTALL_USER=install
 INSTALL_PASSWORD=
 ALLOWED_DOMAIN=rbbk-do.de
-ALLOWED_SENDERS=lehrkraft1@rbbk-do.de,lehrkraft2@rbbk-do.de
+# ALLOWED_SENDERS=lehrkraft1@rbbk-do.de,lehrkraft2@rbbk-do.de
 ```
 
-`INSTALL_PASSWORD` und `NB_MAIL_PSK` gehoeren nur in die lokale `.env` und nie ins Repository. `ALLOWED_SENDERS` ist empfohlen: Wenn die Liste gesetzt ist, akzeptiert das Backend nur diese Lehrenden-Mailadressen als Absender. Wenn sie leer bleibt, sind alle Absender der erlaubten Domain zugelassen.
+`INSTALL_PASSWORD` und `NB_MAIL_PSK` gehoeren nur in die lokale `.env` und nie ins Repository. `ALLOWED_SENDERS` ist optional empfohlen: Wenn die Liste gesetzt ist, akzeptiert das Backend nur diese Lehrenden-Mailadressen als Absender. Wenn sie leer bleibt, sind alle Absender der erlaubten Domain zugelassen.
+
+Konfigurationsdateien im Ueberblick:
+
+- `mail-backend/.env.example`: Vorlage im Repository.
+- `mail-backend/.env`: lokale Serverkonfiguration mit Passwort und Secrets; wird nicht committed.
+- `mail-backend/webapp/mail-backend-config.json`: wird von `sh scripts/setup.sh` erzeugt und mit der WebApp ausgeliefert.
+- `mail-backend/identity/private.pem`: private Backend-Identitaet; wird automatisch erzeugt, bleibt lokal und wird nicht committed.
+- Lehrendenkonfiguration in der WebApp: Name, Mailadresse, IServPasswort und IP-Adresse des Mail-Backends werden in der App eingetragen und lokal verschluesselt gespeichert.
+
+Nach Aenderungen an `.env`, Zertifikat oder Backend-Identitaet `sh scripts/setup.sh` erneut ausfuehren und danach `sh scripts/sync-webapp.sh` starten, damit die ausgelieferte WebApp die aktuelle `mail-backend-config.json` enthaelt.
 
 3. Setup ausfuehren:
 

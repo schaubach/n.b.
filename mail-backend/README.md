@@ -46,9 +46,105 @@ In `.env` setzen:
 - `INSTALL_USER`: Benutzer fuer `/installwebapp`
 - `INSTALL_PASSWORD`: Passwort fuer `/installwebapp`
 - `NB_MAIL_PSK`: leer lassen, wenn `scripts/setup.sh` einen Schluessel erzeugen soll
-- `ALLOWED_SENDERS`: empfohlene kommaseparierte Liste der erlaubten Lehrenden-Mailadressen, z. B. `lehrkraft1@rbbk-do.de`
+- `ALLOWED_SENDERS`: optionale kommaseparierte Liste der erlaubten Lehrenden-Mailadressen. Zum Aktivieren Kommentarzeichen in `.env` entfernen.
 
 Das im Auftrag genannte Installationspasswort gehoert in die lokale `.env`, nicht ins Repository.
+
+## Konfigurationsdateien
+
+### `mail-backend/.env.example`
+
+Diese Datei ist die versionierte Vorlage. Sie wird einmal kopiert:
+
+~~~bash
+cp .env.example .env
+~~~
+
+Die Vorlage enthaelt nur Platzhalter oder harmlose Beispielwerte. Echte Passwoerter und erzeugte Secrets gehoeren nicht in diese Datei.
+
+### `mail-backend/.env`
+
+Diese Datei ist die lokale Konfiguration des Mail-Backends und wird nicht committed. Bearbeiten:
+
+~~~bash
+nano .env
+~~~
+
+Pflichtwerte:
+
+- `SERVER_NAME`: IP-Adresse oder DNS-Name, mit dem die iPads das Backend aufrufen, z. B. `10.97.12.34`. Dieser Wert wird fuer Zertifikat, Installations-URL und Backend-Identitaet genutzt.
+- `INSTALL_USER`: Benutzername fuer `https://SERVER_IP:8123/installwebapp/`.
+- `INSTALL_PASSWORD`: starkes Passwort fuer `/installwebapp/`.
+- `SMTP_HOST`: SMTP-Server, hier `rbbk-do.de`.
+- `SMTP_PORT`: SMTP-Port, hier `587`.
+- `SMTP_STARTTLS`: `true` fuer STARTTLS.
+- `ALLOWED_DOMAIN`: erlaubte Maildomain fuer Absender und Empfaenger, hier `rbbk-do.de`.
+
+Empfohlene Werte:
+
+- `ALLOWED_SENDERS`: kommaseparierte Liste erlaubter Lehrenden-Mailadressen. Zum Aktivieren Kommentarzeichen in `.env` entfernen, z. B. `ALLOWED_SENDERS=lehrkraft1@rbbk-do.de,lehrkraft2@rbbk-do.de`. Leer oder auskommentiert bedeutet: alle Absender aus `ALLOWED_DOMAIN` sind erlaubt.
+- `NB_MAIL_PSK`: leer lassen, wenn `scripts/setup.sh` den HMAC-Schluessel erzeugen soll. Nur bei geplanter Rotation oder Wiederherstellung manuell setzen.
+
+Feinschutz und Grenzwerte:
+
+- `MAX_RECIPIENTS_PER_REQUEST`: maximale Anzahl Mails in einem Versandrequest.
+- `MAX_MESSAGE_BYTES`: maximale Groesse pro Nachricht.
+- `MAX_SUBJECT_LENGTH`: maximale Betrefflaenge.
+- `TIMESTAMP_WINDOW_SECONDS`: erlaubte Zeitabweichung fuer signierte Requests.
+- `NONCE_TTL_SECONDS`: Speicherzeit fuer verwendete Nonces gegen Replay.
+- `RATE_LIMIT_PER_MINUTE`, `RATE_LIMIT_PER_HOUR`, `RATE_LIMIT_PER_DAY`: serverseitige Versandlimits.
+- `ALLOWED_ORIGINS`: nur fuer Entwicklung noetig, wenn die WebApp nicht von demselben Nginx-Origin kommt. In Produktion normalerweise leer lassen.
+
+Nach jeder relevanten Aenderung:
+
+~~~bash
+sh scripts/setup.sh
+docker compose up -d --build
+~~~
+
+Wenn sich `NB_MAIL_PSK`, Zertifikat oder Backend-Identitaet geaendert haben, danach auch die WebApp neu synchronisieren:
+
+~~~bash
+sh scripts/sync-webapp.sh
+~~~
+
+### `mail-backend/webapp/mail-backend-config.json`
+
+Diese Datei wird automatisch von `scripts/setup.sh` erzeugt und enthaelt:
+
+~~~json
+{
+  "preSharedKey": "automatisch erzeugter HMAC-Schluessel",
+  "backendIdentityPublicKey": "-----BEGIN PUBLIC KEY-----\\n...\\n-----END PUBLIC KEY-----\\n"
+}
+~~~
+
+Sie muss zusammen mit dem WebApp-Build unter `/installwebapp/` ausgeliefert werden, wird aber nicht committed. Nicht per Hand bearbeiten; stattdessen `.env` bzw. `identity/` korrigieren und `scripts/setup.sh` erneut ausfuehren.
+
+Fuer lokale Frontend-Entwicklung kann diese Datei nach `frontend/public/mail-backend-config.json` kopiert werden. Diese Entwicklungsdatei ist ebenfalls gitignored.
+
+### `mail-backend/identity/private.pem` und `public.pem`
+
+`scripts/setup.sh` erzeugt diese Dateien automatisch. `private.pem` bleibt ausschliesslich auf dem Server. `public.pem` wird in `mail-backend-config.json` eingetragen, damit die WebApp die Backend-Identitaet pruefen kann.
+
+Bei Verdacht auf Zugriff auf die ausgelieferte WebApp-Konfiguration oder den privaten Schluessel:
+
+1. `NB_MAIL_PSK` in `.env` leeren oder neu setzen.
+2. `identity/private.pem` und `identity/public.pem` lokal entfernen.
+3. `sh scripts/setup.sh` ausfuehren.
+4. `sh scripts/sync-webapp.sh` ausfuehren.
+5. WebApp auf den iPads neu laden.
+
+### Lehrendenkonfiguration in der WebApp
+
+In der App selbst wird unter der Lehrendenkonfiguration eingetragen:
+
+- Name inkl. Bezeichnung,
+- Mailadresse der Lehrkraft,
+- IServPasswort,
+- IP-Adresse oder DNS-Name des Mail-Backends ohne Port, z. B. `10.97.12.34`.
+
+Port `8123` und `https://` setzt die WebApp automatisch. Die Werte werden lokal verschluesselt gespeichert. Die App prueft in dieser Ansicht per Healthcheck, ob das Mail-Backend erreichbar und das Zertifikat vertrauenswuerdig ist.
 
 ## WebApp bereitstellen
 
@@ -134,7 +230,7 @@ SMTP_HOST=rbbk-do.de
 SMTP_PORT=587
 SMTP_STARTTLS=true
 ALLOWED_DOMAIN=rbbk-do.de
-ALLOWED_SENDERS=lehrkraft1@rbbk-do.de,lehrkraft2@rbbk-do.de
+# ALLOWED_SENDERS=lehrkraft1@rbbk-do.de,lehrkraft2@rbbk-do.de
 ~~~
 
 Die WebApp uebermittelt pro Versand die Lehrenden-Mailadresse und das IServ-Passwort ueber HTTPS an das Backend. Das Backend meldet sich damit am SMTP-Server an.
