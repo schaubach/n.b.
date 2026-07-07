@@ -83,7 +83,17 @@ export function normalizeMailBackendHost(value) {
   }
 }
 
-async function verifyBackendIdentity(host, publicKeyPem) {
+function identityDetails(host, payload, localFingerprint, preSharedKey) {
+  return [
+    "Konfigurierter Host: " + (host || "fehlt"),
+    "Backend serverName: " + (payload?.serverName || "fehlt"),
+    "Lokaler Public-Key-SHA256 aus mail-backend-config.json: " + (localFingerprint || "fehlt"),
+    "Backend Public-Key-SHA256 aus /api/identity: " + (payload?.publicKeySha256 || "fehlt"),
+    "Lokaler Pre-Shared-Key aus mail-backend-config.json: " + (preSharedKey || "fehlt"),
+  ].join("; ");
+}
+
+async function verifyBackendIdentity(host, publicKeyPem, preSharedKey) {
   const fingerprint = await sha256Hex(publicKeyPem);
   const cacheKey = host + "|" + fingerprint;
   if (verifiedIdentityCache.has(cacheKey)) return;
@@ -101,13 +111,13 @@ async function verifyBackendIdentity(host, publicKeyPem) {
   }
   const payload = identity.payload;
   if (payload.app !== "n.b." || payload.challenge !== challenge) {
-    throw new Error("Backend-Identitaet passt nicht zur App.");
+    throw new Error("Backend-Identitaet passt nicht zur App. " + identityDetails(host, payload, fingerprint, preSharedKey) + "; App: " + (payload.app || "fehlt") + "; Challenge erhalten: " + (payload.challenge || "fehlt"));
   }
   if (payload.serverName && normalizeMailBackendHost(payload.serverName) !== host) {
-    throw new Error("Backend-Identitaet passt nicht zur konfigurierten Adresse.");
+    throw new Error("Backend-Identitaet passt nicht zur konfigurierten Adresse. " + identityDetails(host, payload, fingerprint, preSharedKey));
   }
   if (payload.publicKeySha256 && payload.publicKeySha256 !== fingerprint) {
-    throw new Error("Backend-Identitaet passt nicht zum Installationspaket.");
+    throw new Error("Backend-Identitaet passt nicht zum Installationspaket. " + identityDetails(host, payload, fingerprint, preSharedKey));
   }
   const publicKey = await crypto.subtle.importKey(
     "spki",
@@ -123,7 +133,7 @@ async function verifyBackendIdentity(host, publicKeyPem) {
     encoder.encode(stableStringify(payload))
   );
   if (!valid) {
-    throw new Error("Backend-Identitaet konnte nicht verifiziert werden.");
+    throw new Error("Backend-Identitaet konnte nicht verifiziert werden. Die Signatur passt nicht zum lokalen Public Key. " + identityDetails(host, payload, fingerprint, preSharedKey));
   }
   verifiedIdentityCache.set(cacheKey, true);
 }
@@ -154,7 +164,7 @@ async function sendMessagesViaBackend(teacherConfig, messages) {
   const health = await checkMailBackendHealth(host);
   if (!health.ok) throw new Error(health.message);
   const { preSharedKey, backendIdentityPublicKey } = await loadMailBackendConfig();
-  await verifyBackendIdentity(host, backendIdentityPublicKey);
+  await verifyBackendIdentity(host, backendIdentityPublicKey, preSharedKey);
   const payload = { teacher: teacherConfig, messages };
   const body = JSON.stringify(payload);
   const timestamp = String(Math.floor(Date.now() / 1000));
