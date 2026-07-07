@@ -1,4 +1,4 @@
-# SwipeNoten — PRD
+# n.b. — PRD
 
 ## Problem statement (original, DE)
 Mobile/iPad-Webapp als Ergänzung zu iDoceo. Notenvergabe per Swipe (ohne Tippen).
@@ -81,7 +81,7 @@ Bewertung schnell und einfach. Single-User, lokal auf iPad.
 Lehrer*in mit iDoceo auf dem iPad, will mündliche Mitarbeit o.ä. sehr schnell benoten.
 
 ## Workflow (iPad)
-iDoceo → .idoceo exportieren → in SwipeNoten hochladen → Klasse + Notensystem wählen →
+iDoceo → .idoceo exportieren → in n.b. hochladen → Klasse + Notensystem wählen →
 Bewerten (swipen) → CSV exportieren → in iDoceo per CSV-Import einlesen.
 
 ## Backlog / Next
