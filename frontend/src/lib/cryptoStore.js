@@ -1,4 +1,7 @@
-const DB_NAME = "swipenoten-local-vault";
+const DB_NAME = "nb-local-vault";
+const LEGACY_DB_NAME = ["swipe", "noten-local-vault"].join("");
+const VAULT_VERIFIER = "nb-vault";
+const LEGACY_VAULT_VERIFIER = ["swipe", "noten-vault"].join("");
 const DB_VERSION = 1;
 const META_STORE = "meta";
 const DATA_STORE = "data";
@@ -13,16 +16,17 @@ const DEFAULT_ITERATIONS = 210000;
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
 
-let dbPromise = null;
+const dbPromises = new Map();
+let activeDbName = DB_NAME;
 let vaultKey = null;
 let cachedState = null;
 let unlocked = false;
 let writeQueue = Promise.resolve();
 
-function openDb() {
-  if (dbPromise) return dbPromise;
-  dbPromise = new Promise((resolve, reject) => {
-    const request = indexedDB.open(DB_NAME, DB_VERSION);
+function openDb(dbName = activeDbName) {
+  if (dbPromises.has(dbName)) return dbPromises.get(dbName);
+  const promise = new Promise((resolve, reject) => {
+    const request = indexedDB.open(dbName, DB_VERSION);
     request.onupgradeneeded = () => {
       const db = request.result;
       if (!db.objectStoreNames.contains(META_STORE)) db.createObjectStore(META_STORE);
@@ -31,11 +35,12 @@ function openDb() {
     request.onsuccess = () => resolve(request.result);
     request.onerror = () => reject(request.error);
   });
-  return dbPromise;
+  dbPromises.set(dbName, promise);
+  return promise;
 }
 
-async function idbGet(storeName, key) {
-  const db = await openDb();
+async function idbGetFromDb(dbName, storeName, key) {
+  const db = await openDb(dbName);
   return new Promise((resolve, reject) => {
     const tx = db.transaction(storeName, "readonly");
     const req = tx.objectStore(storeName).get(key);
@@ -44,8 +49,12 @@ async function idbGet(storeName, key) {
   });
 }
 
+async function idbGet(storeName, key) {
+  return idbGetFromDb(activeDbName, storeName, key);
+}
+
 async function idbSet(storeName, key, value) {
-  const db = await openDb();
+  const db = await openDb(activeDbName);
   return new Promise((resolve, reject) => {
     const tx = db.transaction(storeName, "readwrite");
     tx.objectStore(storeName).put(value, key);
@@ -53,6 +62,20 @@ async function idbSet(storeName, key, value) {
     tx.onerror = () => reject(tx.error);
     tx.onabort = () => reject(tx.error);
   });
+}
+
+async function dbHasVault(dbName) {
+  try {
+    return !!(await idbGetFromDb(dbName, META_STORE, VERIFIER_KEY));
+  } catch (error) {
+    return false;
+  }
+}
+
+async function selectVaultDbName() {
+  if (await dbHasVault(DB_NAME)) return DB_NAME;
+  if (await dbHasVault(LEGACY_DB_NAME)) return LEGACY_DB_NAME;
+  return DB_NAME;
 }
 
 function bytesToBase64(bytes) {
@@ -112,7 +135,8 @@ function emptyState() {
 }
 
 export async function hasVault() {
-  return !!(await idbGet(META_STORE, VERIFIER_KEY));
+  activeDbName = await selectVaultDbName();
+  return dbHasVault(activeDbName);
 }
 
 export function isUnlocked() {
@@ -123,13 +147,14 @@ export async function createVault(password) {
   if (!password || password.length < 8) {
     throw new Error("Das Passwort muss mindestens 8 Zeichen lang sein.");
   }
+  activeDbName = DB_NAME;
   const salt = randomBytes(16);
   const iterations = DEFAULT_ITERATIONS;
   const key = await deriveKey(password, salt, iterations);
   await idbSet(META_STORE, VERSION_KEY, CURRENT_VERSION);
   await idbSet(META_STORE, SALT_KEY, bytesToBase64(salt));
   await idbSet(META_STORE, ITERATIONS_KEY, iterations);
-  await idbSet(META_STORE, VERIFIER_KEY, await encryptJson(key, { ok: "swipenoten-vault" }));
+  await idbSet(META_STORE, VERIFIER_KEY, await encryptJson(key, { ok: VAULT_VERIFIER }));
   vaultKey = key;
   cachedState = emptyState();
   unlocked = true;
@@ -137,6 +162,7 @@ export async function createVault(password) {
 }
 
 export async function unlockVault(password) {
+  activeDbName = await selectVaultDbName();
   const saltValue = await idbGet(META_STORE, SALT_KEY);
   const verifier = await idbGet(META_STORE, VERIFIER_KEY);
   const iterations = (await idbGet(META_STORE, ITERATIONS_KEY)) || DEFAULT_ITERATIONS;
@@ -144,7 +170,7 @@ export async function unlockVault(password) {
   const key = await deriveKey(password, base64ToBytes(saltValue), iterations);
   try {
     const check = await decryptJson(key, verifier);
-    if (check.ok !== "swipenoten-vault") throw new Error("ungueltig");
+    if (![VAULT_VERIFIER, LEGACY_VAULT_VERIFIER].includes(check.ok)) throw new Error("ungueltig");
   } catch (error) {
     throw new Error("Passwort stimmt nicht.");
   }
