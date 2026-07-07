@@ -131,7 +131,19 @@ async function decryptJson(key, box) {
 }
 
 function emptyState() {
-  return { classes: [], students: [], sessions: [], grades: [], gradebook_overrides: [], gradebook_weights: [], grade_scales: [], point_sessions: [] };
+  return {
+    classes: [],
+    students: [],
+    sessions: [],
+    grades: [],
+    gradebook_overrides: [],
+    gradebook_weights: [],
+    grade_scales: [],
+    hidden_grade_scales: [],
+    point_sessions: [],
+    teacher_config: {},
+    backup_meta: {},
+  };
 }
 
 export async function hasVault() {
@@ -208,6 +220,12 @@ export function mutateState(mutator) {
     return result;
   });
   return writeQueue;
+}
+
+export async function replaceState(nextState) {
+  if (!vaultKey) throw new Error("Lokaler Tresor ist gesperrt.");
+  cachedState = { ...emptyState(), ...(nextState || {}) };
+  await saveState(cachedState);
 }
 
 export function lockVault() {

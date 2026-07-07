@@ -1,5 +1,6 @@
 .env
 .env.*
+!mail-backend/.env.example
 *.env
 credentials.json
 *.pem
@@ -12,3 +13,19 @@ frontend/build/
 
 # Windows alternate data stream metadata
 *:Zone.Identifier
+
+# Mail backend local secrets and generated files
+frontend/public/mail-backend-config.json
+mail-backend/.env
+mail-backend/certs/*
+!mail-backend/certs/.gitkeep
+mail-backend/nginx/auth/*
+!mail-backend/nginx/auth/.gitkeep
+mail-backend/identity/*
+!mail-backend/identity/.gitkeep
+mail-backend/webapp/*
+!mail-backend/webapp/.gitkeep
+
+# Python generated files
+__pycache__/
+*.pyc

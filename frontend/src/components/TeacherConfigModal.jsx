@@ -1,16 +1,22 @@
 import React, { useEffect, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { Loader2, Mail, Save, UserRound, X } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Download, Loader2, Mail, Save, Upload, UserRound, X } from "lucide-react";
 import api from "../lib/api";
+import { checkMailBackendHealth } from "../lib/mailBackend";
+import { importEncryptedBackup, sendBackupToTeacher } from "../lib/backup";
 
 export default function TeacherConfigModal({ open, onClose }) {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [mailBackendHost, setMailBackendHost] = useState("");
+  const [backupIntervalDays, setBackupIntervalDays] = useState(7);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
+  const [backendCheck, setBackendCheck] = useState({ status: "idle", message: "" });
+  const [backupBusy, setBackupBusy] = useState(false);
 
   useEffect(() => {
     if (!open) return;
@@ -22,10 +28,66 @@ export default function TeacherConfigModal({ open, onClose }) {
         setName(res.data.name || "");
         setEmail(res.data.email || "");
         setPassword(res.data.password || "");
+        setMailBackendHost(res.data.mail_backend_host || "");
+        setBackupIntervalDays(res.data.backup_interval_days || 7);
       })
       .catch(() => setError("Lehrendenkonfiguration konnte nicht geladen werden."))
       .finally(() => setLoading(false));
   }, [open]);
+
+  useEffect(() => {
+    if (!open || loading) return undefined;
+    const host = mailBackendHost.trim();
+    if (!host) {
+      setBackendCheck({ status: "idle", message: "" });
+      return undefined;
+    }
+    let cancelled = false;
+    setBackendCheck({ status: "checking", message: "Mail-Backend wird geprüft..." });
+    const timer = window.setTimeout(() => {
+      checkMailBackendHealth(host).then((result) => {
+        if (!cancelled) setBackendCheck({ status: result.ok ? "ok" : "error", message: result.message });
+      });
+    }, 350);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [open, loading, mailBackendHost]);
+
+  const runBackup = async () => {
+    setBackupBusy(true);
+    setMessage("");
+    setError("");
+    try {
+      await api.post("/teacher-config", { name, email, password, mail_backend_host: mailBackendHost, backup_interval_days: backupIntervalDays });
+      await sendBackupToTeacher({ download: true });
+      setMessage("Backup wurde erstellt, heruntergeladen und an die Lehrendenadresse gesendet.");
+    } catch (err) {
+      setError(err.message || "Backup konnte nicht erstellt werden.");
+    } finally {
+      setBackupBusy(false);
+    }
+  };
+
+  const importBackup = async (event) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+    if (!window.confirm("Backup importieren? Der aktuelle lokale Datenbestand wird ersetzt.")) return;
+    setBackupBusy(true);
+    setMessage("");
+    setError("");
+    try {
+      await importEncryptedBackup(file);
+      setMessage("Backup wurde importiert. Die App wird neu geladen.");
+      window.setTimeout(() => window.location.reload(), 800);
+    } catch (err) {
+      setError(err.message || "Backup konnte nicht importiert werden.");
+    } finally {
+      setBackupBusy(false);
+    }
+  };
 
   const submit = async (event) => {
     event.preventDefault();
@@ -33,7 +95,7 @@ export default function TeacherConfigModal({ open, onClose }) {
     setMessage("");
     setError("");
     try {
-      await api.post("/teacher-config", { name, email, password });
+      await api.post("/teacher-config", { name, email, password, mail_backend_host: mailBackendHost, backup_interval_days: backupIntervalDays });
       setMessage("Lehrendenkonfiguration gespeichert.");
     } catch (err) {
       setError("Lehrendenkonfiguration konnte nicht gespeichert werden.");
@@ -79,10 +141,42 @@ export default function TeacherConfigModal({ open, onClose }) {
                     <span className="text-sm font-bold text-stone-700">IServPasswort</span>
                     <input type="password" value={password} onChange={(event) => setPassword(event.target.value)} className="mt-1 w-full rounded-xl border-2 border-stone-300 px-4 py-3 font-bold text-stone-900 outline-none focus:border-stone-900" />
                   </label>
+                  <label className="block">
+                    <span className="text-sm font-bold text-stone-700">IP-Adresse Mail-Backend</span>
+                    <input value={mailBackendHost} onChange={(event) => setMailBackendHost(event.target.value)} placeholder="10.97.x.x" className="mt-1 w-full rounded-xl border-2 border-stone-300 px-4 py-3 font-bold text-stone-900 outline-none focus:border-stone-900" />
+                    <span className="mt-1 block text-xs font-bold text-stone-500">Port 8123 und HTTPS werden automatisch verwendet.</span>
+                  </label>
+                  <label className="block">
+                    <span className="text-sm font-bold text-stone-700">Automatisches Backup alle</span>
+                    <div className="mt-1 flex items-center gap-3">
+                      <input type="number" min="1" max="365" step="1" value={backupIntervalDays} onChange={(event) => setBackupIntervalDays(event.target.value)} className="w-28 rounded-xl border-2 border-stone-300 px-4 py-3 font-bold text-stone-900 outline-none focus:border-stone-900" />
+                      <span className="text-sm font-bold text-stone-700">Tage</span>
+                    </div>
+                    <span className="mt-1 block text-xs font-bold text-stone-500">Geprüft wird beim Öffnen bzw. Entsperren der App.</span>
+                  </label>
                 </div>
 
+                {backendCheck.status !== "idle" && (
+                  <div className={"mt-5 flex items-start gap-3 rounded-2xl border-2 px-4 py-3 text-sm font-bold " + (backendCheck.status === "ok" ? "border-emerald-300 bg-emerald-100 text-emerald-900" : backendCheck.status === "checking" ? "border-stone-300 bg-stone-100 text-stone-700" : "border-rose-300 bg-rose-100 text-rose-900")}>
+                    {backendCheck.status === "checking" ? <Loader2 className="mt-0.5 h-5 w-5 shrink-0 animate-spin" /> : backendCheck.status === "ok" ? <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0" /> : <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0" />}
+                    <span>{backendCheck.message}</span>
+                  </div>
+                )}
+
                 <div className="mt-5 rounded-2xl border-2 border-amber-300 bg-amber-100 px-4 py-3 text-sm font-bold text-amber-950">
-                  SMTP: rbbk-do.de, Port 587, STARTTLS, Anmeldung mit Lehrenden-Mailadresse und IServPasswort. Der Versand funktioniert nur aus dem Schulnetz und benötigt einen Mail-Transport, der SMTP ausführen kann.
+                  SMTP: rbbk-do.de, Port 587, STARTTLS. Der Versand läuft über das lokale Mail-Backend im Schulnetz und wird per HTTPS sowie HMAC-Signatur abgesichert.
+                </div>
+
+                <div className="mt-5 grid gap-2 sm:grid-cols-2">
+                  <button type="button" onClick={runBackup} disabled={backupBusy || saving} className="flex items-center justify-center gap-2 rounded-2xl border-2 border-stone-900 bg-white px-5 py-3 font-heading font-extrabold text-stone-900 shadow-brutal-sm disabled:opacity-50">
+                    {backupBusy ? <Loader2 className="h-5 w-5 animate-spin" /> : <Download className="h-5 w-5" />}
+                    Backup
+                  </button>
+                  <label className={"flex items-center justify-center gap-2 rounded-2xl border-2 border-stone-900 bg-white px-5 py-3 font-heading font-extrabold text-stone-900 shadow-brutal-sm " + (backupBusy ? "pointer-events-none opacity-50" : "cursor-pointer")}>
+                    <Upload className="h-5 w-5" />
+                    Import Backup
+                    <input type="file" accept=".enc,.nbbackup,.zip" onChange={importBackup} disabled={backupBusy} className="hidden" />
+                  </label>
                 </div>
 
                 {message && <p className="mt-4 rounded-xl border-2 border-emerald-300 bg-emerald-100 px-4 py-3 font-bold text-emerald-900">{message}</p>}

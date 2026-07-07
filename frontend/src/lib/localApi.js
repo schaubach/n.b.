@@ -1,4 +1,4 @@
-import { getState, mutateState } from "./cryptoStore";
+import { getState, mutateState, replaceState } from "./cryptoStore";
 import { GRADE_SYSTEMS } from "./grades";
 import { parseClassCsv } from "./csvImport";
 import {
@@ -26,6 +26,12 @@ function todayDe() {
   const d = new Date();
   const p = (n) => String(n).padStart(2, "0");
   return `${p(d.getDate())}.${p(d.getMonth() + 1)}.${d.getFullYear()}`;
+}
+
+function normalizeBackupIntervalDays(value) {
+  const parsed = Number.parseInt(value, 10);
+  if (!Number.isFinite(parsed)) return 7;
+  return Math.min(365, Math.max(1, parsed));
 }
 
 function httpError(message, status = 400) {
@@ -290,6 +296,7 @@ async function get(url) {
   const state = await getState();
 
   if (path === "/") return { data: { app: "n.b.", status: "ok", storage: "local-encrypted" } };
+  if (path === "/backup/state") return { data: { state: JSON.parse(JSON.stringify(state)) } };
   if (path === "/grade-systems") return { data: GRADE_SYSTEMS };
   if (path === "/grade-scales") return { data: gradeScalesForState(state) };
   const sessionPoints = path.match(/^\/sessions\/([^/]+)\/points$/);
@@ -308,7 +315,7 @@ async function get(url) {
 
   if (path === "/teacher-config") {
     const config = state.teacher_config || {};
-    return { data: { name: config.name || "", email: config.email || "", password: config.password || "" } };
+    return { data: { name: config.name || "", email: config.email || "", password: config.password || "", mail_backend_host: config.mail_backend_host || "", backup_interval_days: normalizeBackupIntervalDays(config.backup_interval_days) } };
   }
   if (path === "/classes") {
     const data = state.classes
@@ -416,9 +423,11 @@ async function get(url) {
         name: String(body.name || "").trim(),
         email,
         password: String(body.password || ""),
+        mail_backend_host: String(body.mail_backend_host || "").trim(),
+        backup_interval_days: normalizeBackupIntervalDays(body.backup_interval_days),
         updated_at: nowIso(),
       };
-      return { data: { ok: true, name: state.teacher_config.name, email: state.teacher_config.email } };
+      return { data: { ok: true, name: state.teacher_config.name, email: state.teacher_config.email, mail_backend_host: state.teacher_config.mail_backend_host, backup_interval_days: state.teacher_config.backup_interval_days } };
     });
   }
 
@@ -438,6 +447,18 @@ async function get(url) {
 
 async function post(url, body) {
   const path = normalizePath(url);
+
+  if (path === "/backup/restore-state") {
+    await replaceState(body.state || {});
+    return { data: { ok: true } };
+  }
+
+  if (path === "/backup/mark-sent") {
+    return mutateState((state) => {
+      state.backup_meta = { ...(state.backup_meta || {}), last_backup_sent_at: body.sent_at || nowIso(), last_backup_size: body.size || 0 };
+      return { data: { ok: true, backup_meta: state.backup_meta } };
+    });
+  }
 
   if (path === "/grade-scales") {
     return mutateState((state) => {

@@ -4,7 +4,7 @@ import { Camera, ImagePlus, Loader2, Trash2, X } from "lucide-react";
 import api from "../lib/api";
 import { initials } from "../lib/grades";
 
-function dataUrlFromImage(file, maxSize = 900, quality = 0.82) {
+function dataUrlFromImage(file, maxSize = 480, quality = 0.72) {
   return new Promise((resolve, reject) => {
     const img = new Image();
     const url = URL.createObjectURL(file);
@@ -20,7 +20,7 @@ function dataUrlFromImage(file, maxSize = 900, quality = 0.82) {
   });
 }
 
-function drawToDataUrl(source, maxSize = 900, quality = 0.82) {
+function drawToDataUrl(source, maxSize = 480, quality = 0.72) {
   const sourceWidth = source.videoWidth || source.naturalWidth || source.width;
   const sourceHeight = source.videoHeight || source.naturalHeight || source.height;
   if (!sourceWidth || !sourceHeight) throw new Error("Kamerabild ist noch nicht bereit.");

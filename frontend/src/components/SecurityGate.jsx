@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { KeyRound, Loader2, ShieldCheck } from "lucide-react";
 import { createVault, hasVault, unlockVault } from "../lib/cryptoStore";
+import { maybeSendAutomaticBackup } from "../lib/backup";
 
 export default function SecurityGate({ children }) {
   const [checking, setChecking] = useState(true);
@@ -31,6 +32,7 @@ export default function SecurityGate({ children }) {
         setConfigured(true);
       }
       setReady(true);
+      maybeSendAutomaticBackup().catch(() => {});
       setPassword("");
       setRepeat("");
     } catch (err) {

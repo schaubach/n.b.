@@ -17,8 +17,8 @@ Beispiel:
 
 ```csv
 Gruppe;Nachname;Vorname;Account
-MEDU1;Liu;Zhang;liuz
-MEDU1;"El Bey";Karim;elbeyk
+KlasseA;Nachname1;Vorname1;account1
+KlasseA;Nachname2;Vorname2;account2
 ```
 
 ### Fotos
@@ -70,7 +70,16 @@ MEDU1;"El Bey";Karim;elbeyk
 - Die Lehrendenkonfiguration speichert Name, Mailadresse und Passwort lokal verschluesselt.
 - In der Notenstandansicht koennen Mails fuer einzelne Lernende oder die ganze Klasse vorbereitet werden.
 - Jede Mail enthaelt nur die Noten des jeweiligen Lernenden.
-- Der direkte SMTP-Versand aus einer reinen Browser-/iPad-WebApp ist durch Browser-Sicherheitsregeln nicht verlaesslich moeglich. Fuer echten Versand braucht es eine native Mail-Bridge oder einen lokalen Backend-Prozess im Schulnetz.
+- Der echte SMTP-Versand laeuft ueber das optionale lokale Mail-Backend im Schulnetz.
+
+### Backups
+
+- In der Lehrendenkonfiguration gibt es `Backup` und `Import Backup`.
+- `Backup` erstellt ein verschluesseltes ZIP-Archiv mit CSV-Daten und den gespeicherten Bildern, laedt es lokal herunter und sendet es als Mailanhang an die konfigurierte Lehrenden-Mailadresse.
+- Nach dem Entsperren der App wird automatisch ein Backup per Mail versendet, sobald das in der Lehrendenkonfiguration eingestellte Intervall in Tagen abgelaufen ist. Eine reine WebApp kann im Hintergrund nicht laufen; die Pruefung passiert deshalb beim Oeffnen bzw. Entsperren der App.
+- Das Backup wird mit AES-GCM verschluesselt. Der Schluessel wird aus dem `NB_MAIL_PSK` abgeleitet, der beim Build bzw. Setup in `mail-backend-config.json` ausgeliefert wird.
+- `Import Backup` entschluesselt das Archiv mit demselben Pre-Shared-Key und ersetzt den lokalen Datenbestand inklusive Bilder.
+- Fotos werden vor dem Speichern auf eine Kachel-taugliche Groesse verkleinert, damit Backups mit mehreren Klassen weiterhin mailtauglich bleiben.
 
 ### Lokale Daten und Verschluesselung
 
@@ -124,7 +133,7 @@ Das kann ein interner Schulserver, ein lokaler Server mit vertrauenswuerdigem Ze
 
 6. Die App ueber das neue Home-Screen-Symbol starten.
 
-Nach dem ersten erfolgreichen Start liegen App-Dateien und Daten lokal auf dem iPad. Danach kann die App ohne Internetverbindung genutzt werden. Neue App-Versionen muessen wieder ueber die Webadresse geladen werden.
+Nach dem ersten erfolgreichen Start liegen App-Dateien und Daten lokal auf dem iPad. Danach kann die App ohne Internetverbindung genutzt werden. Neue App-Versionen muessen wieder ueber die Webadresse geladen werden. Beim Laden einer neuen Version werden nur App-Dateien und Offline-Cache aktualisiert; die verschluesselten Noten-, Punkte-, Foto- und Konfigurationsdaten in IndexedDB bleiben erhalten, solange die App unter derselben Adresse wie https://SERVER_IP:8123/installwebapp/ genutzt wird.
 
 ### Warum nicht einfach per Datei kopieren?
 
@@ -140,3 +149,100 @@ Wenn die App nur im Schulnetz verteilt werden soll, ist ein interner HTTPS-Webse
 - Danach `Zum Home-Bildschirm` verwenden.
 
 Die Noten- und Fotodaten verlassen dabei nicht das jeweilige iPad; der Server liefert nur die App-Dateien aus.
+
+## Mail-Backend
+
+Das optionale Mail-Backend liegt in `mail-backend/`. Es ist nur fuer den echten Mailversand noetig. Die normale WebApp bleibt lokal und kann ohne Mail-Backend genutzt werden.
+
+Das Backend wird auf einem Ubuntu-Server im Schulnetz betrieben. Nginx terminiert HTTPS auf Port `8123`, schuetzt die Installationsseite mit Basic Auth, prueft HMAC-signierte API-Requests und leitet den Versand ueber SMTP/STARTTLS an IServ weiter.
+
+Das gleiche Backend wird fuer Backup-Mails genutzt. Dafuer erlaubt es signierte Mailrequests mit einem verschluesselten Backup-Anhang.
+
+### Installation auf Ubuntu
+
+1. Docker und OpenSSL installieren:
+
+```bash
+sudo apt update
+sudo apt install -y docker.io docker-compose-plugin openssl
+sudo usermod -aG docker "$USER"
+```
+
+Danach einmal neu anmelden, damit die Docker-Gruppe aktiv ist.
+
+2. Konfiguration anlegen:
+
+```bash
+cd mail-backend
+cp .env.example .env
+nano .env
+```
+
+Wichtige Werte in `.env`:
+
+```text
+SERVER_NAME=10.97.0.10
+INSTALL_USER=install
+INSTALL_PASSWORD=
+ALLOWED_DOMAIN=rbbk-do.de
+# ALLOWED_SENDERS=lehrkraft1@rbbk-do.de,lehrkraft2@rbbk-do.de
+```
+
+`INSTALL_PASSWORD` und `NB_MAIL_PSK` gehoeren nur in die lokale `.env` und nie ins Repository. `ALLOWED_SENDERS` ist optional empfohlen: Wenn die Liste gesetzt ist, akzeptiert das Backend nur diese Lehrenden-Mailadressen als Absender. Wenn sie leer bleibt, sind alle Absender der erlaubten Domain zugelassen.
+
+Konfigurationsdateien im Ueberblick:
+
+- `mail-backend/.env.example`: Vorlage im Repository.
+- `mail-backend/.env`: lokale Serverkonfiguration mit Passwort und Secrets; wird nicht committed.
+- `mail-backend/webapp/mail-backend-config.json`: wird von `sh scripts/setup.sh` erzeugt und mit der WebApp ausgeliefert.
+- `mail-backend/identity/private.pem`: private Backend-Identitaet; wird automatisch erzeugt, bleibt lokal und wird nicht committed.
+- Lehrendenkonfiguration in der WebApp: Name, Mailadresse, IServPasswort und IP-Adresse des Mail-Backends werden in der App eingetragen und lokal verschluesselt gespeichert.
+
+Nach Aenderungen an `.env`, Zertifikat oder Backend-Identitaet `sh scripts/setup.sh` erneut ausfuehren und danach `sh scripts/sync-webapp.sh` starten, damit die ausgelieferte WebApp die aktuelle `mail-backend-config.json` enthaelt.
+
+3. Setup ausfuehren:
+
+```bash
+sh scripts/setup.sh
+```
+
+Das Skript erzeugt bei Bedarf:
+
+- einen HMAC-Schluessel fuer die WebApp,
+- ein selbstsigniertes HTTPS-Zertifikat,
+- die Basic-Auth-Datei fuer `/installwebapp/`,
+- `webapp/mail-backend-config.json` fuer die WebApp.
+
+4. WebApp bauen und in das Mail-Backend kopieren:
+
+```bash
+cd ../frontend
+npm install
+npm run build
+cd ../mail-backend
+sh scripts/sync-webapp.sh
+```
+
+5. Backend starten:
+
+```bash
+docker compose up -d --build
+```
+
+6. Funktion pruefen:
+
+```bash
+curl -k https://SERVER_IP:8123/health
+```
+
+Die Installationsadresse fuer Safari auf dem iPad lautet:
+
+```text
+https://SERVER_IP:8123/installwebapp/
+```
+
+Das Zertifikat `mail-backend/certs/server.crt` muss einmalig auf jedem iPad als vertrauenswuerdig installiert werden. Das kann die nutzende Person selbst tun: in Safari `https://SERVER_IP:8123/ca.crt` oeffnen, das Profil laden, in den iPad-Einstellungen installieren und anschliessend unter Zertifikatsvertrauenseinstellungen voll vertrauen. Danach erscheint beim Mailversand keine Zertifikatsabfrage und kein zusaetzliches Passwortfenster.
+
+Vor dem Versand prueft die WebApp zuerst den Healthcheck `https://SERVER_IP:8123/health` und danach eine signierte Backend-Identitaet mit dem Public Key aus dem Installationspaket. Wenn eine dieser Pruefungen fehlschlaegt, wird nicht versendet.
+
+Port `8123` sollte per Firewall nur fuer das Schulnetz oder bekannte Geraete erreichbar sein. Weitere Details, Sicherheitsmodell und Betriebsnotizen stehen in `mail-backend/README.md` und `mail-backend/SECURITY.md`.
