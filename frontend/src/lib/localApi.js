@@ -1,4 +1,4 @@
-import { getState, mutateState } from "./cryptoStore";
+import { getState, mutateState, replaceState } from "./cryptoStore";
 import { GRADE_SYSTEMS } from "./grades";
 import { parseClassCsv } from "./csvImport";
 import {
@@ -290,6 +290,7 @@ async function get(url) {
   const state = await getState();
 
   if (path === "/") return { data: { app: "n.b.", status: "ok", storage: "local-encrypted" } };
+  if (path === "/backup/state") return { data: { state: JSON.parse(JSON.stringify(state)) } };
   if (path === "/grade-systems") return { data: GRADE_SYSTEMS };
   if (path === "/grade-scales") return { data: gradeScalesForState(state) };
   const sessionPoints = path.match(/^\/sessions\/([^/]+)\/points$/);
@@ -439,6 +440,18 @@ async function get(url) {
 
 async function post(url, body) {
   const path = normalizePath(url);
+
+  if (path === "/backup/restore-state") {
+    await replaceState(body.state || {});
+    return { data: { ok: true } };
+  }
+
+  if (path === "/backup/mark-sent") {
+    return mutateState((state) => {
+      state.backup_meta = { ...(state.backup_meta || {}), last_backup_sent_at: body.sent_at || nowIso(), last_backup_size: body.size || 0 };
+      return { data: { ok: true, backup_meta: state.backup_meta } };
+    });
+  }
 
   if (path === "/grade-scales") {
     return mutateState((state) => {

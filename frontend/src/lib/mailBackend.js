@@ -148,7 +148,7 @@ export async function checkMailBackendHealth(value) {
   }
 }
 
-export async function sendGradebookMailsViaBackend(teacherConfig, messages) {
+async function sendMessagesViaBackend(teacherConfig, messages) {
   const host = normalizeMailBackendHost(teacherConfig?.mail_backend_host);
   if (!host) throw new Error("IP-Adresse des Mail-Backends fehlt.");
   const health = await checkMailBackendHealth(host);
@@ -183,4 +183,20 @@ export async function sendGradebookMailsViaBackend(teacherConfig, messages) {
     throw new Error(result.detail || "Mailversand fehlgeschlagen.");
   }
   return result;
+}
+
+
+export async function sendGradebookMailsViaBackend(teacherConfig, messages) {
+  return sendMessagesViaBackend(teacherConfig, messages);
+}
+
+export async function sendBackupMailViaBackend(teacherConfig, attachment) {
+  const today = new Date().toLocaleDateString("de-DE");
+  return sendMessagesViaBackend(teacherConfig, [{
+    to: teacherConfig.email,
+    subject: "n.b. Backup " + today,
+    text: "Automatisches n.b. Backup vom " + today + ". Die Datei ist mit dem Mail-Backend Pre-Shared-Key verschluesselt.",
+    html: "<p>Automatisches n.b. Backup vom " + today + ".</p><p>Die Datei ist mit dem Mail-Backend Pre-Shared-Key verschluesselt.</p>",
+    attachments: [attachment],
+  }]);
 }

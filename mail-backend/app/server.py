@@ -37,7 +37,7 @@ ALLOWED_SENDERS = {
     if address.strip()
 }
 MAX_RECIPIENTS = env_int("MAX_RECIPIENTS_PER_REQUEST", 35)
-MAX_MESSAGE_BYTES = env_int("MAX_MESSAGE_BYTES", 200000)
+MAX_MESSAGE_BYTES = env_int("MAX_MESSAGE_BYTES", 12000000)
 MAX_SUBJECT_LENGTH = env_int("MAX_SUBJECT_LENGTH", 180)
 TIMESTAMP_WINDOW_SECONDS = env_int("TIMESTAMP_WINDOW_SECONDS", 300)
 NONCE_TTL_SECONDS = env_int("NONCE_TTL_SECONDS", 900)
@@ -214,9 +214,26 @@ def validate_payload(payload):
             raise RequestError(400, "Betreff fehlt oder ist zu lang.")
         if not html and not text:
             raise RequestError(400, "Nachrichtentext fehlt.")
-        if len(html.encode("utf-8")) + len(text.encode("utf-8")) > MAX_MESSAGE_BYTES:
+        attachments = message.get("attachments") or []
+        if not isinstance(attachments, list):
+            raise RequestError(400, "Attachments sind ungueltig.")
+        cleaned_attachments = []
+        message_bytes = len(html.encode("utf-8")) + len(text.encode("utf-8"))
+        for attachment in attachments:
+            if not isinstance(attachment, dict):
+                raise RequestError(400, "Attachment ist ungueltig.")
+            filename = str(attachment.get("filename") or "backup.zip.enc").strip().replace("/", "_").replace("\\", "_")
+            content_type = str(attachment.get("contentType") or "application/octet-stream").strip()
+            data = str(attachment.get("data") or "")
+            try:
+                raw = base64.b64decode(data, validate=True)
+            except Exception:
+                raise RequestError(400, "Attachment ist nicht gueltig base64-codiert.")
+            message_bytes += len(raw)
+            cleaned_attachments.append({"filename": filename[:120], "content_type": content_type, "data": raw})
+        if message_bytes > MAX_MESSAGE_BYTES:
             raise RequestError(400, "Nachricht ist zu groß.")
-        cleaned.append({"to": to, "subject": subject, "html": html, "text": text})
+        cleaned.append({"to": to, "subject": subject, "html": html, "text": text, "attachments": cleaned_attachments})
     return sender, password, cleaned
 
 
@@ -235,6 +252,9 @@ def send_messages(sender, password, messages):
             email.set_content(message["text"] or "Diese Nachricht enthält einen HTML-Notenstand.")
             if message["html"]:
                 email.add_alternative(message["html"], subtype="html")
+            for attachment in message.get("attachments", []):
+                maintype, _, subtype = attachment["content_type"].partition("/")
+                email.add_attachment(attachment["data"], maintype=maintype or "application", subtype=subtype or "octet-stream", filename=attachment["filename"])
             try:
                 smtp.send_message(email)
                 results.append({"to": message["to"], "status": "sent"})

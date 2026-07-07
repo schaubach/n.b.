@@ -3,6 +3,7 @@
 Dieses Verzeichnis enthaelt ein unabhaengig installierbares Mail-Backend fuer n.b. Es laeuft auf einem Ubuntu-Server mit Docker Compose und stellt zwei Dinge bereit:
 
 - HTTPS-API fuer den Mailversand unter `https://SERVER_IP:8123/api/send-gradebook`
+- Versand verschluesselter Backup-Anhaenge an die konfigurierte Lehrendenadresse
 - geschuetzte Auslieferung der WebApp unter `https://SERVER_IP:8123/installwebapp/`
 
 Das Python-Backend laeuft intern per HTTP. Nginx terminiert TLS auf Port `8123` und leitet API-Requests intern weiter.
@@ -16,6 +17,7 @@ Das Python-Backend laeuft intern per HTTP. Nginx terminiert TLS auf Port `8123` 
 - Sender und Empfaenger muessen zur Domain `@rbbk-do.de` gehoeren.
 - Optional kann `ALLOWED_SENDERS` gesetzt werden. Dann werden nur diese Lehrenden-Mailadressen als Absender akzeptiert.
 - SMTP-Zugangsdaten werden nicht im Backend gespeichert. Die WebApp sendet Mailadresse und IServ-Passwort nur ueber HTTPS und HMAC-signiert an das Backend.
+- Backup-Anhaenge werden bereits in der WebApp mit dem Pre-Shared-Key verschluesselt; das Backend leitet sie nur als Mailanhang weiter.
 - Der Pre-Shared-Key steht in `.env` und in `webapp/mail-backend-config.json`. Beide Dateien werden nicht versioniert.
 - Die WebApp prueft vor dem Versand eine signierte Backend-Identitaet. Der private Schluessel liegt nur unter `identity/private.pem`, der Public Key wird in `mail-backend-config.json` ausgeliefert.
 
@@ -88,7 +90,7 @@ Empfohlene Werte:
 Feinschutz und Grenzwerte:
 
 - `MAX_RECIPIENTS_PER_REQUEST`: maximale Anzahl Mails in einem Versandrequest.
-- `MAX_MESSAGE_BYTES`: maximale Groesse pro Nachricht.
+- `MAX_MESSAGE_BYTES`: maximale Groesse pro Nachricht inklusive Backup-Anhang. Der Standard ist `12000000`, passend fuer mehrere Klassen mit verkleinerten Fotos.
 - `MAX_SUBJECT_LENGTH`: maximale Betrefflaenge.
 - `TIMESTAMP_WINDOW_SECONDS`: erlaubte Zeitabweichung fuer signierte Requests.
 - `NONCE_TTL_SECONDS`: Speicherzeit fuer verwendete Nonces gegen Replay.
@@ -144,7 +146,7 @@ In der App selbst wird unter der Lehrendenkonfiguration eingetragen:
 - IServPasswort,
 - IP-Adresse oder DNS-Name des Mail-Backends ohne Port, z. B. `10.97.12.34`.
 
-Port `8123` und `https://` setzt die WebApp automatisch. Die Werte werden lokal verschluesselt gespeichert. Die App prueft in dieser Ansicht per Healthcheck, ob das Mail-Backend erreichbar und das Zertifikat vertrauenswuerdig ist.
+Port `8123` und `https://` setzt die WebApp automatisch. Die Werte werden lokal verschluesselt gespeichert. Die App prueft in dieser Ansicht per Healthcheck, ob das Mail-Backend erreichbar und das Zertifikat vertrauenswuerdig ist. Dort liegen auch die Funktionen `Backup` und `Import Backup`; Backups werden als verschluesseltes ZIP mit CSV-Daten und Bildern erstellt.
 
 ## WebApp bereitstellen
 

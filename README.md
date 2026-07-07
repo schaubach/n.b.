@@ -70,7 +70,16 @@ KlasseA;Nachname2;Vorname2;account2
 - Die Lehrendenkonfiguration speichert Name, Mailadresse und Passwort lokal verschluesselt.
 - In der Notenstandansicht koennen Mails fuer einzelne Lernende oder die ganze Klasse vorbereitet werden.
 - Jede Mail enthaelt nur die Noten des jeweiligen Lernenden.
-- Der direkte SMTP-Versand aus einer reinen Browser-/iPad-WebApp ist durch Browser-Sicherheitsregeln nicht verlaesslich moeglich. Fuer echten Versand braucht es eine native Mail-Bridge oder einen lokalen Backend-Prozess im Schulnetz.
+- Der echte SMTP-Versand laeuft ueber das optionale lokale Mail-Backend im Schulnetz.
+
+### Backups
+
+- In der Lehrendenkonfiguration gibt es `Backup` und `Import Backup`.
+- `Backup` erstellt ein verschluesseltes ZIP-Archiv mit CSV-Daten und den gespeicherten Bildern, laedt es lokal herunter und sendet es als Mailanhang an die konfigurierte Lehrenden-Mailadresse.
+- Nach dem Entsperren der App wird hoechstens einmal pro Woche automatisch ein Backup per Mail versendet, wenn Lehrendenkonfiguration und Mail-Backend erreichbar sind. Eine reine WebApp kann im Hintergrund nicht laufen; das Wochenbackup passiert deshalb beim Oeffnen bzw. Entsperren der App.
+- Das Backup wird mit AES-GCM verschluesselt. Der Schluessel wird aus dem `NB_MAIL_PSK` abgeleitet, der beim Build bzw. Setup in `mail-backend-config.json` ausgeliefert wird.
+- `Import Backup` entschluesselt das Archiv mit demselben Pre-Shared-Key und ersetzt den lokalen Datenbestand inklusive Bilder.
+- Fotos werden vor dem Speichern auf eine Kachel-taugliche Groesse verkleinert, damit Backups mit mehreren Klassen weiterhin mailtauglich bleiben.
 
 ### Lokale Daten und Verschluesselung
 
@@ -146,6 +155,8 @@ Die Noten- und Fotodaten verlassen dabei nicht das jeweilige iPad; der Server li
 Das optionale Mail-Backend liegt in `mail-backend/`. Es ist nur fuer den echten Mailversand noetig. Die normale WebApp bleibt lokal und kann ohne Mail-Backend genutzt werden.
 
 Das Backend wird auf einem Ubuntu-Server im Schulnetz betrieben. Nginx terminiert HTTPS auf Port `8123`, schuetzt die Installationsseite mit Basic Auth, prueft HMAC-signierte API-Requests und leitet den Versand ueber SMTP/STARTTLS an IServ weiter.
+
+Das gleiche Backend wird fuer Backup-Mails genutzt. Dafuer erlaubt es signierte Mailrequests mit einem verschluesselten Backup-Anhang.
 
 ### Installation auf Ubuntu
 

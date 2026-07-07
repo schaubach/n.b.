@@ -1,8 +1,9 @@
 import React, { useEffect, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { AlertTriangle, CheckCircle2, Loader2, Mail, Save, UserRound, X } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Download, Loader2, Mail, Save, Upload, UserRound, X } from "lucide-react";
 import api from "../lib/api";
 import { checkMailBackendHealth } from "../lib/mailBackend";
+import { importEncryptedBackup, sendBackupToTeacher } from "../lib/backup";
 
 export default function TeacherConfigModal({ open, onClose }) {
   const [name, setName] = useState("");
@@ -14,6 +15,7 @@ export default function TeacherConfigModal({ open, onClose }) {
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const [backendCheck, setBackendCheck] = useState({ status: "idle", message: "" });
+  const [backupBusy, setBackupBusy] = useState(false);
 
   useEffect(() => {
     if (!open) return;
@@ -50,6 +52,40 @@ export default function TeacherConfigModal({ open, onClose }) {
       window.clearTimeout(timer);
     };
   }, [open, loading, mailBackendHost]);
+
+  const runBackup = async () => {
+    setBackupBusy(true);
+    setMessage("");
+    setError("");
+    try {
+      await api.post("/teacher-config", { name, email, password, mail_backend_host: mailBackendHost });
+      await sendBackupToTeacher({ download: true });
+      setMessage("Backup wurde erstellt, heruntergeladen und an die Lehrendenadresse gesendet.");
+    } catch (err) {
+      setError(err.message || "Backup konnte nicht erstellt werden.");
+    } finally {
+      setBackupBusy(false);
+    }
+  };
+
+  const importBackup = async (event) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+    if (!window.confirm("Backup importieren? Der aktuelle lokale Datenbestand wird ersetzt.")) return;
+    setBackupBusy(true);
+    setMessage("");
+    setError("");
+    try {
+      await importEncryptedBackup(file);
+      setMessage("Backup wurde importiert. Die App wird neu geladen.");
+      window.setTimeout(() => window.location.reload(), 800);
+    } catch (err) {
+      setError(err.message || "Backup konnte nicht importiert werden.");
+    } finally {
+      setBackupBusy(false);
+    }
+  };
 
   const submit = async (event) => {
     event.preventDefault();
@@ -119,6 +155,18 @@ export default function TeacherConfigModal({ open, onClose }) {
 
                 <div className="mt-5 rounded-2xl border-2 border-amber-300 bg-amber-100 px-4 py-3 text-sm font-bold text-amber-950">
                   SMTP: rbbk-do.de, Port 587, STARTTLS. Der Versand läuft über das lokale Mail-Backend im Schulnetz und wird per HTTPS sowie HMAC-Signatur abgesichert.
+                </div>
+
+                <div className="mt-5 grid gap-2 sm:grid-cols-2">
+                  <button type="button" onClick={runBackup} disabled={backupBusy || saving} className="flex items-center justify-center gap-2 rounded-2xl border-2 border-stone-900 bg-white px-5 py-3 font-heading font-extrabold text-stone-900 shadow-brutal-sm disabled:opacity-50">
+                    {backupBusy ? <Loader2 className="h-5 w-5 animate-spin" /> : <Download className="h-5 w-5" />}
+                    Backup
+                  </button>
+                  <label className="flex cursor-pointer items-center justify-center gap-2 rounded-2xl border-2 border-stone-900 bg-white px-5 py-3 font-heading font-extrabold text-stone-900 shadow-brutal-sm">
+                    <Upload className="h-5 w-5" />
+                    Import Backup
+                    <input type="file" accept=".enc,.nbbackup,.zip" onChange={importBackup} className="hidden" />
+                  </label>
                 </div>
 
                 {message && <p className="mt-4 rounded-xl border-2 border-emerald-300 bg-emerald-100 px-4 py-3 font-bold text-emerald-900">{message}</p>}
