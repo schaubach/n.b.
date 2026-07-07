@@ -17,8 +17,8 @@ Beispiel:
 
 ```csv
 Gruppe;Nachname;Vorname;Account
-MEDU1;Liu;Zhang;liuz
-MEDU1;"El Bey";Karim;elbeyk
+KlasseA;Nachname1;Vorname1;account1
+KlasseA;Nachname2;Vorname2;account2
 ```
 
 ### Fotos
@@ -143,15 +143,83 @@ Die Noten- und Fotodaten verlassen dabei nicht das jeweilige iPad; der Server li
 
 ## Mail-Backend
 
-Das optionale Mail-Backend liegt in `mail-backend/`. Es kann auf einem Ubuntu-Server per Docker Compose betrieben werden, terminiert HTTPS ueber Nginx auf Port `8123`, prueft HMAC-signierte Requests der WebApp und versendet die Notenstandsmails ueber SMTP/STARTTLS.
+Das optionale Mail-Backend liegt in `mail-backend/`. Es ist nur fuer den echten Mailversand noetig. Die normale WebApp bleibt lokal und kann ohne Mail-Backend genutzt werden.
 
-Kurzstart:
+Das Backend wird auf einem Ubuntu-Server im Schulnetz betrieben. Nginx terminiert HTTPS auf Port `8123`, schuetzt die Installationsseite mit Basic Auth, prueft HMAC-signierte API-Requests und leitet den Versand ueber SMTP/STARTTLS an IServ weiter.
+
+### Installation auf Ubuntu
+
+1. Docker und OpenSSL installieren:
+
+```bash
+sudo apt update
+sudo apt install -y docker.io docker-compose-plugin openssl
+sudo usermod -aG docker "$USER"
+```
+
+Danach einmal neu anmelden, damit die Docker-Gruppe aktiv ist.
+
+2. Konfiguration anlegen:
 
 ```bash
 cd mail-backend
 cp .env.example .env
+nano .env
+```
+
+Wichtige Werte in `.env`:
+
+```text
+SERVER_NAME=10.97.0.10
+INSTALL_USER=install
+INSTALL_PASSWORD=
+ALLOWED_DOMAIN=rbbk-do.de
+ALLOWED_SENDERS=lehrkraft1@rbbk-do.de,lehrkraft2@rbbk-do.de
+```
+
+`INSTALL_PASSWORD` und `NB_MAIL_PSK` gehoeren nur in die lokale `.env` und nie ins Repository. `ALLOWED_SENDERS` ist empfohlen: Wenn die Liste gesetzt ist, akzeptiert das Backend nur diese Lehrenden-Mailadressen als Absender. Wenn sie leer bleibt, sind alle Absender der erlaubten Domain zugelassen.
+
+3. Setup ausfuehren:
+
+```bash
 sh scripts/setup.sh
+```
+
+Das Skript erzeugt bei Bedarf:
+
+- einen HMAC-Schluessel fuer die WebApp,
+- ein selbstsigniertes HTTPS-Zertifikat,
+- die Basic-Auth-Datei fuer `/installwebapp/`,
+- `webapp/mail-backend-config.json` fuer die WebApp.
+
+4. WebApp bauen und in das Mail-Backend kopieren:
+
+```bash
+cd ../frontend
+npm install
+npm run build
+cd ../mail-backend
+sh scripts/sync-webapp.sh
+```
+
+5. Backend starten:
+
+```bash
 docker compose up -d --build
 ```
 
-Die WebApp kann vom gleichen Nginx unter `/installwebapp/` ausgeliefert werden. Details stehen in `mail-backend/README.md`.
+6. Funktion pruefen:
+
+```bash
+curl -k https://SERVER_IP:8123/health
+```
+
+Die Installationsadresse fuer Safari auf dem iPad lautet:
+
+```text
+https://SERVER_IP:8123/installwebapp/
+```
+
+Das Zertifikat `mail-backend/certs/server.crt` muss auf den iPads bzw. per MDM/Profil als vertrauenswuerdig installiert werden. Keine Zertifikatswarnungen wegklicken, weil sonst ein Netzbeobachter theoretisch eine Verbindung einschleusen koennte.
+
+Port `8123` sollte per Firewall nur fuer das Schulnetz oder bekannte Geraete erreichbar sein. Weitere Details, Sicherheitsmodell und Betriebsnotizen stehen in `mail-backend/README.md` und `mail-backend/SECURITY.md`.

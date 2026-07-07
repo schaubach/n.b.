@@ -29,6 +29,11 @@ SMTP_HOST = os.getenv("SMTP_HOST", "rbbk-do.de")
 SMTP_PORT = env_int("SMTP_PORT", 587)
 SMTP_STARTTLS = os.getenv("SMTP_STARTTLS", "true").lower() in {"1", "true", "yes", "on"}
 ALLOWED_DOMAIN = os.getenv("ALLOWED_DOMAIN", "rbbk-do.de").lower().lstrip("@")
+ALLOWED_SENDERS = {
+    address.strip().lower()
+    for address in os.getenv("ALLOWED_SENDERS", "").split(",")
+    if address.strip()
+}
 MAX_RECIPIENTS = env_int("MAX_RECIPIENTS_PER_REQUEST", 35)
 MAX_MESSAGE_BYTES = env_int("MAX_MESSAGE_BYTES", 200000)
 MAX_SUBJECT_LENGTH = env_int("MAX_SUBJECT_LENGTH", 180)
@@ -101,6 +106,12 @@ def domain_ok(address):
     return isinstance(address, str) and address.lower().endswith("@" + ALLOWED_DOMAIN)
 
 
+def sender_ok(address):
+    if not domain_ok(address):
+        return False
+    return not ALLOWED_SENDERS or address.lower() in ALLOWED_SENDERS
+
+
 def verify_signature(headers, body):
     if not PSK:
         raise RequestError(500, "Mail-Backend ist nicht vollständig konfiguriert.")
@@ -135,7 +146,7 @@ def validate_payload(payload):
         raise RequestError(400, "teacher und messages sind erforderlich.")
     sender = str(teacher.get("email") or "").strip().lower()
     password = str(teacher.get("password") or "")
-    if not domain_ok(sender):
+    if not sender_ok(sender):
         raise RequestError(400, "Absenderadresse ist nicht erlaubt.")
     if not password:
         raise RequestError(400, "SMTP-Passwort fehlt.")

@@ -14,6 +14,7 @@ Das Python-Backend laeuft intern per HTTP. Nginx terminiert TLS auf Port `8123` 
 - Die Signatur wird aus `timestamp.nonce.body` gebildet.
 - Das Backend prueft Signatur, Zeitfenster, Nonce-Replay, Request-Format, Domains und Rate-Limits.
 - Sender und Empfaenger muessen zur Domain `@rbbk-do.de` gehoeren.
+- Optional kann `ALLOWED_SENDERS` gesetzt werden. Dann werden nur diese Lehrenden-Mailadressen als Absender akzeptiert.
 - SMTP-Zugangsdaten werden nicht im Backend gespeichert. Die WebApp sendet Mailadresse und IServ-Passwort nur ueber HTTPS und HMAC-signiert an das Backend.
 - Der Pre-Shared-Key steht in `.env` und in `webapp/mail-backend-config.json`. Beide Dateien werden nicht versioniert.
 
@@ -44,6 +45,7 @@ In `.env` setzen:
 - `INSTALL_USER`: Benutzer fuer `/installwebapp`
 - `INSTALL_PASSWORD`: Passwort fuer `/installwebapp`
 - `NB_MAIL_PSK`: leer lassen, wenn `scripts/setup.sh` einen Schluessel erzeugen soll
+- `ALLOWED_SENDERS`: empfohlene kommaseparierte Liste der erlaubten Lehrenden-Mailadressen, z. B. `lehrkraft1@rbbk-do.de`
 
 Das im Auftrag genannte Installationspasswort gehoert in die lokale `.env`, nicht ins Repository.
 
@@ -124,6 +126,7 @@ SMTP_HOST=rbbk-do.de
 SMTP_PORT=587
 SMTP_STARTTLS=true
 ALLOWED_DOMAIN=rbbk-do.de
+ALLOWED_SENDERS=lehrkraft1@rbbk-do.de,lehrkraft2@rbbk-do.de
 ~~~
 
 Die WebApp uebermittelt pro Versand die Lehrenden-Mailadresse und das IServ-Passwort ueber HTTPS an das Backend. Das Backend meldet sich damit am SMTP-Server an.

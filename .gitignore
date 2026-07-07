@@ -1,5 +1,6 @@
 .env
 .env.*
+!mail-backend/.env.example
 *.env
 credentials.json
 *.pem
