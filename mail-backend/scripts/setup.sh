@@ -25,10 +25,16 @@ if [ -z "$(get_env NB_MAIL_PSK)" ]; then
   set_env NB_MAIL_PSK "$(openssl rand -base64 48)"
 fi
 
-SERVER_NAME="$(get_env SERVER_NAME)"
-if [ -z "$SERVER_NAME" ]; then
-  SERVER_NAME="${1:-10.97.0.10}"
+SERVER_NAME_ARG="${1:-}"
+if [ -n "$SERVER_NAME_ARG" ]; then
+  SERVER_NAME="$SERVER_NAME_ARG"
   set_env SERVER_NAME "$SERVER_NAME"
+else
+  SERVER_NAME="$(get_env SERVER_NAME)"
+  if [ -z "$SERVER_NAME" ]; then
+    SERVER_NAME="10.97.0.10"
+    set_env SERVER_NAME "$SERVER_NAME"
+  fi
 fi
 
 INSTALL_USER="$(get_env INSTALL_USER)"
@@ -54,7 +60,22 @@ case "$SERVER_NAME" in
   * ) SAN_PREFIX="IP" ;;
 esac
 
-if [ ! -f certs/server.key ] || [ ! -f certs/server.crt ]; then
+cert_matches_server_name() {
+  if [ ! -f certs/server.crt ]; then
+    return 1
+  fi
+  SAN="$(openssl x509 -in certs/server.crt -noout -ext subjectAltName 2>/dev/null || true)"
+  if [ "$SAN_PREFIX" = "IP" ]; then
+    printf "%s" "$SAN" | grep -F "IP Address:$SERVER_NAME" >/dev/null 2>&1
+  else
+    printf "%s" "$SAN" | grep -F "DNS:$SERVER_NAME" >/dev/null 2>&1
+  fi
+}
+
+if [ ! -f certs/server.key ] || [ ! -f certs/server.crt ] || ! cert_matches_server_name; then
+  if [ -f certs/server.crt ]; then
+    echo "Hinweis: Zertifikat wird fuer SERVER_NAME=$SERVER_NAME neu erzeugt." >&2
+  fi
   openssl req -x509 -newkey rsa:4096 -sha256 -days 825 -nodes \
     -keyout certs/server.key \
     -out certs/server.crt \

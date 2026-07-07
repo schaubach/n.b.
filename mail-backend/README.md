@@ -39,8 +39,10 @@ Danach neu anmelden oder die Gruppe aktualisieren.
 cd mail-backend
 cp .env.example .env
 nano .env
-sh scripts/setup.sh
+sh scripts/setup.sh 10.97.12.34
 ~~~
+
+Der optionale Parameter ist die IP-Adresse oder der DNS-Name, unter dem die iPads das Backend aufrufen. Wenn er angegeben wird, schreibt `setup.sh` ihn nach `.env` in `SERVER_NAME`.
 
 In `.env` setzen:
 
@@ -99,6 +101,8 @@ Feinschutz und Grenzwerte:
 
 Bei HTTP 500 nach erfolgreicher Basic-Auth und Logzeilen wie `open() "/etc/nginx/auth/.htpasswd" failed (13: Permission denied)` bitte `sh scripts/setup.sh` erneut ausfuehren. Das Skript setzt die fuer den Nginx-Container notwendigen Leserechte auf `nginx/auth/.htpasswd` und `webapp/`.
 
+Wenn `SERVER_NAME` per Parameter oder `.env` geaendert wird, prueft `setup.sh` das bestehende Zertifikat. Passt der Subject Alternative Name nicht mehr zum aktuellen `SERVER_NAME`, wird das Zertifikat automatisch neu erzeugt. Dieses neue Zertifikat muss auf den iPads wieder als vertrauenswuerdig installiert werden.
+
 Nach jeder relevanten Aenderung:
 
 ~~~bash
@@ -111,6 +115,8 @@ Wenn sich `NB_MAIL_PSK`, Zertifikat oder Backend-Identitaet geaendert haben, dan
 ~~~bash
 sh scripts/sync-webapp.sh
 ~~~
+
+`sync-webapp.sh` bewahrt die von `setup.sh` erzeugte `webapp/mail-backend-config.json`. Eine versehentlich im Frontend-Build enthaltene `mail-backend-config.json` ueberschreibt diese Server-Konfiguration nicht.
 
 ### `mail-backend/webapp/mail-backend-config.json`
 
