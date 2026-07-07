@@ -1,5 +1,5 @@
 import api from "./api";
-import { sendBackupMailViaBackend } from "./mailBackend";
+import { loadMailBackendConfig, sendBackupMailViaBackend } from "./mailBackend";
 
 const BACKUP_MAGIC = "NBBAK1";
 const BACKUP_VERSION = 1;
@@ -190,10 +190,7 @@ async function decryptZip(fileBytes, preSharedKey) {
 }
 
 async function loadPreSharedKey() {
-  const response = await fetch((process.env.PUBLIC_URL || "") + "/mail-backend-config.json", { cache: "no-store" });
-  if (!response.ok) throw new Error("mail-backend-config.json fehlt oder ist nicht lesbar.");
-  const config = await response.json();
-  const preSharedKey = String(config.preSharedKey || "").trim();
+  const { preSharedKey } = await loadMailBackendConfig();
   if (!preSharedKey || preSharedKey.includes("NICHT_INS_REPOSITORY")) throw new Error("Pre-Shared-Key fuer Backups fehlt.");
   return preSharedKey;
 }

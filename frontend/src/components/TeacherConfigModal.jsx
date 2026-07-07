@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { AlertTriangle, CheckCircle2, Download, Loader2, Mail, Save, Upload, UserRound, X } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Download, KeyRound, Loader2, Mail, Save, Upload, UserRound, X } from "lucide-react";
 import api from "../lib/api";
 import { checkMailBackendHealth } from "../lib/mailBackend";
 import { importEncryptedBackup, sendBackupToTeacher } from "../lib/backup";
@@ -11,6 +11,8 @@ export default function TeacherConfigModal({ open, onClose }) {
   const [password, setPassword] = useState("");
   const [mailBackendHost, setMailBackendHost] = useState("");
   const [backupIntervalDays, setBackupIntervalDays] = useState(7);
+  const [mailBackendPreSharedKey, setMailBackendPreSharedKey] = useState("");
+  const [backendIdentityPublicKey, setBackendIdentityPublicKey] = useState("");
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
@@ -24,9 +26,25 @@ export default function TeacherConfigModal({ open, onClose }) {
     password,
     mail_backend_host: mailBackendHost,
     backup_interval_days: Math.min(365, Math.max(1, Number.parseInt(backupIntervalDays, 10) || 7)),
+    mail_backend_pre_shared_key: mailBackendPreSharedKey,
+    backend_identity_public_key: backendIdentityPublicKey,
   });
 
   const errorText = (err, fallback) => err?.response?.data?.detail || err?.message || fallback;
+  const firstText = (...values) => values.find((value) => typeof value === "string" && value.trim())?.trim() || "";
+
+  const credentialsFromJson = (data) => {
+    const teacher = data.teacher || data.teacherConfig || data.lehrendenkonfiguration || {};
+    return {
+      name: firstText(data.name, data.teacher_name, data.teacherName, teacher.name),
+      email: firstText(data.email, data.mail, data.accountMail, data.accountmail, data.teacher_email, teacher.email, teacher.mail),
+      password: firstText(data.password, data.iservPassword, data.iserv_passwort, data.IServPasswort, teacher.password, teacher.iservPassword),
+      mailBackendHost: firstText(data.mail_backend_host, data.mailBackendHost, data.serverName, data.host, teacher.mail_backend_host, teacher.mailBackendHost),
+      backupIntervalDays: data.backup_interval_days ?? data.backupIntervalDays ?? teacher.backup_interval_days ?? teacher.backupIntervalDays,
+      preSharedKey: firstText(data.preSharedKey, data.mail_backend_pre_shared_key, data.NB_MAIL_PSK, data.nbMailPsk, data.psk),
+      publicKey: firstText(data.backendIdentityPublicKey, data.backend_identity_public_key, data.publicKey, data.backendPublicKey),
+    };
+  };
 
   useEffect(() => {
     if (!open) return;
@@ -40,6 +58,8 @@ export default function TeacherConfigModal({ open, onClose }) {
         setPassword(res.data.password || "");
         setMailBackendHost(res.data.mail_backend_host || "");
         setBackupIntervalDays(res.data.backup_interval_days || 7);
+        setMailBackendPreSharedKey(res.data.mail_backend_pre_shared_key || "");
+        setBackendIdentityPublicKey(res.data.backend_identity_public_key || "");
       })
       .catch(() => setError("Lehrendenkonfiguration konnte nicht geladen werden."))
       .finally(() => setLoading(false));
@@ -96,6 +116,50 @@ export default function TeacherConfigModal({ open, onClose }) {
       setError(errorText(err, "Backup konnte nicht importiert werden."));
     } finally {
       setBackupBusy(false);
+    }
+  };
+
+  const importCredentials = async (event) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+    setSaving(true);
+    setMessage("");
+    setError("");
+    try {
+      const parsed = credentialsFromJson(JSON.parse(await file.text()));
+      const nextName = parsed.name || name;
+      const nextEmail = parsed.email || email;
+      const nextPassword = parsed.password || password;
+      const nextHost = parsed.mailBackendHost || mailBackendHost;
+      const nextInterval = parsed.backupIntervalDays || backupIntervalDays;
+      const nextPreSharedKey = parsed.preSharedKey || mailBackendPreSharedKey;
+      const nextPublicKey = parsed.publicKey || backendIdentityPublicKey;
+      if (!parsed.name && !parsed.email && !parsed.password && !parsed.mailBackendHost && !parsed.preSharedKey && !parsed.publicKey) {
+        throw new Error("Die Datei enthaelt keine erkannten Credentials.");
+      }
+      const payload = {
+        name: nextName,
+        email: nextEmail,
+        password: nextPassword,
+        mail_backend_host: nextHost,
+        backup_interval_days: nextInterval,
+        mail_backend_pre_shared_key: nextPreSharedKey,
+        backend_identity_public_key: nextPublicKey,
+      };
+      const saved = await api.post("/teacher-config", payload);
+      setName(saved.data.name || "");
+      setEmail(saved.data.email || "");
+      setPassword(nextPassword);
+      setMailBackendHost(saved.data.mail_backend_host || "");
+      setBackupIntervalDays(saved.data.backup_interval_days || 7);
+      setMailBackendPreSharedKey(saved.data.mail_backend_pre_shared_key || "");
+      setBackendIdentityPublicKey(saved.data.backend_identity_public_key || "");
+      setMessage("Credentials wurden geladen und gespeichert.");
+    } catch (err) {
+      setError(errorText(err, "Credentials konnten nicht geladen werden."));
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -176,6 +240,15 @@ export default function TeacherConfigModal({ open, onClose }) {
 
                 <div className="mt-5 rounded-2xl border-2 border-amber-300 bg-amber-100 px-4 py-3 text-sm font-bold text-amber-950">
                   SMTP: rbbk-do.de, Port 587, STARTTLS. Der Versand läuft über das lokale Mail-Backend im Schulnetz und wird per HTTPS sowie HMAC-Signatur abgesichert.
+                </div>
+
+                <div className="mt-5">
+                  <label className={(saving || backupBusy ? "pointer-events-none opacity-50" : "cursor-pointer") + " flex items-center justify-center gap-2 rounded-2xl border-2 border-stone-900 bg-white px-5 py-3 font-heading font-extrabold text-stone-900 shadow-brutal-sm"}>
+                    <KeyRound className="h-5 w-5" />
+                    Credentials laden
+                    <input type="file" accept=".json,application/json" onChange={importCredentials} disabled={saving || backupBusy} className="hidden" />
+                  </label>
+                  {(mailBackendPreSharedKey && backendIdentityPublicKey) && <p className="mt-2 text-xs font-bold text-emerald-700">Backend-Credentials lokal geladen.</p>}
                 </div>
 
                 <div className="mt-5 grid gap-2 sm:grid-cols-2">
