@@ -7,6 +7,7 @@ export default function TeacherConfigModal({ open, onClose }) {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [mailBackendHost, setMailBackendHost] = useState("");
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
@@ -22,6 +23,7 @@ export default function TeacherConfigModal({ open, onClose }) {
         setName(res.data.name || "");
         setEmail(res.data.email || "");
         setPassword(res.data.password || "");
+        setMailBackendHost(res.data.mail_backend_host || "");
       })
       .catch(() => setError("Lehrendenkonfiguration konnte nicht geladen werden."))
       .finally(() => setLoading(false));
@@ -33,7 +35,7 @@ export default function TeacherConfigModal({ open, onClose }) {
     setMessage("");
     setError("");
     try {
-      await api.post("/teacher-config", { name, email, password });
+      await api.post("/teacher-config", { name, email, password, mail_backend_host: mailBackendHost });
       setMessage("Lehrendenkonfiguration gespeichert.");
     } catch (err) {
       setError("Lehrendenkonfiguration konnte nicht gespeichert werden.");
@@ -79,10 +81,15 @@ export default function TeacherConfigModal({ open, onClose }) {
                     <span className="text-sm font-bold text-stone-700">IServPasswort</span>
                     <input type="password" value={password} onChange={(event) => setPassword(event.target.value)} className="mt-1 w-full rounded-xl border-2 border-stone-300 px-4 py-3 font-bold text-stone-900 outline-none focus:border-stone-900" />
                   </label>
+                  <label className="block">
+                    <span className="text-sm font-bold text-stone-700">IP-Adresse Mail-Backend</span>
+                    <input value={mailBackendHost} onChange={(event) => setMailBackendHost(event.target.value)} placeholder="10.97.x.x" className="mt-1 w-full rounded-xl border-2 border-stone-300 px-4 py-3 font-bold text-stone-900 outline-none focus:border-stone-900" />
+                    <span className="mt-1 block text-xs font-bold text-stone-500">Port 8123 und HTTPS werden automatisch verwendet.</span>
+                  </label>
                 </div>
 
                 <div className="mt-5 rounded-2xl border-2 border-amber-300 bg-amber-100 px-4 py-3 text-sm font-bold text-amber-950">
-                  SMTP: rbbk-do.de, Port 587, STARTTLS, Anmeldung mit Lehrenden-Mailadresse und IServPasswort. Der Versand funktioniert nur aus dem Schulnetz und benötigt einen Mail-Transport, der SMTP ausführen kann.
+                  SMTP: rbbk-do.de, Port 587, STARTTLS. Der Versand läuft über das lokale Mail-Backend im Schulnetz und wird per HTTPS sowie HMAC-Signatur abgesichert.
                 </div>
 
                 {message && <p className="mt-4 rounded-xl border-2 border-emerald-300 bg-emerald-100 px-4 py-3 font-bold text-emerald-900">{message}</p>}

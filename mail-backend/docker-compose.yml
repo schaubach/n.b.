@@ -1,0 +1,36 @@
+services:
+  mail-api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    environment:
+      NB_MAIL_PSK: ${NB_MAIL_PSK}
+      SMTP_HOST: ${SMTP_HOST:-rbbk-do.de}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_STARTTLS: ${SMTP_STARTTLS:-true}
+      ALLOWED_DOMAIN: ${ALLOWED_DOMAIN:-rbbk-do.de}
+      MAX_RECIPIENTS_PER_REQUEST: ${MAX_RECIPIENTS_PER_REQUEST:-35}
+      MAX_MESSAGE_BYTES: ${MAX_MESSAGE_BYTES:-200000}
+      MAX_SUBJECT_LENGTH: ${MAX_SUBJECT_LENGTH:-180}
+      TIMESTAMP_WINDOW_SECONDS: ${TIMESTAMP_WINDOW_SECONDS:-300}
+      NONCE_TTL_SECONDS: ${NONCE_TTL_SECONDS:-900}
+      RATE_LIMIT_PER_MINUTE: ${RATE_LIMIT_PER_MINUTE:-80}
+      RATE_LIMIT_PER_HOUR: ${RATE_LIMIT_PER_HOUR:-400}
+      RATE_LIMIT_PER_DAY: ${RATE_LIMIT_PER_DAY:-1200}
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-}
+    restart: unless-stopped
+    expose:
+      - "8080"
+
+  nginx:
+    image: nginx:1.27-alpine
+    depends_on:
+      - mail-api
+    restart: unless-stopped
+    ports:
+      - "8123:8123"
+    volumes:
+      - ./nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./certs:/etc/nginx/certs:ro
+      - ./nginx/auth:/etc/nginx/auth:ro
+      - ./webapp:/usr/share/nginx/html/installwebapp:ro

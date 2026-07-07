@@ -16,6 +16,7 @@ import {
   weightedAverage,
 } from "../lib/gradebook";
 import { normalizeExamGradeValue, shouldUseWholeExamGrades } from "../lib/gradeScales";
+import { sendGradebookMailsViaBackend } from "../lib/mailBackend";
 import { triggerDownload } from "../lib/exportClass";
 
 function examTerms(systemId) {
@@ -298,7 +299,7 @@ function buildMailMessage(data, row, columns, teacherConfig) {
 }
 
 function teacherConfigMissing(config) {
-  return !String(config?.name || "").trim() || !String(config?.email || "").trim() || !String(config?.password || "").trim();
+  return !String(config?.name || "").trim() || !String(config?.email || "").trim() || !String(config?.password || "").trim() || !String(config?.mail_backend_host || "").trim();
 }
 
 function MailConfirmModal({ request, sending, result, onSend, onClose }) {
@@ -330,11 +331,11 @@ function MailConfirmModal({ request, sending, result, onSend, onClose }) {
           <div className="min-h-0 flex-1 overflow-auto p-5">
             <div className="mb-4 flex items-start gap-3 rounded-2xl border-2 border-amber-300 bg-amber-100 px-4 py-3 font-bold text-amber-950">
               <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0" />
-              <span>Mailversand funktioniert nur aus dem Schulnetz. In der reinen Browser/iPad-Version ist zusätzlich ein SMTP-fähiger Mail-Transport nötig.</span>
+              <span>Mailversand funktioniert nur aus dem Schulnetz und mit erreichbarem Mail-Backend. Die Verbindung erfolgt per HTTPS auf Port 8123.</span>
             </div>
             {missingConfig && (
               <div className="mb-4 rounded-2xl border-2 border-rose-300 bg-rose-100 px-4 py-3 font-bold text-rose-900">
-                Lehrendenkonfiguration fehlt oder ist unvollständig. Bitte Name, Mailadresse und IServPasswort eintragen.
+                Lehrendenkonfiguration fehlt oder ist unvollständig. Bitte Name, Mailadresse, IServPasswort und IP-Adresse des Mail-Backends eintragen.
               </div>
             )}
             {messages.length === 0 ? (
@@ -647,15 +648,11 @@ export default function GradebookModal({ classId, className, open, onClose }) {
     setMailSending(true);
     setMailResult(null);
     try {
-      const payload = { teacher: mailRequest.teacherConfig, messages };
-      if (window.nbMailBridge?.sendGradebookMails) {
-        await window.nbMailBridge.sendGradebookMails(payload);
-      } else {
-        await api.post("/mail/gradebook", payload);
-      }
-      setMailResult({ ok: true, message: messages.length === 1 ? "Mail wurde versendet." : messages.length + " Mails wurden versendet." });
+      const result = await sendGradebookMailsViaBackend(mailRequest.teacherConfig, messages);
+      const sent = result.sent ?? messages.length;
+      setMailResult({ ok: true, message: sent === 1 ? "Mail wurde versendet." : sent + " Mails wurden versendet." });
     } catch (err) {
-      setMailResult({ ok: false, message: err?.response?.data?.detail || "Mailversand fehlgeschlagen." });
+      setMailResult({ ok: false, message: err?.message || err?.response?.data?.detail || "Mailversand fehlgeschlagen." });
     } finally {
       setMailSending(false);
     }

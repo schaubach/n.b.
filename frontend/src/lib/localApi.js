@@ -308,7 +308,7 @@ async function get(url) {
 
   if (path === "/teacher-config") {
     const config = state.teacher_config || {};
-    return { data: { name: config.name || "", email: config.email || "", password: config.password || "" } };
+    return { data: { name: config.name || "", email: config.email || "", password: config.password || "", mail_backend_host: config.mail_backend_host || "" } };
   }
   if (path === "/classes") {
     const data = state.classes
@@ -416,9 +416,10 @@ async function get(url) {
         name: String(body.name || "").trim(),
         email,
         password: String(body.password || ""),
+        mail_backend_host: String(body.mail_backend_host || "").trim(),
         updated_at: nowIso(),
       };
-      return { data: { ok: true, name: state.teacher_config.name, email: state.teacher_config.email } };
+      return { data: { ok: true, name: state.teacher_config.name, email: state.teacher_config.email, mail_backend_host: state.teacher_config.mail_backend_host } };
     });
   }
 

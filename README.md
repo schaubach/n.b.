@@ -140,3 +140,18 @@ Wenn die App nur im Schulnetz verteilt werden soll, ist ein interner HTTPS-Webse
 - Danach `Zum Home-Bildschirm` verwenden.
 
 Die Noten- und Fotodaten verlassen dabei nicht das jeweilige iPad; der Server liefert nur die App-Dateien aus.
+
+## Mail-Backend
+
+Das optionale Mail-Backend liegt in `mail-backend/`. Es kann auf einem Ubuntu-Server per Docker Compose betrieben werden, terminiert HTTPS ueber Nginx auf Port `8123`, prueft HMAC-signierte Requests der WebApp und versendet die Notenstandsmails ueber SMTP/STARTTLS.
+
+Kurzstart:
+
+```bash
+cd mail-backend
+cp .env.example .env
+sh scripts/setup.sh
+docker compose up -d --build
+```
+
+Die WebApp kann vom gleichen Nginx unter `/installwebapp/` ausgeliefert werden. Details stehen in `mail-backend/README.md`.
