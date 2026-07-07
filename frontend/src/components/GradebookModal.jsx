@@ -349,7 +349,7 @@ function MailConfirmModal({ request, sending, result, onSend, onClose }) {
           <div className="min-h-0 flex-1 overflow-auto p-5">
             <div className="mb-4 flex items-start gap-3 rounded-2xl border-2 border-amber-300 bg-amber-100 px-4 py-3 font-bold text-amber-950">
               <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0" />
-              <span>Mailversand funktioniert nur aus dem Schulnetz und mit erreichbarem Mail-Backend. Die Verbindung erfolgt per HTTPS auf Port 8123.</span>
+              <span>Mailversand funktioniert nur aus dem Schulnetz und mit erreichbarem Mail-Backend.</span>
             </div>
             {missingConfig && (
               <div className="mb-4 rounded-2xl border-2 border-rose-300 bg-rose-100 px-4 py-3 font-bold text-rose-900">
