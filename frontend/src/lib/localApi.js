@@ -168,7 +168,7 @@ function recalculatePointGrades(state, session) {
     const calculated = summary?.calculated_value || "";
     let grade = state.grades.find((item) => item.session_id === session.id && item.student_id === student.id);
     if (!calculated) {
-      if (grade && !grade.manual_override) state.grades = state.grades.filter((item) => item !== grade);
+      if (grade) state.grades = state.grades.filter((item) => item !== grade);
       continue;
     }
     if (!grade) {
@@ -715,6 +715,7 @@ async function del(url) {
       state.grades = state.grades.filter((grade) => !sessionIds.includes(grade.session_id));
       state.sessions = state.sessions.filter((session) => session.class_id !== classSessions[1]);
       state.gradebook_overrides = (state.gradebook_overrides || []).filter((override) => override.class_id !== classSessions[1]);
+      state.gradebook_weights = (state.gradebook_weights || []).filter((item) => item.class_id !== classSessions[1]);
       state.point_sessions = (state.point_sessions || []).filter((item) => !sessionIds.includes(item.session_id));
       return { data: { ok: true, deleted_sessions: sessionIds.length } };
     });
