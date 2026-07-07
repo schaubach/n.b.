@@ -28,6 +28,12 @@ function todayDe() {
   return `${p(d.getDate())}.${p(d.getMonth() + 1)}.${d.getFullYear()}`;
 }
 
+function normalizeBackupIntervalDays(value) {
+  const parsed = Number.parseInt(value, 10);
+  if (!Number.isFinite(parsed)) return 7;
+  return Math.min(365, Math.max(1, parsed));
+}
+
 function httpError(message, status = 400) {
   const error = new Error(message);
   error.response = { status, data: { detail: message } };
@@ -309,7 +315,7 @@ async function get(url) {
 
   if (path === "/teacher-config") {
     const config = state.teacher_config || {};
-    return { data: { name: config.name || "", email: config.email || "", password: config.password || "", mail_backend_host: config.mail_backend_host || "" } };
+    return { data: { name: config.name || "", email: config.email || "", password: config.password || "", mail_backend_host: config.mail_backend_host || "", backup_interval_days: normalizeBackupIntervalDays(config.backup_interval_days) } };
   }
   if (path === "/classes") {
     const data = state.classes
@@ -418,9 +424,10 @@ async function get(url) {
         email,
         password: String(body.password || ""),
         mail_backend_host: String(body.mail_backend_host || "").trim(),
+        backup_interval_days: normalizeBackupIntervalDays(body.backup_interval_days),
         updated_at: nowIso(),
       };
-      return { data: { ok: true, name: state.teacher_config.name, email: state.teacher_config.email, mail_backend_host: state.teacher_config.mail_backend_host } };
+      return { data: { ok: true, name: state.teacher_config.name, email: state.teacher_config.email, mail_backend_host: state.teacher_config.mail_backend_host, backup_interval_days: state.teacher_config.backup_interval_days } };
     });
   }
 

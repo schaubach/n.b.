@@ -10,6 +10,7 @@ export default function TeacherConfigModal({ open, onClose }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [mailBackendHost, setMailBackendHost] = useState("");
+  const [backupIntervalDays, setBackupIntervalDays] = useState(7);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
@@ -28,6 +29,7 @@ export default function TeacherConfigModal({ open, onClose }) {
         setEmail(res.data.email || "");
         setPassword(res.data.password || "");
         setMailBackendHost(res.data.mail_backend_host || "");
+        setBackupIntervalDays(res.data.backup_interval_days || 7);
       })
       .catch(() => setError("Lehrendenkonfiguration konnte nicht geladen werden."))
       .finally(() => setLoading(false));
@@ -58,7 +60,7 @@ export default function TeacherConfigModal({ open, onClose }) {
     setMessage("");
     setError("");
     try {
-      await api.post("/teacher-config", { name, email, password, mail_backend_host: mailBackendHost });
+      await api.post("/teacher-config", { name, email, password, mail_backend_host: mailBackendHost, backup_interval_days: backupIntervalDays });
       await sendBackupToTeacher({ download: true });
       setMessage("Backup wurde erstellt, heruntergeladen und an die Lehrendenadresse gesendet.");
     } catch (err) {
@@ -93,7 +95,7 @@ export default function TeacherConfigModal({ open, onClose }) {
     setMessage("");
     setError("");
     try {
-      await api.post("/teacher-config", { name, email, password, mail_backend_host: mailBackendHost });
+      await api.post("/teacher-config", { name, email, password, mail_backend_host: mailBackendHost, backup_interval_days: backupIntervalDays });
       setMessage("Lehrendenkonfiguration gespeichert.");
     } catch (err) {
       setError("Lehrendenkonfiguration konnte nicht gespeichert werden.");
@@ -143,6 +145,14 @@ export default function TeacherConfigModal({ open, onClose }) {
                     <span className="text-sm font-bold text-stone-700">IP-Adresse Mail-Backend</span>
                     <input value={mailBackendHost} onChange={(event) => setMailBackendHost(event.target.value)} placeholder="10.97.x.x" className="mt-1 w-full rounded-xl border-2 border-stone-300 px-4 py-3 font-bold text-stone-900 outline-none focus:border-stone-900" />
                     <span className="mt-1 block text-xs font-bold text-stone-500">Port 8123 und HTTPS werden automatisch verwendet.</span>
+                  </label>
+                  <label className="block">
+                    <span className="text-sm font-bold text-stone-700">Automatisches Backup alle</span>
+                    <div className="mt-1 flex items-center gap-3">
+                      <input type="number" min="1" max="365" step="1" value={backupIntervalDays} onChange={(event) => setBackupIntervalDays(event.target.value)} className="w-28 rounded-xl border-2 border-stone-300 px-4 py-3 font-bold text-stone-900 outline-none focus:border-stone-900" />
+                      <span className="text-sm font-bold text-stone-700">Tage</span>
+                    </div>
+                    <span className="mt-1 block text-xs font-bold text-stone-500">Geprüft wird beim Öffnen bzw. Entsperren der App.</span>
                   </label>
                 </div>
 

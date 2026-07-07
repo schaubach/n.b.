@@ -76,7 +76,7 @@ KlasseA;Nachname2;Vorname2;account2
 
 - In der Lehrendenkonfiguration gibt es `Backup` und `Import Backup`.
 - `Backup` erstellt ein verschluesseltes ZIP-Archiv mit CSV-Daten und den gespeicherten Bildern, laedt es lokal herunter und sendet es als Mailanhang an die konfigurierte Lehrenden-Mailadresse.
-- Nach dem Entsperren der App wird hoechstens einmal pro Woche automatisch ein Backup per Mail versendet, wenn Lehrendenkonfiguration und Mail-Backend erreichbar sind. Eine reine WebApp kann im Hintergrund nicht laufen; das Wochenbackup passiert deshalb beim Oeffnen bzw. Entsperren der App.
+- Nach dem Entsperren der App wird automatisch ein Backup per Mail versendet, sobald das in der Lehrendenkonfiguration eingestellte Intervall in Tagen abgelaufen ist. Eine reine WebApp kann im Hintergrund nicht laufen; die Pruefung passiert deshalb beim Oeffnen bzw. Entsperren der App.
 - Das Backup wird mit AES-GCM verschluesselt. Der Schluessel wird aus dem `NB_MAIL_PSK` abgeleitet, der beim Build bzw. Setup in `mail-backend-config.json` ausgeliefert wird.
 - `Import Backup` entschluesselt das Archiv mit demselben Pre-Shared-Key und ersetzt den lokalen Datenbestand inklusive Bilder.
 - Fotos werden vor dem Speichern auf eine Kachel-taugliche Groesse verkleinert, damit Backups mit mehreren Klassen weiterhin mailtauglich bleiben.

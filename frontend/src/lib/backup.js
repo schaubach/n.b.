@@ -3,7 +3,8 @@ import { sendBackupMailViaBackend } from "./mailBackend";
 
 const BACKUP_MAGIC = "NBBAK1";
 const BACKUP_VERSION = 1;
-const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
+const DEFAULT_BACKUP_INTERVAL_DAYS = 7;
+const DAY_MS = 24 * 60 * 60 * 1000;
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
 
@@ -78,6 +79,7 @@ function unzipStored(bytes) {
     const extraLength = readU16(bytes, offset + 28);
     const nameStart = offset + 30;
     const dataStart = nameStart + nameLength + extraLength;
+    if (dataStart + size > bytes.length) throw new Error("Backup-ZIP ist beschaedigt oder unvollstaendig.");
     const name = decoder.decode(bytes.slice(nameStart, nameStart + nameLength));
     files.set(name, bytes.slice(dataStart, dataStart + size));
     offset = dataStart + size;
@@ -115,7 +117,11 @@ function parseCsv(text) {
 function dataUrlToBytes(dataUrl) {
   const match = String(dataUrl || "").match(/^data:([^;,]+);base64,(.*)$/);
   if (!match) return null;
-  return { mime: match[1], bytes: base64ToBytes(match[2]) };
+  try {
+    return { mime: match[1], bytes: base64ToBytes(match[2]) };
+  } catch (error) {
+    return null;
+  }
 }
 const bytesToDataUrl = (bytes, mime = "image/jpeg") => "data:" + mime + ";base64," + bytesToBase64(bytes);
 const clone = (value) => JSON.parse(JSON.stringify(value));
@@ -223,10 +229,21 @@ export async function sendBackupToTeacher({ download = false } = {}) {
   return backup;
 }
 
-export async function maybeSendWeeklyBackup() {
+function backupIntervalDays(state) {
+  const value = Number(state?.teacher_config?.backup_interval_days);
+  if (!Number.isFinite(value)) return DEFAULT_BACKUP_INTERVAL_DAYS;
+  return Math.min(365, Math.max(1, Math.floor(value)));
+}
+
+export async function maybeSendAutomaticBackup() {
   const stateRes = await api.get("/backup/state");
-  const last = stateRes.data.state?.backup_meta?.last_backup_sent_at;
-  if (last && Date.now() - new Date(last).getTime() < WEEK_MS) return { skipped: true };
+  const state = stateRes.data.state || {};
+  const last = state.backup_meta?.last_backup_sent_at;
+  const lastTime = last ? new Date(last).getTime() : 0;
+  const intervalMs = backupIntervalDays(state) * DAY_MS;
+  if (Number.isFinite(lastTime) && lastTime > 0 && Date.now() - lastTime < intervalMs) {
+    return { skipped: true, next_at: new Date(lastTime + intervalMs).toISOString() };
+  }
   try {
     await sendBackupToTeacher();
     return { sent: true };
@@ -234,6 +251,8 @@ export async function maybeSendWeeklyBackup() {
     return { skipped: true, error: error.message };
   }
 }
+
+export const maybeSendWeeklyBackup = maybeSendAutomaticBackup;
 
 export async function importEncryptedBackup(file) {
   const preSharedKey = await loadPreSharedKey();
