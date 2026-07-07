@@ -416,20 +416,6 @@ async function get(url) {
     };
   }
 
-  if (path === "/teacher-config") {
-    return mutateState((state) => {
-      const email = String(body.email || "").trim().toLowerCase();
-      state.teacher_config = {
-        name: String(body.name || "").trim(),
-        email,
-        password: String(body.password || ""),
-        mail_backend_host: String(body.mail_backend_host || "").trim(),
-        backup_interval_days: normalizeBackupIntervalDays(body.backup_interval_days),
-        updated_at: nowIso(),
-      };
-      return { data: { ok: true, name: state.teacher_config.name, email: state.teacher_config.email, mail_backend_host: state.teacher_config.mail_backend_host, backup_interval_days: state.teacher_config.backup_interval_days } };
-    });
-  }
 
   if (path === "/mail/gradebook") {
     httpError("SMTP-Versand ist in dieser Browser/iPad-Version nicht direkt möglich. Dafür braucht die App einen nativen Mail-Bridge-Teil oder einen lokalen Backend-Prozess im Schulnetz.", 501);
@@ -457,6 +443,21 @@ async function post(url, body) {
     return mutateState((state) => {
       state.backup_meta = { ...(state.backup_meta || {}), last_backup_sent_at: body.sent_at || nowIso(), last_backup_size: body.size || 0 };
       return { data: { ok: true, backup_meta: state.backup_meta } };
+    });
+  }
+
+  if (path === "/teacher-config") {
+    return mutateState((state) => {
+      const email = String(body.email || "").trim().toLowerCase();
+      state.teacher_config = {
+        name: String(body.name || "").trim(),
+        email,
+        password: String(body.password || ""),
+        mail_backend_host: String(body.mail_backend_host || "").trim(),
+        backup_interval_days: normalizeBackupIntervalDays(body.backup_interval_days),
+        updated_at: nowIso(),
+      };
+      return { data: { ok: true, name: state.teacher_config.name, email: state.teacher_config.email, mail_backend_host: state.teacher_config.mail_backend_host, backup_interval_days: state.teacher_config.backup_interval_days } };
     });
   }
 
