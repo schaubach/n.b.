@@ -18,6 +18,16 @@ export default function TeacherConfigModal({ open, onClose }) {
   const [backendCheck, setBackendCheck] = useState({ status: "idle", message: "" });
   const [backupBusy, setBackupBusy] = useState(false);
 
+  const teacherConfigPayload = () => ({
+    name,
+    email,
+    password,
+    mail_backend_host: mailBackendHost,
+    backup_interval_days: Math.min(365, Math.max(1, Number.parseInt(backupIntervalDays, 10) || 7)),
+  });
+
+  const errorText = (err, fallback) => err?.response?.data?.detail || err?.message || fallback;
+
   useEffect(() => {
     if (!open) return;
     setLoading(true);
@@ -60,11 +70,11 @@ export default function TeacherConfigModal({ open, onClose }) {
     setMessage("");
     setError("");
     try {
-      await api.post("/teacher-config", { name, email, password, mail_backend_host: mailBackendHost, backup_interval_days: backupIntervalDays });
+      await api.post("/teacher-config", teacherConfigPayload());
       await sendBackupToTeacher({ download: true });
       setMessage("Backup wurde erstellt, heruntergeladen und an die Lehrendenadresse gesendet.");
     } catch (err) {
-      setError(err.message || "Backup konnte nicht erstellt werden.");
+      setError(errorText(err, "Backup konnte nicht erstellt werden."));
     } finally {
       setBackupBusy(false);
     }
@@ -83,7 +93,7 @@ export default function TeacherConfigModal({ open, onClose }) {
       setMessage("Backup wurde importiert. Die App wird neu geladen.");
       window.setTimeout(() => window.location.reload(), 800);
     } catch (err) {
-      setError(err.message || "Backup konnte nicht importiert werden.");
+      setError(errorText(err, "Backup konnte nicht importiert werden."));
     } finally {
       setBackupBusy(false);
     }
@@ -95,10 +105,11 @@ export default function TeacherConfigModal({ open, onClose }) {
     setMessage("");
     setError("");
     try {
-      await api.post("/teacher-config", { name, email, password, mail_backend_host: mailBackendHost, backup_interval_days: backupIntervalDays });
+      const saved = await api.post("/teacher-config", teacherConfigPayload());
+      setBackupIntervalDays(saved.data.backup_interval_days || 7);
       setMessage("Lehrendenkonfiguration gespeichert.");
     } catch (err) {
-      setError("Lehrendenkonfiguration konnte nicht gespeichert werden.");
+      setError(errorText(err, "Lehrendenkonfiguration konnte nicht gespeichert werden."));
     } finally {
       setSaving(false);
     }
@@ -107,9 +118,9 @@ export default function TeacherConfigModal({ open, onClose }) {
   return (
     <AnimatePresence>
       {open && (
-        <motion.div className="fixed inset-0 z-[130] flex items-center justify-center p-4" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} data-testid="teacher-config-modal">
+        <motion.div className="fixed inset-0 z-[130] flex items-start justify-center overflow-y-auto p-3 sm:items-center sm:p-4" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} data-testid="teacher-config-modal">
           <div className="absolute inset-0 bg-stone-900/45 backdrop-blur-sm" onClick={onClose} />
-          <motion.form initial={{ scale: 0.92, y: 18, opacity: 0 }} animate={{ scale: 1, y: 0, opacity: 1 }} exit={{ scale: 0.96, opacity: 0 }} onSubmit={submit} className="relative w-full max-w-lg rounded-3xl border-2 border-stone-900 bg-white p-6 shadow-brutal sm:p-8">
+          <motion.form initial={{ scale: 0.92, y: 18, opacity: 0 }} animate={{ scale: 1, y: 0, opacity: 1 }} exit={{ scale: 0.96, opacity: 0 }} onSubmit={submit} className="relative my-3 max-h-[calc(100dvh-1.5rem)] w-full max-w-lg overflow-y-auto overscroll-contain rounded-3xl border-2 border-stone-900 bg-white p-5 shadow-brutal sm:my-4 sm:max-h-[calc(100dvh-2rem)] sm:p-8">
             <button type="button" onClick={onClose} className="absolute right-4 top-4 text-stone-400 hover:text-stone-900" aria-label="Schließen">
               <X className="h-5 w-5" />
             </button>
