@@ -83,6 +83,15 @@ export function normalizeMailBackendHost(value) {
   }
 }
 
+function identityDetails(host, payload, localFingerprint) {
+  return [
+    "Konfigurierter Host: " + (host || "fehlt"),
+    "Backend serverName: " + (payload?.serverName || "fehlt"),
+    "Lokaler Public-Key-SHA256 aus mail-backend-config.json: " + (localFingerprint || "fehlt"),
+    "Backend Public-Key-SHA256 aus /api/identity: " + (payload?.publicKeySha256 || "fehlt"),
+  ].join("; ");
+}
+
 async function verifyBackendIdentity(host, publicKeyPem) {
   const fingerprint = await sha256Hex(publicKeyPem);
   const cacheKey = host + "|" + fingerprint;
@@ -101,13 +110,13 @@ async function verifyBackendIdentity(host, publicKeyPem) {
   }
   const payload = identity.payload;
   if (payload.app !== "n.b." || payload.challenge !== challenge) {
-    throw new Error("Backend-Identitaet passt nicht zur App.");
+    throw new Error("Backend-Identitaet passt nicht zur App. " + identityDetails(host, payload, fingerprint) + "; App: " + (payload.app || "fehlt") + "; Challenge erhalten: " + (payload.challenge || "fehlt"));
   }
   if (payload.serverName && normalizeMailBackendHost(payload.serverName) !== host) {
-    throw new Error("Backend-Identitaet passt nicht zur konfigurierten Adresse.");
+    throw new Error("Backend-Identitaet passt nicht zur konfigurierten Adresse. " + identityDetails(host, payload, fingerprint));
   }
   if (payload.publicKeySha256 && payload.publicKeySha256 !== fingerprint) {
-    throw new Error("Backend-Identitaet passt nicht zum Installationspaket.");
+    throw new Error("Backend-Identitaet passt nicht zum Installationspaket. " + identityDetails(host, payload, fingerprint));
   }
   const publicKey = await crypto.subtle.importKey(
     "spki",
@@ -123,7 +132,7 @@ async function verifyBackendIdentity(host, publicKeyPem) {
     encoder.encode(stableStringify(payload))
   );
   if (!valid) {
-    throw new Error("Backend-Identitaet konnte nicht verifiziert werden.");
+    throw new Error("Backend-Identitaet konnte nicht verifiziert werden. Die Signatur passt nicht zum lokalen Public Key. " + identityDetails(host, payload, fingerprint));
   }
   verifiedIdentityCache.set(cacheKey, true);
 }
