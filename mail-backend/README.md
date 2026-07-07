@@ -97,6 +97,8 @@ Feinschutz und Grenzwerte:
 - `RATE_LIMIT_PER_MINUTE`, `RATE_LIMIT_PER_HOUR`, `RATE_LIMIT_PER_DAY`: serverseitige Versandlimits.
 - `ALLOWED_ORIGINS`: nur fuer Entwicklung noetig, wenn die WebApp nicht von demselben Nginx-Origin kommt. In Produktion normalerweise leer lassen.
 
+Bei HTTP 500 nach erfolgreicher Basic-Auth und Logzeilen wie `open() "/etc/nginx/auth/.htpasswd" failed (13: Permission denied)` bitte `sh scripts/setup.sh` erneut ausfuehren. Das Skript setzt die fuer den Nginx-Container notwendigen Leserechte auf `nginx/auth/.htpasswd` und `webapp/`.
+
 Nach jeder relevanten Aenderung:
 
 ~~~bash
