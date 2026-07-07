@@ -222,6 +222,6 @@ https://SERVER_IP:8123/installwebapp/
 
 Das Zertifikat `mail-backend/certs/server.crt` muss einmalig auf jedem iPad als vertrauenswuerdig installiert werden. Das kann die nutzende Person selbst tun: in Safari `https://SERVER_IP:8123/ca.crt` oeffnen, das Profil laden, in den iPad-Einstellungen installieren und anschliessend unter Zertifikatsvertrauenseinstellungen voll vertrauen. Danach erscheint beim Mailversand keine Zertifikatsabfrage und kein zusaetzliches Passwortfenster.
 
-Zusaetzlich prueft die WebApp vor dem Versand eine signierte Backend-Identitaet mit dem Public Key aus dem Installationspaket. Wenn diese Pruefung fehlschlaegt, wird nicht versendet.
+Vor dem Versand prueft die WebApp zuerst den Healthcheck `https://SERVER_IP:8123/health` und danach eine signierte Backend-Identitaet mit dem Public Key aus dem Installationspaket. Wenn eine dieser Pruefungen fehlschlaegt, wird nicht versendet.
 
 Port `8123` sollte per Firewall nur fuer das Schulnetz oder bekannte Geraete erreichbar sein. Weitere Details, Sicherheitsmodell und Betriebsnotizen stehen in `mail-backend/README.md` und `mail-backend/SECURITY.md`.

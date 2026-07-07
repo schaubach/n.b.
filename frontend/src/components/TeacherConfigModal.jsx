@@ -1,7 +1,8 @@
 import React, { useEffect, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { Loader2, Mail, Save, UserRound, X } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Loader2, Mail, Save, UserRound, X } from "lucide-react";
 import api from "../lib/api";
+import { checkMailBackendHealth } from "../lib/mailBackend";
 
 export default function TeacherConfigModal({ open, onClose }) {
   const [name, setName] = useState("");
@@ -12,6 +13,7 @@ export default function TeacherConfigModal({ open, onClose }) {
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
+  const [backendCheck, setBackendCheck] = useState({ status: "idle", message: "" });
 
   useEffect(() => {
     if (!open) return;
@@ -28,6 +30,26 @@ export default function TeacherConfigModal({ open, onClose }) {
       .catch(() => setError("Lehrendenkonfiguration konnte nicht geladen werden."))
       .finally(() => setLoading(false));
   }, [open]);
+
+  useEffect(() => {
+    if (!open || loading) return undefined;
+    const host = mailBackendHost.trim();
+    if (!host) {
+      setBackendCheck({ status: "idle", message: "" });
+      return undefined;
+    }
+    let cancelled = false;
+    setBackendCheck({ status: "checking", message: "Mail-Backend wird geprüft..." });
+    const timer = window.setTimeout(() => {
+      checkMailBackendHealth(host).then((result) => {
+        if (!cancelled) setBackendCheck({ status: result.ok ? "ok" : "error", message: result.message });
+      });
+    }, 350);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [open, loading, mailBackendHost]);
 
   const submit = async (event) => {
     event.preventDefault();
@@ -87,6 +109,13 @@ export default function TeacherConfigModal({ open, onClose }) {
                     <span className="mt-1 block text-xs font-bold text-stone-500">Port 8123 und HTTPS werden automatisch verwendet.</span>
                   </label>
                 </div>
+
+                {backendCheck.status !== "idle" && (
+                  <div className={"mt-5 flex items-start gap-3 rounded-2xl border-2 px-4 py-3 text-sm font-bold " + (backendCheck.status === "ok" ? "border-emerald-300 bg-emerald-100 text-emerald-900" : backendCheck.status === "checking" ? "border-stone-300 bg-stone-100 text-stone-700" : "border-rose-300 bg-rose-100 text-rose-900")}>
+                    {backendCheck.status === "checking" ? <Loader2 className="mt-0.5 h-5 w-5 shrink-0 animate-spin" /> : backendCheck.status === "ok" ? <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0" /> : <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0" />}
+                    <span>{backendCheck.message}</span>
+                  </div>
+                )}
 
                 <div className="mt-5 rounded-2xl border-2 border-amber-300 bg-amber-100 px-4 py-3 text-sm font-bold text-amber-950">
                   SMTP: rbbk-do.de, Port 587, STARTTLS. Der Versand läuft über das lokale Mail-Backend im Schulnetz und wird per HTTPS sowie HMAC-Signatur abgesichert.

@@ -93,7 +93,7 @@ async function verifyBackendIdentity(host, publicKeyPem) {
   try {
     response = await fetch("https://" + host + ":" + MAIL_BACKEND_PORT + "/api/identity?challenge=" + encodeURIComponent(challenge), { cache: "no-store" });
   } catch (error) {
-    throw new Error("Mail-Backend nicht erreichbar oder Zertifikat nicht vertraut.");
+    throw new Error("Mail-Backend nicht erreichbar oder Zertifikat nicht vertrauenswürdig.");
   }
   const identity = await response.json().catch(() => ({}));
   if (!response.ok || !identity.payload || !identity.signature) {
@@ -128,9 +128,31 @@ async function verifyBackendIdentity(host, publicKeyPem) {
   verifiedIdentityCache.set(cacheKey, true);
 }
 
+export async function checkMailBackendHealth(value) {
+  const host = normalizeMailBackendHost(value);
+  if (!host) {
+    return { ok: false, message: "IP-Adresse des Mail-Backends fehlt." };
+  }
+  try {
+    const response = await fetch("https://" + host + ":" + MAIL_BACKEND_PORT + "/health", { cache: "no-store" });
+    if (!response.ok) {
+      return { ok: false, message: "Mail-Backend nicht erreichbar oder Zertifikat nicht vertrauenswürdig." };
+    }
+    const result = await response.json().catch(() => ({}));
+    if (result.ok !== true) {
+      return { ok: false, message: "Mail-Backend nicht erreichbar oder Zertifikat nicht vertrauenswürdig." };
+    }
+    return { ok: true, message: "Mail-Backend erreichbar." };
+  } catch (error) {
+    return { ok: false, message: "Mail-Backend nicht erreichbar oder Zertifikat nicht vertrauenswürdig." };
+  }
+}
+
 export async function sendGradebookMailsViaBackend(teacherConfig, messages) {
   const host = normalizeMailBackendHost(teacherConfig?.mail_backend_host);
   if (!host) throw new Error("IP-Adresse des Mail-Backends fehlt.");
+  const health = await checkMailBackendHealth(host);
+  if (!health.ok) throw new Error(health.message);
   const { preSharedKey, backendIdentityPublicKey } = await loadMailBackendConfig();
   await verifyBackendIdentity(host, backendIdentityPublicKey);
   const payload = { teacher: teacherConfig, messages };
@@ -153,7 +175,7 @@ export async function sendGradebookMailsViaBackend(teacherConfig, messages) {
       body,
     });
   } catch (error) {
-    throw new Error("Mail-Backend nicht erreichbar oder Zertifikat nicht vertraut.");
+    throw new Error("Mail-Backend nicht erreichbar oder Zertifikat nicht vertrauenswürdig.");
   }
 
   const result = await response.json().catch(() => ({}));

@@ -123,7 +123,7 @@ Die WebApp liest den Pre-Shared-Key aus:
 mail-backend-config.json
 ~~~
 
-Diese Datei wird von `scripts/setup.sh` in `mail-backend/webapp` erstellt. Fuer Entwicklungsbuilds kann die Datei lokal nach `frontend/public/mail-backend-config.json` kopiert werden. Diese Datei ist gitignored und darf nicht ins Repository. Beim Mailversand prueft die WebApp zuerst `https://SERVER_IP:8123/api/identity` mit einem Challenge-Response-Verfahren. Erst danach wird der eigentliche Versandrequest erzeugt.
+Diese Datei wird von `scripts/setup.sh` in `mail-backend/webapp` erstellt. Fuer Entwicklungsbuilds kann die Datei lokal nach `frontend/public/mail-backend-config.json` kopiert werden. Diese Datei ist gitignored und darf nicht ins Repository. Beim Mailversand prueft die WebApp zuerst `https://SERVER_IP:8123/health`. Nur wenn der Healthcheck erreichbar ist, prueft sie danach `https://SERVER_IP:8123/api/identity` mit einem Challenge-Response-Verfahren. Erst danach wird der eigentliche Versandrequest erzeugt.
 
 ## SMTP
 

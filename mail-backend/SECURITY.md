@@ -19,6 +19,7 @@ Ein Angreifer, der Zugriff auf die ausgelieferte WebApp-Konfiguration oder den B
 - optionale Absender-Allowlist `ALLOWED_SENDERS`,
 - Backend-Rate-Limits pro IP und Absender,
 - Nginx-Rate-Limits vor API und Installationsseite,
+- Healthcheck vor dem Versand,
 - signierte Backend-Identitaet mit Public-Key-Pruefung in der WebApp,
 - Basic Auth fuer `/installwebapp/`,
 - keine Speicherung der SMTP-Passwoerter im Backend,

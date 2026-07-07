@@ -16,7 +16,7 @@ import {
   weightedAverage,
 } from "../lib/gradebook";
 import { normalizeExamGradeValue, shouldUseWholeExamGrades } from "../lib/gradeScales";
-import { sendGradebookMailsViaBackend } from "../lib/mailBackend";
+import { checkMailBackendHealth, sendGradebookMailsViaBackend } from "../lib/mailBackend";
 import { triggerDownload } from "../lib/exportClass";
 
 function examTerms(systemId) {
@@ -304,14 +304,32 @@ function teacherConfigMissing(config) {
 
 function MailConfirmModal({ request, sending, result, onSend, onClose }) {
   const [index, setIndex] = useState(0);
+  const [backendCheck, setBackendCheck] = useState({ status: "idle", message: "" });
 
   useEffect(() => { setIndex(0); }, [request]);
+  useEffect(() => {
+    if (!request) {
+      setBackendCheck({ status: "idle", message: "" });
+      return undefined;
+    }
+    if (teacherConfigMissing(request.teacherConfig)) {
+      setBackendCheck({ status: "idle", message: "" });
+      return undefined;
+    }
+    let cancelled = false;
+    setBackendCheck({ status: "checking", message: "Mail-Backend wird geprüft..." });
+    checkMailBackendHealth(request.teacherConfig.mail_backend_host).then((check) => {
+      if (!cancelled) setBackendCheck({ status: check.ok ? "ok" : "error", message: check.message });
+    });
+    return () => { cancelled = true; };
+  }, [request]);
   if (!request) return null;
 
   const messages = request.messages || [];
   const current = messages[index] || null;
   const missingConfig = teacherConfigMissing(request.teacherConfig);
-  const canSend = messages.length > 0 && !missingConfig && !sending;
+  const backendReady = backendCheck.status === "ok";
+  const canSend = messages.length > 0 && !missingConfig && backendReady && !sending;
 
   return (
     <AnimatePresence>
@@ -336,6 +354,12 @@ function MailConfirmModal({ request, sending, result, onSend, onClose }) {
             {missingConfig && (
               <div className="mb-4 rounded-2xl border-2 border-rose-300 bg-rose-100 px-4 py-3 font-bold text-rose-900">
                 Lehrendenkonfiguration fehlt oder ist unvollständig. Bitte Name, Mailadresse, IServPasswort und IP-Adresse des Mail-Backends eintragen.
+              </div>
+            )}
+            {!missingConfig && backendCheck.status !== "idle" && (
+              <div className={"mb-4 flex items-start gap-3 rounded-2xl border-2 px-4 py-3 font-bold " + (backendCheck.status === "ok" ? "border-emerald-300 bg-emerald-100 text-emerald-900" : backendCheck.status === "checking" ? "border-stone-300 bg-stone-100 text-stone-700" : "border-rose-300 bg-rose-100 text-rose-900")}>
+                {backendCheck.status === "checking" ? <Loader2 className="mt-0.5 h-5 w-5 shrink-0 animate-spin" /> : backendCheck.status === "ok" ? <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0" /> : <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0" />}
+                <span>{backendCheck.message}</span>
               </div>
             )}
             {messages.length === 0 ? (
