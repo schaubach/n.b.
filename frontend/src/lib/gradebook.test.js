@@ -13,6 +13,10 @@ test("converts tendency grades to numeric values", () => {
   expect(gradeToNumber("1-", "grades_1_6")).toBe(1.3);
   expect(gradeToNumber("2+", "grades_1_6")).toBe(1.7);
   expect(gradeToNumber("2-", "grades_1_6")).toBe(2.3);
+  expect(gradeToNumber("5+", "grades_1_6")).toBe(4.7);
+  expect(gradeToNumber("5-", "grades_1_6")).toBe(5.3);
+  expect(gradeToNumber("3", "points_0_15")).toBe(4.7);
+  expect(gradeToNumber("1", "points_0_15")).toBe(5.3);
 });
 
 test("calculates weighted averages", () => {
@@ -27,7 +31,7 @@ test("rounds averages by grade thresholds and combines SL and KA", () => {
 });
 
 test("uses system-specific grade, override and display values", () => {
-  expect(gradeOptions("grades_1_6")).toEqual(["1+", "1", "1-", "2+", "2", "2-", "3+", "3", "3-", "4+", "4", "4-", "5", "6"]);
+  expect(gradeOptions("grades_1_6")).toEqual(["1+", "1", "1-", "2+", "2", "2-", "3+", "3", "3-", "4+", "4", "4-", "5+", "5", "5-", "6"]);
   expect(gradeOptions("points_0_15")[0]).toBe("15");
   expect(gradeOptions("points_0_15").at(-1)).toBe("0");
   expect(overrideOptions("grades_1_6")).toEqual(["1", "2", "3", "4", "5", "6"]);

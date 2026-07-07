@@ -1,5 +1,5 @@
-const CACHE_NAME = "swipenoten-offline-v1";
-const CORE_ASSETS = ["./", "./index.html", "./manifest.json", "./icon.svg", "./asset-manifest.json"];
+const CACHE_NAME = "nb-offline-v2";
+const CORE_ASSETS = ["./", "./index.html", "./manifest.json", "./logo.jpeg", "./icon.svg", "./asset-manifest.json"];
 
 async function precache() {
   const cache = await caches.open(CACHE_NAME);

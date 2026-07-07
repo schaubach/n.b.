@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { AnimatePresence, motion } from "framer-motion";
-import { AlertTriangle, CheckCircle2, ChevronLeft, ChevronRight, Download, FileSpreadsheet, Loader2, Mail, Printer, Send, X } from "lucide-react";
+import { AlertTriangle, CheckCircle2, ChevronLeft, ChevronRight, Download, FileSpreadsheet, Loader2, Mail, Percent, Printer, Send, X } from "lucide-react";
 import api from "../lib/api";
 import { gradeColorClasses, gradeTier } from "../lib/grades";
 import {
@@ -14,6 +15,7 @@ import {
   overrideOptions,
   weightedAverage,
 } from "../lib/gradebook";
+import { normalizeExamGradeValue, shouldUseWholeExamGrades } from "../lib/gradeScales";
 import { triggerDownload } from "../lib/exportClass";
 
 function examTerms(systemId) {
@@ -49,7 +51,7 @@ function isoToDe(date) {
 
 function sortedSessions(data) {
   return (data.sessions || []).slice().sort((a, b) => {
-    const group = (session) => session.category === "klausur" ? 2 : (slType(session) === "written" ? 1 : 0);
+    const group = (session) => session.category === "klausur" ? 0 : (slType(session) === "oral" ? 1 : 2);
     return group(a) - group(b)
       || dateValue(a.date) - dateValue(b.date)
       || String(a.created_at || "").localeCompare(String(b.created_at || ""))
@@ -85,20 +87,25 @@ function weightedPair(first, second, firstWeight, secondWeight) {
   return null;
 }
 
+function roundedAverageNumber(value, systemId) {
+  return gradeToNumber(displayValueFromAverage(value, systemId), systemId);
+}
+
 function buildRows(data) {
   const sessions = sortedSessions(data);
   const students = data.students || [];
   const grades = data.grades || [];
   const overrides = data.average_overrides || [];
   const weights = averageWeights(data);
-  const gradeMap = new Map(grades.map((grade) => [`${grade.session_id}:${grade.student_id}`, grade.value]));
+  const gradeMap = new Map(grades.map((grade) => [`${grade.session_id}:${grade.student_id}`, grade]));
   const overrideMap = new Map(overrides.map((override) => [`${override.student_id}:${override.column}`, override.value]));
 
   return students.map((student) => {
     const sessionCells = sessions.map((session) => {
-      const value = gradeMap.get(`${session.id}:${student.id}`) || "";
+      const grade = gradeMap.get(`${session.id}:${student.id}`);
+      const value = grade?.value || "";
       const numeric = gradeToNumber(value, data.grade_system);
-      return { session, value, numeric };
+      return { session, value, numeric, calculated_value: grade?.calculated_value || "", manual_override: !!grade?.manual_override };
     });
     const slOralAverage = weightedAverage(sessionCells
       .filter((cell) => cell.session.category !== "klausur" && slType(cell.session) === "oral")
@@ -109,7 +116,6 @@ function buildRows(data) {
     const kaAverage = weightedAverage(sessionCells
       .filter((cell) => cell.session.category === "klausur")
       .map((cell) => ({ value: cell.numeric, weight: cell.session.weight })));
-    const slAverage = weightedPair(slOralAverage, slWrittenAverage, weights.sl_oral, weights.sl_written);
     const overridesForStudent = {
       sl_oral: overrideMap.get(`${student.id}:sl_oral`) || "",
       sl_written: overrideMap.get(`${student.id}:sl_written`) || "",
@@ -117,8 +123,8 @@ function buildRows(data) {
       ka: overrideMap.get(`${student.id}:ka`) || "",
       final: overrideMap.get(`${student.id}:final`) || "",
     };
-    const effectiveSlOral = overridesForStudent.sl_oral ? gradeToNumber(overridesForStudent.sl_oral, data.grade_system) : slOralAverage;
-    const effectiveSlWritten = overridesForStudent.sl_written ? gradeToNumber(overridesForStudent.sl_written, data.grade_system) : slWrittenAverage;
+    const effectiveSlOral = overridesForStudent.sl_oral ? gradeToNumber(overridesForStudent.sl_oral, data.grade_system) : roundedAverageNumber(slOralAverage, data.grade_system);
+    const effectiveSlWritten = overridesForStudent.sl_written ? gradeToNumber(overridesForStudent.sl_written, data.grade_system) : roundedAverageNumber(slWrittenAverage, data.grade_system);
     const computedEffectiveSl = weightedPair(effectiveSlOral, effectiveSlWritten, weights.sl_oral, weights.sl_written);
     const effectiveSl = overridesForStudent.sl ? gradeToNumber(overridesForStudent.sl, data.grade_system) : computedEffectiveSl;
     const effectiveKa = overridesForStudent.ka ? gradeToNumber(overridesForStudent.ka, data.grade_system) : kaAverage;
@@ -129,7 +135,7 @@ function buildRows(data) {
       sessionCells,
       slOralAverage,
       slWrittenAverage,
-      slAverage,
+      slAverage: computedEffectiveSl,
       kaAverage,
       finalGrade,
       overrides: overridesForStudent,
@@ -146,11 +152,11 @@ function averageColumns(sessions, weights, systemId) {
     ? `mündl. x${weightLabel(weights.sl_oral)} / schrftl. x${weightLabel(weights.sl_written)}`
     : "aus vorhandenen SL-Noten";
   return [
+    { key: "ka", label: exam.total, hint: `gewichteter Schnitt aller ${exam.long}-Noten; Endnote x1`, tone: "ka", fixedWeight: 1 },
     ...(hasOral ? [{ key: "sl_oral", label: "SL mündl.", hint: `Gewichtung x${weightLabel(weights.sl_oral)}`, tone: "sl", weightEditable: true }] : []),
     ...(hasWritten ? [{ key: "sl_written", label: "SL schrftl.", hint: `Gewichtung x${weightLabel(weights.sl_written)}`, tone: "sl", weightEditable: true }] : []),
     ...(hasSl ? [{ key: "sl", label: "SL gesamt", hint: `${ratio}; Endnote x1`, tone: "sl", fixedWeight: 1 }] : []),
-    { key: "ka", label: exam.total, hint: `gewichteter Schnitt aller ${exam.long}-Noten; Endnote x1`, tone: "ka", fixedWeight: 1 },
-    { key: "final", label: "Endnote", hint: `SL gesamt und ${exam.total} je x1`, tone: "final" },
+    { key: "final", label: "Endnote", hint: `${exam.total} und SL gesamt je x1`, tone: "final" },
   ];
 }
 
@@ -261,12 +267,15 @@ function mailGrade(value, systemId, detail = "") {
 }
 
 function gradebookMailTableHtml(data, row, columns) {
+  const examCells = (row.sessionCells || []).filter((cell) => cell.session.category === "klausur");
+  const examHeaders = examCells.map((cell) => '<th style="border:1px solid #a8a29e;background:#0369a1;color:#fff;padding:6px;text-align:center"><div>' + htmlEscape(examTerms(data.grade_system).short) + '</div><small>' + htmlEscape(cell.session.title) + '<br>' + htmlEscape(cell.session.date) + ' · x' + htmlEscape(cell.session.weight ?? 1) + '</small></th>').join("");
+  const examValues = examCells.map((cell) => '<td style="border:1px solid #d6d3d1;padding:6px;text-align:center">' + mailGrade(cell.value, data.grade_system) + '</td>').join("");
   const averageHeaders = columns.map((column) => '<th style="border:1px solid #a8a29e;background:#44403c;color:#fff;padding:6px;text-align:center"><div>' + htmlEscape(column.label) + '</div><small>' + htmlEscape(column.hint) + '</small></th>').join("");
   const averageCells = columns.map((column) => {
     const shown = displayFor(row, column.key, data.grade_system);
     return '<td style="border:1px solid #d6d3d1;padding:6px;text-align:center">' + mailGrade(shown, data.grade_system, exactFor(row, column.key)) + '</td>';
   }).join("");
-  return '<table style="border-collapse:collapse;font-family:Arial,Helvetica,sans-serif;font-size:12px;max-width:100%"><thead><tr><th style="border:1px solid #a8a29e;background:#292524;color:#fff;padding:6px;text-align:left">Lernende*r</th>' + averageHeaders + '</tr></thead><tbody><tr><th style="border:1px solid #d6d3d1;background:#f5f5f4;padding:6px;text-align:left;white-space:nowrap">' + htmlEscape(row.student.last_name) + ', ' + htmlEscape(row.student.first_name) + '</th>' + averageCells + '</tr></tbody></table>';
+  return '<table style="border-collapse:collapse;font-family:Arial,Helvetica,sans-serif;font-size:12px;max-width:100%"><thead><tr><th style="border:1px solid #a8a29e;background:#292524;color:#fff;padding:6px;text-align:left">Lernende*r</th>' + examHeaders + averageHeaders + '</tr></thead><tbody><tr><th style="border:1px solid #d6d3d1;background:#f5f5f4;padding:6px;text-align:left;white-space:nowrap">' + htmlEscape(row.student.last_name) + ', ' + htmlEscape(row.student.first_name) + '</th>' + examValues + averageCells + '</tr></tbody></table>';
 }
 
 function gradebookMailHtml(data, row, columns, teacherConfig) {
@@ -404,6 +413,7 @@ function AverageCell({ row, column, tone, systemId, onEdit }) {
 
 function SessionGradeCell({ row, cell, systemId, onEdit }) {
   const toneBg = cell.session.category === "klausur" ? "bg-sky-50" : "bg-emerald-50";
+  const showCalculated = cell.calculated_value && (cell.manual_override || cell.calculated_value !== cell.value);
 
   return (
     <td className={`border-l border-t-2 border-stone-200 px-2 py-2 text-center align-middle ${toneBg}`}>
@@ -411,10 +421,11 @@ function SessionGradeCell({ row, cell, systemId, onEdit }) {
         <button
           type="button"
           onClick={() => onEdit(row, cell)}
-          className={`inline-flex min-w-12 justify-center rounded-xl border-2 px-2.5 py-1 font-mono text-base font-black shadow-brutal-sm transition-transform active:scale-95 ${gradeColorClasses(cell.value, systemId)}`}
+          className={`inline-flex min-w-12 flex-col items-center justify-center rounded-xl border-2 px-2.5 py-1 font-mono text-base font-black shadow-brutal-sm transition-transform active:scale-95 ${gradeColorClasses(cell.value, systemId)}`}
           title="Note anpassen"
         >
-          {cell.value}
+          <span>{cell.value}</span>
+          {showCalculated && <span className="mt-0.5 text-[10px] font-black opacity-80">ber. {cell.calculated_value}</span>}
         </button>
       ) : (
         <button
@@ -432,10 +443,11 @@ function SessionGradeCell({ row, cell, systemId, onEdit }) {
 
 function PickerModal({ picker, systemId, onPick, onClear, onClose }) {
   const isAverage = picker?.kind === "average";
-  const options = isAverage ? overrideOptions(systemId) : gradeOptions(systemId);
+  const wholeExamGrades = shouldUseWholeExamGrades(picker?.session, systemId);
+  const options = wholeExamGrades ? overrideOptions(systemId) : (isAverage ? overrideOptions(systemId) : gradeOptions(systemId));
   const title = isAverage ? "Durchschnitt überschreiben" : "Note anpassen";
   const clearLabel = isAverage ? "Automatisch berechnen" : "Note entfernen";
-  const gridCols = systemId === "points_0_15" ? "grid-cols-4" : isAverage ? "grid-cols-3" : "grid-cols-3 sm:grid-cols-4";
+  const gridCols = systemId === "points_0_15" ? "grid-cols-4" : isAverage ? "grid-cols-3" : wholeExamGrades ? "grid-cols-3" : "grid-cols-3 sm:grid-cols-4";
 
   return (
     <AnimatePresence>
@@ -449,7 +461,7 @@ function PickerModal({ picker, systemId, onPick, onClear, onClose }) {
             <p className="mt-1 text-sm font-bold text-stone-500">{picker.label}</p>
             <div className={`mt-5 grid gap-2 ${gridCols}`}>
               {options.map((option) => (
-                <button key={option} onClick={() => onPick(option)} className={`rounded-xl border-2 px-3 py-3 font-mono text-xl font-black transition-all active:scale-95 ${picker.currentValue === option ? "border-stone-900 bg-stone-900 text-white" : isAverage ? "border-stone-200 bg-stone-50 text-stone-900 hover:border-stone-900" : gradeColorClasses(option, systemId)}`}>{option}</button>
+                <button key={option} onClick={() => onPick(option)} className={`rounded-xl border-2 px-3 py-3 font-mono text-xl font-black transition-all active:scale-95 ${gradeColorClasses(option, systemId)} ${picker.currentValue === option ? "ring-4 ring-stone-900" : ""}`}>{option}</button>
               ))}
             </div>
             <button onClick={onClear} className="mt-4 w-full rounded-xl border-2 border-stone-300 bg-white px-4 py-3 font-bold text-stone-600 hover:border-stone-900">{clearLabel}</button>
@@ -556,6 +568,7 @@ function HeaderEditor({ editor, onSaveSession, onDeleteSession, onSaveAverageWei
 }
 
 export default function GradebookModal({ classId, className, open, onClose }) {
+  const navigate = useNavigate();
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -655,7 +668,7 @@ export default function GradebookModal({ classId, className, open, onClose }) {
 
   const editGrade = (row, cell) => {
     const prefix = cell.session.category === "klausur" ? examTerms(data.grade_system).short : (slType(cell.session) === "written" ? "SL schrftl." : "SL mündl.");
-    setPicker({ kind: "grade", student: row.student, session: cell.session, label: `${prefix}: ${cell.session.title} ${cell.session.date}`, currentValue: cell.value || "" });
+    setPicker({ kind: "grade", student: row.student, session: cell.session, label: `${prefix}: ${cell.session.title} ${cell.session.date}`, currentValue: cell.value || "", currentCalculated: cell.calculated_value || "" });
   };
 
   const saveAverageOverride = async (value) => {
@@ -667,11 +680,20 @@ export default function GradebookModal({ classId, className, open, onClose }) {
   };
 
   const saveSessionGrade = async (value) => {
-    if (value) await api.post(`/sessions/${picker.session.id}/grades`, { student_id: picker.student.id, value });
-    else await api.delete(`/sessions/${picker.session.id}/grades/${picker.student.id}`);
+    const isPoints = !!picker.session.points_mode;
+    const calculated = normalizeExamGradeValue(picker.currentCalculated || "", picker.session, data.grade_system);
+    const normalizedValue = normalizeExamGradeValue(value, picker.session, data.grade_system);
+    if (normalizedValue) {
+      await api.post(`/sessions/${picker.session.id}/grades`, { student_id: picker.student.id, value: normalizedValue, calculated_value: calculated, manual_override: isPoints });
+    } else if (isPoints && calculated) {
+      await api.post(`/sessions/${picker.session.id}/grades`, { student_id: picker.student.id, value: calculated, calculated_value: calculated, manual_override: false });
+    } else {
+      await api.delete(`/sessions/${picker.session.id}/grades/${picker.student.id}`);
+    }
     setData((current) => {
       const rest = (current.grades || []).filter((grade) => !(grade.session_id === picker.session.id && grade.student_id === picker.student.id));
-      return { ...current, grades: value ? [...rest, { session_id: picker.session.id, student_id: picker.student.id, value }] : rest };
+      const nextValue = normalizedValue || (isPoints ? calculated : "");
+      return { ...current, grades: nextValue ? [...rest, { session_id: picker.session.id, student_id: picker.student.id, value: nextValue, calculated_value: calculated, manual_override: !!(isPoints && normalizedValue) }] : rest };
     });
   };
 
@@ -763,11 +785,18 @@ export default function GradebookModal({ classId, className, open, onClose }) {
                             const kind = isKa ? examTerms(data.grade_system).short : (slType(session) === "written" ? "SL schrftl." : "SL mündl.");
                             return (
                               <th key={session.id} className={`sticky top-0 z-40 min-w-32 border-b-2 border-l border-stone-900 text-center align-bottom text-stone-900 ${isKa ? "bg-sky-400" : "bg-emerald-400"}`}>
-                                <button type="button" onClick={() => setHeaderEditor({ kind: "sessionHeader", session })} className="block h-full w-full px-3 py-2 text-stone-900 hover:bg-white/25" title="Spalte bearbeiten">
-                                  <span className="inline-flex rounded-full border border-stone-900/20 bg-white/70 px-2 py-0.5 text-[10px] font-black uppercase tracking-wide text-stone-900">{kind}</span>
-                                  <div className="mt-1 font-bold leading-tight">{session.title}</div>
-                                  <div className="mt-0.5 text-xs font-bold text-stone-700">{session.date} · x{session.weight ?? 1}</div>
-                                </button>
+                                <div className="relative h-full">
+                                  <button type="button" onClick={() => setHeaderEditor({ kind: "sessionHeader", session })} className="block h-full w-full px-3 py-2 text-stone-900 hover:bg-white/25" title="Spalte bearbeiten">
+                                    <span className="inline-flex rounded-full border border-stone-900/20 bg-white/70 px-2 py-0.5 text-[10px] font-black uppercase tracking-wide text-stone-900">{kind}{session.points_mode ? " · P→N" : ""}</span>
+                                    <div className="mt-1 font-bold leading-tight">{session.title}</div>
+                                    <div className="mt-0.5 text-xs font-bold text-stone-700">{session.date} · x{session.weight ?? 1}</div>
+                                  </button>
+                                  {session.points_mode && (
+                                    <button type="button" onClick={(event) => { event.stopPropagation(); navigate(`/points/${session.id}`); }} className="absolute right-1.5 top-1.5 rounded-lg border-2 border-stone-900 bg-white p-1 text-stone-900 shadow-brutal-sm hover:bg-amber-100" title="Punkte -> Noten öffnen" aria-label="Punkte -> Noten öffnen">
+                                      <Percent className="h-3.5 w-3.5" />
+                                    </button>
+                                  )}
+                                </div>
                               </th>
                             );
                           })}
