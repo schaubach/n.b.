@@ -19,6 +19,7 @@ Ein Angreifer, der Zugriff auf die ausgelieferte WebApp-Konfiguration oder den B
 - optionale Absender-Allowlist `ALLOWED_SENDERS`,
 - Backend-Rate-Limits pro IP und Absender,
 - Nginx-Rate-Limits vor API und Installationsseite,
+- signierte Backend-Identitaet mit Public-Key-Pruefung in der WebApp,
 - Basic Auth fuer `/installwebapp/`,
 - keine Speicherung der SMTP-Passwoerter im Backend,
 - keine Protokollierung von Mailinhalten.
@@ -29,7 +30,7 @@ Ein Angreifer, der Zugriff auf die ausgelieferte WebApp-Konfiguration oder den B
 
 Bewertung: abgesichert, wenn das Zertifikat vertraut ist.
 
-HTTPS verhindert das Mitlesen von SMTP-Passwort, Mailinhalten und HMAC-Secret. Wird eine Zertifikatswarnung weggeklickt, ist dieser Schutz geschwaecht. Deshalb muss `server.crt` per Profil/MDM oder manuell als vertrauenswuerdig installiert werden.
+HTTPS verhindert das Mitlesen von SMTP-Passwort, Mailinhalten und HMAC-Secret. Die nutzende Person kann `server.crt` einmalig selbst als vertrauenswuerdig installieren. Danach gibt es beim Mailversand keine Zertifikatsabfrage. Falls Safari eine Zertifikatswarnung zeigt, soll der Versand nicht fortgesetzt werden; stattdessen muss das Zertifikat korrekt installiert werden.
 
 ### Replay eines beobachteten API-Requests
 
@@ -41,7 +42,7 @@ Das Backend lehnt alte Zeitstempel und bereits verwendete Nonces ab. Die Nonce-L
 
 Bewertung: teilweise begrenzt, nicht vollstaendig verhinderbar.
 
-Wer den Pre-Shared-Key im Browser auslesen kann, kann eigene gueltig signierte Requests erzeugen. Die App kann das clientseitig nicht verhindern. Begrenzungen liegen serverseitig: erlaubte Domain, optional `ALLOWED_SENDERS`, Rate-Limits und SMTP-Authentifizierung mit dem Passwort der Lehrkraft.
+Wer den Pre-Shared-Key im Browser auslesen kann, kann eigene gueltig signierte Requests erzeugen. Die App kann das clientseitig nicht verhindern. Vor dem Versand prueft sie aber zusaetzlich, ob das Backend die passende private Identitaet besitzt. Begrenzungen liegen serverseitig: erlaubte Domain, optional `ALLOWED_SENDERS`, Rate-Limits und SMTP-Authentifizierung mit dem Passwort der Lehrkraft.
 
 Empfehlung: `ALLOWED_SENDERS` in `.env` setzen und Port `8123` per Firewall nur fuer das Schulnetz freigeben.
 
@@ -63,7 +64,7 @@ Die WebApp-Daten liegen lokal verschluesselt. Wenn eine entsperrte App im Browse
 - Starkes `INSTALL_PASSWORD` verwenden.
 - `mail-backend/webapp/mail-backend-config.json`, `.env`, `certs/server.key` und `nginx/auth/.htpasswd` nicht kopieren oder committen.
 - Port `8123` nur im Schulnetz freigeben.
-- Zertifikat auf iPads vertrauenswuerdig installieren.
-- Keine Zertifikatswarnungen akzeptieren.
+- Zertifikat einmalig auf iPads vertrauenswuerdig installieren; das kann durch die nutzende Person selbst erfolgen.
+- Bei Zertifikatswarnungen abbrechen und die Zertifikatsinstallation korrigieren.
 - Regelmaessig `docker compose logs` auf abgelehnte Requests und Rate-Limit-Hinweise pruefen.
 - Bei Verdacht auf Zugriff auf `/installwebapp/`: `NB_MAIL_PSK` neu erzeugen, `scripts/setup.sh` ausfuehren, WebApp neu synchronisieren und iPads aktualisieren.

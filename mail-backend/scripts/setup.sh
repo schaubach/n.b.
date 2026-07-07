@@ -45,7 +45,7 @@ if [ -z "$INSTALL_PASSWORD" ]; then
   set_env INSTALL_PASSWORD "$INSTALL_PASSWORD"
 fi
 
-mkdir -p certs nginx/auth webapp
+mkdir -p certs nginx/auth webapp identity
 
 SAN_PREFIX="DNS"
 case "$SERVER_NAME" in
@@ -66,10 +66,18 @@ HASH="$(openssl passwd -apr1 "$INSTALL_PASSWORD")"
 printf "%s:%s\n" "$INSTALL_USER" "$HASH" > nginx/auth/.htpasswd
 chmod 600 nginx/auth/.htpasswd
 
+if [ ! -f identity/private.pem ] || [ ! -f identity/public.pem ]; then
+  openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:3072 -out identity/private.pem
+  openssl rsa -in identity/private.pem -pubout -out identity/public.pem
+  chmod 600 identity/private.pem
+fi
+
 PSK="$(get_env NB_MAIL_PSK)"
+PUBLIC_KEY_JSON="$(awk 'BEGIN { printf "\""} { gsub(/\\/, "\\\\"); gsub(/"/, "\\\""); printf "%s\\n", $0 } END { printf "\""}' identity/public.pem)"
 cat > webapp/mail-backend-config.json <<EOF
 {
-  "preSharedKey": "$PSK"
+  "preSharedKey": "$PSK",
+  "backendIdentityPublicKey": $PUBLIC_KEY_JSON
 }
 EOF
 chmod 600 webapp/mail-backend-config.json
@@ -78,6 +86,7 @@ cat <<EOF
 Setup fertig.
 
 - Zertifikat: mail-backend/certs/server.crt
+- Backend-Identitaet: mail-backend/identity/public.pem
 - WebApp-Config: mail-backend/webapp/mail-backend-config.json
 - Install-URL: https://$SERVER_NAME:8123/installwebapp/
 - API-URL: https://$SERVER_NAME:8123/api/send-gradebook

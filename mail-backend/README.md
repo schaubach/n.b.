@@ -17,6 +17,7 @@ Das Python-Backend laeuft intern per HTTP. Nginx terminiert TLS auf Port `8123` 
 - Optional kann `ALLOWED_SENDERS` gesetzt werden. Dann werden nur diese Lehrenden-Mailadressen als Absender akzeptiert.
 - SMTP-Zugangsdaten werden nicht im Backend gespeichert. Die WebApp sendet Mailadresse und IServ-Passwort nur ueber HTTPS und HMAC-signiert an das Backend.
 - Der Pre-Shared-Key steht in `.env` und in `webapp/mail-backend-config.json`. Beide Dateien werden nicht versioniert.
+- Die WebApp prueft vor dem Versand eine signierte Backend-Identitaet. Der private Schluessel liegt nur unter `identity/private.pem`, der Public Key wird in `mail-backend-config.json` ausgeliefert.
 
 Personen mit Zugriff auf die ausgelieferte WebApp-Konfiguration koennen den Pre-Shared-Key grundsaetzlich auslesen. Dieses Restrisiko passt nur zu einer kontrollierten Verteilung an wenige vertrauenswuerdige Nutzer.
 
@@ -61,7 +62,7 @@ cd ../mail-backend
 sh scripts/sync-webapp.sh
 ~~~
 
-`scripts/setup.sh` erzeugt `webapp/mail-backend-config.json` mit dem Pre-Shared-Key. Diese Datei muss zusammen mit der WebApp ausgeliefert werden, wird aber nicht committed.
+`scripts/setup.sh` erzeugt `webapp/mail-backend-config.json` mit dem Pre-Shared-Key und dem Public Key der Backend-Identitaet. Diese Datei muss zusammen mit der WebApp ausgeliefert werden, wird aber nicht committed.
 
 ## Start
 
@@ -93,7 +94,14 @@ mail-backend/certs/server.crt
 mail-backend/certs/server.key
 ~~~
 
-Damit iPads die HTTPS-Verbindung akzeptieren, muss `server.crt` auf den Geraeten bzw. per MDM/Profil als vertrauenswuerdiges Zertifikat installiert werden. Alternativ kann ein intern vertrauenswuerdiges Zertifikat verwendet und als `certs/server.crt` / `certs/server.key` abgelegt werden.
+Damit iPads die HTTPS-Verbindung akzeptieren, muss `server.crt` einmalig als vertrauenswuerdiges Zertifikat installiert werden. Das kann die nutzende Person selbst tun:
+
+1. In Safari `https://SERVER_IP:8123/ca.crt` oeffnen.
+2. Das Zertifikatsprofil laden.
+3. In den iPad-Einstellungen das geladene Profil installieren.
+4. Unter `Allgemein` -> `Info` -> `Zertifikatsvertrauenseinstellungen` das Zertifikat voll vertrauen.
+
+Die genaue Bezeichnung kann je nach iPadOS-Version leicht abweichen. Nach dieser einmaligen Einrichtung erscheint beim Mailversand keine Zertifikatsabfrage. Alternativ kann ein intern vertrauenswuerdiges Zertifikat verwendet und als `certs/server.crt` / `certs/server.key` abgelegt werden.
 
 ## Firewall
 
@@ -115,7 +123,7 @@ Die WebApp liest den Pre-Shared-Key aus:
 mail-backend-config.json
 ~~~
 
-Diese Datei wird von `scripts/setup.sh` in `mail-backend/webapp` erstellt. Fuer Entwicklungsbuilds kann die Datei lokal nach `frontend/public/mail-backend-config.json` kopiert werden. Diese Datei ist gitignored und darf nicht ins Repository.
+Diese Datei wird von `scripts/setup.sh` in `mail-backend/webapp` erstellt. Fuer Entwicklungsbuilds kann die Datei lokal nach `frontend/public/mail-backend-config.json` kopiert werden. Diese Datei ist gitignored und darf nicht ins Repository. Beim Mailversand prueft die WebApp zuerst `https://SERVER_IP:8123/api/identity` mit einem Challenge-Response-Verfahren. Erst danach wird der eigentliche Versandrequest erzeugt.
 
 ## SMTP
 

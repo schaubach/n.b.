@@ -19,9 +19,14 @@ services:
       RATE_LIMIT_PER_HOUR: ${RATE_LIMIT_PER_HOUR:-400}
       RATE_LIMIT_PER_DAY: ${RATE_LIMIT_PER_DAY:-1200}
       ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-}
+      SERVER_NAME: ${SERVER_NAME:-}
+      BACKEND_IDENTITY_KEY: /app/identity/private.pem
+      BACKEND_IDENTITY_PUBLIC_KEY: /app/identity/public.pem
     restart: unless-stopped
     expose:
       - "8080"
+    volumes:
+      - ./identity:/app/identity:ro
 
   nginx:
     image: nginx:1.27-alpine

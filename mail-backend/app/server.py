@@ -1,15 +1,17 @@
 import json
 import hmac
+import base64
 import hashlib
 import logging
 import os
 import smtplib
 import ssl
+import subprocess
 import time
 from collections import defaultdict, deque
 from email.message import EmailMessage
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from urllib.parse import urlparse
+from urllib.parse import parse_qs, urlparse
 
 
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
@@ -43,6 +45,9 @@ RATE_LIMIT_PER_MINUTE = env_int("RATE_LIMIT_PER_MINUTE", 80)
 RATE_LIMIT_PER_HOUR = env_int("RATE_LIMIT_PER_HOUR", 400)
 RATE_LIMIT_PER_DAY = env_int("RATE_LIMIT_PER_DAY", 1200)
 ALLOWED_ORIGINS = {origin.strip() for origin in os.getenv("ALLOWED_ORIGINS", "").split(",") if origin.strip()}
+SERVER_NAME = os.getenv("SERVER_NAME", "")
+BACKEND_IDENTITY_KEY = os.getenv("BACKEND_IDENTITY_KEY", "/app/identity/private.pem")
+BACKEND_IDENTITY_PUBLIC_KEY = os.getenv("BACKEND_IDENTITY_PUBLIC_KEY", "/app/identity/public.pem")
 
 used_nonces = {}
 rate_events = defaultdict(deque)
@@ -110,6 +115,47 @@ def sender_ok(address):
     if not domain_ok(address):
         return False
     return not ALLOWED_SENDERS or address.lower() in ALLOWED_SENDERS
+
+
+def canonical_json(value):
+    return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
+
+
+def public_key_fingerprint():
+    try:
+        with open(BACKEND_IDENTITY_PUBLIC_KEY, "rb") as public_key_file:
+            public_key = public_key_file.read()
+    except OSError:
+        raise RequestError(500, "Backend-Identitaet ist nicht vollstaendig konfiguriert.")
+    return hashlib.sha256(public_key).hexdigest()
+
+
+def signed_identity(challenge):
+    if not challenge or len(challenge) > 160:
+        raise RequestError(400, "Identity-Challenge fehlt oder ist zu lang.")
+    payload = {
+        "app": "n.b.",
+        "challenge": challenge,
+        "serverName": SERVER_NAME,
+        "publicKeySha256": public_key_fingerprint(),
+        "issuedAt": int(time.time()),
+    }
+    body = canonical_json(payload)
+    try:
+        result = subprocess.run(
+            ["openssl", "dgst", "-sha256", "-sign", BACKEND_IDENTITY_KEY],
+            input=body,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=True,
+        )
+    except (OSError, subprocess.CalledProcessError):
+        raise RequestError(500, "Backend-Identitaet konnte nicht signiert werden.")
+    return {
+        "payload": payload,
+        "signature": base64.b64encode(result.stdout).decode("ascii"),
+        "algorithm": "RSASSA-PKCS1-v1_5/SHA-256",
+    }
 
 
 def verify_signature(headers, body):
@@ -214,8 +260,16 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
 
     def do_GET(self):
-        if urlparse(self.path).path == "/health":
+        parsed = urlparse(self.path)
+        if parsed.path == "/health":
             json_response(self, 200, {"ok": True})
+            return
+        if parsed.path == "/identity":
+            try:
+                challenge = (parse_qs(parsed.query).get("challenge") or [""])[0]
+                json_response(self, 200, signed_identity(challenge))
+            except RequestError as error:
+                json_response(self, error.status, {"ok": False, "detail": error.message})
             return
         self.send_error(404)
 

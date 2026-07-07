@@ -21,6 +21,8 @@ mail-backend/certs/*
 !mail-backend/certs/.gitkeep
 mail-backend/nginx/auth/*
 !mail-backend/nginx/auth/.gitkeep
+mail-backend/identity/*
+!mail-backend/identity/.gitkeep
 mail-backend/webapp/*
 !mail-backend/webapp/.gitkeep
 
