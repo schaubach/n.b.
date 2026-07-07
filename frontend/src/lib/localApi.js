@@ -315,7 +315,15 @@ async function get(url) {
 
   if (path === "/teacher-config") {
     const config = state.teacher_config || {};
-    return { data: { name: config.name || "", email: config.email || "", password: config.password || "", mail_backend_host: config.mail_backend_host || "", backup_interval_days: normalizeBackupIntervalDays(config.backup_interval_days) } };
+    return { data: {
+      name: config.name || "",
+      email: config.email || "",
+      password: config.password || "",
+      mail_backend_host: config.mail_backend_host || "",
+      backup_interval_days: normalizeBackupIntervalDays(config.backup_interval_days),
+      mail_backend_pre_shared_key: config.mail_backend_pre_shared_key || "",
+      backend_identity_public_key: config.backend_identity_public_key || "",
+    } };
   }
   if (path === "/classes") {
     const data = state.classes
@@ -455,9 +463,19 @@ async function post(url, body) {
         password: String(body.password || ""),
         mail_backend_host: String(body.mail_backend_host || "").trim(),
         backup_interval_days: normalizeBackupIntervalDays(body.backup_interval_days),
+        mail_backend_pre_shared_key: String(body.mail_backend_pre_shared_key || "").trim(),
+        backend_identity_public_key: String(body.backend_identity_public_key || "").trim(),
         updated_at: nowIso(),
       };
-      return { data: { ok: true, name: state.teacher_config.name, email: state.teacher_config.email, mail_backend_host: state.teacher_config.mail_backend_host, backup_interval_days: state.teacher_config.backup_interval_days } };
+      return { data: {
+        ok: true,
+        name: state.teacher_config.name,
+        email: state.teacher_config.email,
+        mail_backend_host: state.teacher_config.mail_backend_host,
+        backup_interval_days: state.teacher_config.backup_interval_days,
+        mail_backend_pre_shared_key: state.teacher_config.mail_backend_pre_shared_key,
+        backend_identity_public_key: state.teacher_config.backend_identity_public_key,
+      } };
     });
   }
 

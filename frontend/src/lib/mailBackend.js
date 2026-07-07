@@ -1,3 +1,5 @@
+import api from "./api";
+
 const MAIL_BACKEND_PORT = 8123;
 const CONFIG_FILE = (process.env.PUBLIC_URL || "") + "/mail-backend-config.json";
 
@@ -55,7 +57,17 @@ function stableStringify(value) {
   return JSON.stringify(value);
 }
 
-async function loadMailBackendConfig() {
+export async function loadMailBackendConfig() {
+  try {
+    const configRes = await api.get("/teacher-config");
+    const localConfig = configRes.data || {};
+    const localPreSharedKey = String(localConfig.mail_backend_pre_shared_key || "").trim();
+    const localPublicKey = String(localConfig.backend_identity_public_key || "").trim();
+    if (localPreSharedKey && localPublicKey) {
+      return { preSharedKey: localPreSharedKey, backendIdentityPublicKey: localPublicKey, source: "teacher-config" };
+    }
+  } catch (error) {}
+
   const response = await fetch(CONFIG_FILE, { cache: "no-store" });
   if (!response.ok) {
     throw new Error("mail-backend-config.json fehlt oder ist nicht lesbar.");
