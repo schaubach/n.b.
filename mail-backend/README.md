@@ -158,7 +158,7 @@ cd ../mail-backend
 sh scripts/sync-webapp.sh
 ~~~
 
-`scripts/setup.sh` erzeugt `webapp/mail-backend-config.json` mit dem Pre-Shared-Key und dem Public Key der Backend-Identitaet. Diese Datei muss zusammen mit der WebApp ausgeliefert werden, wird aber nicht committed.
+`scripts/setup.sh` erzeugt `webapp/mail-backend-config.json` mit dem Pre-Shared-Key und dem Public Key der Backend-Identitaet. Diese Datei muss zusammen mit der WebApp ausgeliefert werden, wird aber nicht committed. Eine neue WebApp-Version ueber /installwebapp/ ersetzt App-Dateien und Offline-Cache, loescht aber nicht die verschluesselte IndexedDB der installierten WebApp. Noten und Punkte bleiben erhalten, solange Protokoll, Host, Port und Pfad gleich bleiben.
 
 ## Start
 

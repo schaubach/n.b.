@@ -124,7 +124,7 @@ Das kann ein interner Schulserver, ein lokaler Server mit vertrauenswuerdigem Ze
 
 6. Die App ueber das neue Home-Screen-Symbol starten.
 
-Nach dem ersten erfolgreichen Start liegen App-Dateien und Daten lokal auf dem iPad. Danach kann die App ohne Internetverbindung genutzt werden. Neue App-Versionen muessen wieder ueber die Webadresse geladen werden.
+Nach dem ersten erfolgreichen Start liegen App-Dateien und Daten lokal auf dem iPad. Danach kann die App ohne Internetverbindung genutzt werden. Neue App-Versionen muessen wieder ueber die Webadresse geladen werden. Beim Laden einer neuen Version werden nur App-Dateien und Offline-Cache aktualisiert; die verschluesselten Noten-, Punkte-, Foto- und Konfigurationsdaten in IndexedDB bleiben erhalten, solange die App unter derselben Adresse wie https://SERVER_IP:8123/installwebapp/ genutzt wird.
 
 ### Warum nicht einfach per Datei kopieren?
 

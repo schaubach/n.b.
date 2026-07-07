@@ -1,4 +1,4 @@
-const CACHE_NAME = "nb-offline-v2";
+const CACHE_NAME = "nb-offline-v3";
 const CORE_ASSETS = ["./", "./index.html", "./manifest.json", "./logo.jpeg", "./icon.svg", "./asset-manifest.json"];
 
 async function precache() {
@@ -32,6 +32,26 @@ self.addEventListener("fetch", (event) => {
   const url = new URL(request.url);
   if (url.origin !== self.location.origin) {
     event.respondWith(Response.error());
+    return;
+  }
+
+  if (url.pathname.endsWith("/mail-backend-config.json")) {
+    event.respondWith(fetch(request));
+    return;
+  }
+
+  const wantsHtml = request.mode === "navigate" || (request.headers.get("accept") || "").includes("text/html");
+  if (wantsHtml) {
+    event.respondWith(
+      fetch(request).then((response) => {
+        const copy = response.clone();
+        caches.open(CACHE_NAME).then((cache) => {
+          cache.put(request, copy.clone());
+          cache.put("./index.html", copy);
+        });
+        return response;
+      }).catch(() => caches.match(request).then((cached) => cached || caches.match("./index.html")))
+    );
     return;
   }
 
