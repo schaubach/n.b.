@@ -75,10 +75,10 @@ KlasseA;Nachname2;Vorname2;account2
 ### Backups
 
 - In der Lehrendenkonfiguration gibt es `Backup` und `Import Backup`.
-- `Backup` erstellt ein verschluesseltes ZIP-Archiv mit CSV-Daten und den gespeicherten Bildern, laedt es lokal herunter und sendet es als Mailanhang an die konfigurierte Lehrenden-Mailadresse.
+- `Backup` erstellt ein passwortgeschuetztes Standard-ZIP mit CSV-Daten und den gespeicherten Bildern, laedt es lokal herunter und sendet es als Mailanhang an die konfigurierte Lehrenden-Mailadresse.
 - Nach dem Entsperren der App wird automatisch ein Backup per Mail versendet, sobald das in der Lehrendenkonfiguration eingestellte Intervall in Tagen abgelaufen ist. Eine reine WebApp kann im Hintergrund nicht laufen; die Pruefung passiert deshalb beim Oeffnen bzw. Entsperren der App.
-- Das Backup wird mit AES-GCM verschluesselt. Der Schluessel wird aus dem `NB_MAIL_PSK` abgeleitet, der beim Build bzw. Setup in `mail-backend-config.json` ausgeliefert wird.
-- `Import Backup` entschluesselt das Archiv mit demselben Pre-Shared-Key und ersetzt den lokalen Datenbestand inklusive Bilder.
+- Das ZIP-Passwort ist der `NB_MAIL_PSK` bzw. Pre-Shared-Key aus `mail-backend-config.json`. Dadurch kann das Backup auch ohne n.b. mit kompatiblen ZIP-Tools geoeffnet werden, z. B. mit 7-Zip oder `unzip -P <Pre-Shared-Key> backup.zip`.
+- `Import Backup` liest neue passwortgeschuetzte `.zip`-Backups und weiterhin alte `.zip.enc`-Backups mit demselben Pre-Shared-Key und ersetzt den lokalen Datenbestand inklusive Bilder.
 - Fotos werden vor dem Speichern auf eine Kachel-taugliche Groesse verkleinert, damit Backups mit mehreren Klassen weiterhin mailtauglich bleiben.
 
 ### Lokale Daten und Verschluesselung
@@ -156,7 +156,7 @@ Das optionale Mail-Backend liegt in `mail-backend/`. Es ist nur fuer den echten 
 
 Das Backend wird auf einem Ubuntu-Server im Schulnetz betrieben. Nginx terminiert HTTPS auf Port `8123`, schuetzt die Installationsseite mit Basic Auth, prueft HMAC-signierte API-Requests und leitet den Versand ueber SMTP/STARTTLS an IServ weiter.
 
-Das gleiche Backend wird fuer Backup-Mails genutzt. Dafuer erlaubt es signierte Mailrequests mit einem verschluesselten Backup-Anhang.
+Das gleiche Backend wird fuer Backup-Mails genutzt. Dafuer erlaubt es signierte Mailrequests mit einem passwortgeschuetzten ZIP-Backup-Anhang.
 
 ### Installation auf Ubuntu
 

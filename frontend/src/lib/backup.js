@@ -52,36 +52,94 @@ function crc32(bytes) {
   return (crc ^ 0xffffffff) >>> 0;
 }
 
-function makeZip(files) {
+function crc32Update(crc, byte) {
+  return (crcTable[(crc ^ byte) & 255] ^ (crc >>> 8)) >>> 0;
+}
+
+function zipCryptoKeys(password) {
+  const keys = [0x12345678, 0x23456789, 0x34567890];
+  const update = (byte) => {
+    keys[0] = crc32Update(keys[0], byte);
+    keys[1] = (Math.imul((keys[1] + (keys[0] & 255)) >>> 0, 134775813) + 1) >>> 0;
+    keys[2] = crc32Update(keys[2], keys[1] >>> 24);
+  };
+  for (const byte of encoder.encode(password)) update(byte);
+  return { keys, update };
+}
+
+function zipCryptoByte(keys) {
+  const temp = (keys[2] | 2) >>> 0;
+  return (Math.imul(temp, (temp ^ 1) >>> 0) >>> 8) & 255;
+}
+
+function zipCryptoEncrypt(data, password, crc) {
+  const { keys, update } = zipCryptoKeys(password);
+  const header = new Uint8Array(12);
+  crypto.getRandomValues(header.subarray(0, 11));
+  header[11] = (crc >>> 24) & 255;
+  const plain = concatBytes([header, data]);
+  const encrypted = new Uint8Array(plain.length);
+  for (let i = 0; i < plain.length; i += 1) {
+    encrypted[i] = plain[i] ^ zipCryptoByte(keys);
+    update(plain[i]);
+  }
+  return encrypted;
+}
+
+function zipCryptoDecrypt(encrypted, password, crc) {
+  if (encrypted.length < 12) throw new Error("Backup-ZIP ist beschaedigt oder unvollstaendig.");
+  const { keys, update } = zipCryptoKeys(password);
+  const plain = new Uint8Array(encrypted.length);
+  for (let i = 0; i < encrypted.length; i += 1) {
+    plain[i] = encrypted[i] ^ zipCryptoByte(keys);
+    update(plain[i]);
+  }
+  if (plain[11] !== ((crc >>> 24) & 255)) throw new Error("Pre-Shared-Key passt nicht zum Backup-ZIP.");
+  const data = plain.slice(12);
+  if (crc32(data) !== crc) throw new Error("Pre-Shared-Key passt nicht zum Backup-ZIP oder das Backup ist beschaedigt.");
+  return data;
+}
+
+function makeZip(files, password = "") {
   const locals = [];
   const central = [];
   let offset = 0;
+  const encrypted = !!password;
+  const flags = encrypted ? 1 : 0;
   for (const file of files) {
     const name = encoder.encode(file.name);
     const data = file.data instanceof Uint8Array ? file.data : encoder.encode(String(file.data || ""));
     const crc = crc32(data);
-    const local = concatBytes([u32(0x04034b50), u16(20), u16(0), u16(0), u16(0), u16(0), u32(crc), u32(data.length), u32(data.length), u16(name.length), u16(0), name, data]);
+    const payload = encrypted ? zipCryptoEncrypt(data, password, crc) : data;
+    const local = concatBytes([u32(0x04034b50), u16(20), u16(flags), u16(0), u16(0), u16(0), u32(crc), u32(payload.length), u32(data.length), u16(name.length), u16(0), name, payload]);
     locals.push(local);
-    central.push(concatBytes([u32(0x02014b50), u16(20), u16(20), u16(0), u16(0), u16(0), u16(0), u32(crc), u32(data.length), u32(data.length), u16(name.length), u16(0), u16(0), u16(0), u16(0), u32(0), u32(offset), name]));
+    central.push(concatBytes([u32(0x02014b50), u16(20), u16(20), u16(flags), u16(0), u16(0), u16(0), u32(crc), u32(payload.length), u32(data.length), u16(name.length), u16(0), u16(0), u16(0), u16(0), u32(0), u32(offset), name]));
     offset += local.length;
   }
   const centralBytes = concatBytes(central);
   return concatBytes([...locals, centralBytes, concatBytes([u32(0x06054b50), u16(0), u16(0), u16(files.length), u16(files.length), u32(centralBytes.length), u32(offset), u16(0)])]);
 }
 
-function unzipStored(bytes) {
+function unzipStored(bytes, password = "") {
   const files = new Map();
   let offset = 0;
   while (offset + 30 <= bytes.length && readU32(bytes, offset) === 0x04034b50) {
+    const flags = readU16(bytes, offset + 6);
     if (readU16(bytes, offset + 8) !== 0) throw new Error("Backup-ZIP nutzt ein nicht unterstütztes Kompressionsformat.");
+    const crc = readU32(bytes, offset + 14);
     const size = readU32(bytes, offset + 18);
+    const plainSize = readU32(bytes, offset + 22);
     const nameLength = readU16(bytes, offset + 26);
     const extraLength = readU16(bytes, offset + 28);
     const nameStart = offset + 30;
     const dataStart = nameStart + nameLength + extraLength;
     if (dataStart + size > bytes.length) throw new Error("Backup-ZIP ist beschaedigt oder unvollstaendig.");
     const name = decoder.decode(bytes.slice(nameStart, nameStart + nameLength));
-    files.set(name, bytes.slice(dataStart, dataStart + size));
+    const raw = bytes.slice(dataStart, dataStart + size);
+    const data = (flags & 1) ? zipCryptoDecrypt(raw, password, crc) : raw;
+    if (data.length !== plainSize) throw new Error("Backup-ZIP ist beschaedigt oder unvollstaendig.");
+    if (!(flags & 1) && crc32(data) !== crc) throw new Error("Backup-ZIP ist beschaedigt oder unvollstaendig.");
+    files.set(name, data);
     offset = dataStart + size;
   }
   return files;
@@ -171,16 +229,7 @@ async function backupKey(preSharedKey, salt) {
   return crypto.subtle.deriveKey({ name: "PBKDF2", salt, iterations: 210000, hash: "SHA-256" }, material, { name: "AES-GCM", length: 256 }, false, ["encrypt", "decrypt"]);
 }
 
-async function encryptZip(zipBytes, preSharedKey) {
-  const salt = crypto.getRandomValues(new Uint8Array(16));
-  const iv = crypto.getRandomValues(new Uint8Array(12));
-  const key = await backupKey(preSharedKey, salt);
-  const cipher = new Uint8Array(await crypto.subtle.encrypt({ name: "AES-GCM", iv }, key, zipBytes));
-  const header = encoder.encode(JSON.stringify({ version: BACKUP_VERSION, kdf: "PBKDF2-SHA256", iterations: 210000, salt: bytesToBase64(salt), iv: bytesToBase64(iv) }));
-  return concatBytes([encoder.encode(BACKUP_MAGIC), u32(header.length), header, cipher]);
-}
-
-async function decryptZip(fileBytes, preSharedKey) {
+async function decryptLegacyZip(fileBytes, preSharedKey) {
   if (decoder.decode(fileBytes.slice(0, BACKUP_MAGIC.length)) !== BACKUP_MAGIC) throw new Error("Backup-Datei hat ein unbekanntes Format.");
   const headerLength = readU32(fileBytes, BACKUP_MAGIC.length);
   const headerStart = BACKUP_MAGIC.length + 4;
@@ -195,7 +244,7 @@ async function loadPreSharedKey() {
   return preSharedKey;
 }
 
-const backupFilename = () => "nb-backup-" + new Date().toISOString().slice(0, 10) + ".zip.enc";
+const backupFilename = () => "nb-backup-" + new Date().toISOString().slice(0, 10) + ".zip";
 
 function triggerDownload(bytes, filename) {
   const url = URL.createObjectURL(new Blob([bytes], { type: "application/octet-stream" }));
@@ -210,9 +259,8 @@ function triggerDownload(bytes, filename) {
 
 export async function createEncryptedBackup() {
   const [stateRes, preSharedKey] = await Promise.all([api.get("/backup/state"), loadPreSharedKey()]);
-  const zip = makeZip(buildFilesFromState(stateRes.data.state || {}));
-  const encrypted = await encryptZip(zip, preSharedKey);
-  return { bytes: encrypted, filename: backupFilename(), size: encrypted.length };
+  const zip = makeZip(buildFilesFromState(stateRes.data.state || {}), preSharedKey);
+  return { bytes: zip, filename: backupFilename(), size: zip.length };
 }
 
 export async function sendBackupToTeacher({ download = false } = {}) {
@@ -220,7 +268,7 @@ export async function sendBackupToTeacher({ download = false } = {}) {
   const teacherConfig = configRes.data || {};
   if (!teacherConfig.email || !teacherConfig.password || !teacherConfig.mail_backend_host) throw new Error("Lehrendenkonfiguration fuer Backup unvollstaendig.");
   const backup = await createEncryptedBackup();
-  await sendBackupMailViaBackend(teacherConfig, { filename: backup.filename, data: bytesToBase64(backup.bytes), contentType: "application/octet-stream", size: backup.size });
+  await sendBackupMailViaBackend(teacherConfig, { filename: backup.filename, data: bytesToBase64(backup.bytes), contentType: "application/zip", size: backup.size });
   await api.post("/backup/mark-sent", { sent_at: new Date().toISOString(), size: backup.size });
   if (download) triggerDownload(backup.bytes, backup.filename);
   return backup;
@@ -253,9 +301,13 @@ export const maybeSendWeeklyBackup = maybeSendAutomaticBackup;
 
 export async function importEncryptedBackup(file) {
   const preSharedKey = await loadPreSharedKey();
-  const encrypted = new Uint8Array(await file.arrayBuffer());
-  const zipBytes = await decryptZip(encrypted, preSharedKey);
-  const state = stateFromZipFiles(unzipStored(zipBytes));
+  const bytes = new Uint8Array(await file.arrayBuffer());
+  const legacyMagic = decoder.decode(bytes.slice(0, BACKUP_MAGIC.length));
+  const zipBytes = legacyMagic === BACKUP_MAGIC ? await decryptLegacyZip(bytes, preSharedKey) : bytes;
+  if (readU32(zipBytes, 0) !== 0x04034b50) throw new Error("Backup-Datei hat ein unbekanntes Format.");
+  const state = stateFromZipFiles(unzipStored(zipBytes, preSharedKey));
   await api.post("/backup/restore-state", { state });
   return { ok: true };
 }
+
+export const __backupTest = { makeZip, unzipStored, crc32 };
