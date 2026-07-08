@@ -117,6 +117,59 @@ def sender_ok(address):
     return not ALLOWED_SENDERS or address.lower() in ALLOWED_SENDERS
 
 
+def smtp_login_candidates(sender):
+    candidates = []
+    sender = str(sender or "").strip().lower()
+    if "@" in sender:
+        local_part = sender.split("@", 1)[0].strip()
+        if local_part:
+            candidates.append(("Benutzername ohne Domain", local_part))
+    if sender and sender not in {candidate[1] for candidate in candidates}:
+        candidates.append(("Mailadresse", sender))
+    return candidates
+
+
+def smtp_error_text(error):
+    code = getattr(error, "smtp_code", "unbekannt")
+    detail = getattr(error, "smtp_error", "")
+    if isinstance(detail, bytes):
+        detail = detail.decode("utf-8", "replace")
+    detail = " ".join(str(detail or "").split())
+    if len(detail) > 260:
+        detail = detail[:257] + "..."
+    return code, detail or "keine SMTP-Detailantwort"
+
+
+def smtp_auth_failure_message(attempts):
+    tried = ", ".join(f"{item['label']}={item['username']}" for item in attempts) or "keine"
+    last = attempts[-1] if attempts else {}
+    code = last.get("code", "unbekannt")
+    detail = last.get("detail", "keine SMTP-Detailantwort")
+    starttls = "ja" if SMTP_STARTTLS else "nein"
+    return (
+        "SMTP-Anmeldung fehlgeschlagen. "
+        f"Server={SMTP_HOST}, Port={SMTP_PORT}, STARTTLS={starttls}. "
+        f"Versuchte Logins: {tried}. "
+        f"Letzte SMTP-Antwort: {code} {detail}. "
+        "Hinweis: Einige IServ-Installationen erwarten als SMTP-Benutzername nur den Accountnamen ohne @Domain."
+    )
+
+
+def login_smtp(smtp, sender, password):
+    attempts = []
+    for label, username in smtp_login_candidates(sender):
+        try:
+            smtp.login(username, password)
+            if username != sender:
+                logger.info("smtp login succeeded sender=%s username=%s", sender, username)
+            return username
+        except smtplib.SMTPAuthenticationError as error:
+            code, detail = smtp_error_text(error)
+            attempts.append({"label": label, "username": username, "code": code, "detail": detail})
+            logger.warning("smtp authentication failed sender=%s username=%s code=%s detail=%s", sender, username, code, detail)
+    raise RequestError(401, smtp_auth_failure_message(attempts))
+
+
 def canonical_json(value):
     return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
 
@@ -243,7 +296,7 @@ def send_messages(sender, password, messages):
     with smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=30) as smtp:
         if SMTP_STARTTLS:
             smtp.starttls(context=context)
-        smtp.login(sender, password)
+        login_smtp(smtp, sender, password)
         for message in messages:
             email = EmailMessage()
             email["From"] = sender
@@ -318,9 +371,10 @@ class Handler(BaseHTTPRequestHandler):
         except json.JSONDecodeError:
             logger.warning("rejected request invalid json")
             json_response(self, 400, {"ok": False, "detail": "JSON ist ungültig."})
-        except smtplib.SMTPAuthenticationError:
-            logger.warning("smtp authentication failed")
-            json_response(self, 401, {"ok": False, "detail": "SMTP-Anmeldung fehlgeschlagen."})
+        except smtplib.SMTPAuthenticationError as error:
+            code, detail = smtp_error_text(error)
+            logger.warning("smtp authentication failed outside login helper code=%s detail=%s", code, detail)
+            json_response(self, 401, {"ok": False, "detail": f"SMTP-Anmeldung fehlgeschlagen. Server={SMTP_HOST}, Port={SMTP_PORT}, STARTTLS={'ja' if SMTP_STARTTLS else 'nein'}. SMTP-Antwort: {code} {detail}."})
         except Exception as error:
             logger.exception("mail request failed")
             json_response(self, 500, {"ok": False, "detail": "Mailversand fehlgeschlagen.", "error": str(error)})

@@ -243,7 +243,7 @@ ALLOWED_DOMAIN=rbbk-do.de
 # ALLOWED_SENDERS=lehrkraft1@rbbk-do.de,lehrkraft2@rbbk-do.de
 ~~~
 
-Die WebApp uebermittelt pro Versand die Lehrenden-Mailadresse und das IServ-Passwort ueber HTTPS an das Backend. Das Backend meldet sich damit am SMTP-Server an.
+Die WebApp uebermittelt pro Versand die Lehrenden-Mailadresse und das IServ-Passwort ueber HTTPS an das Backend. Die Lehrenden-Mailadresse bleibt der Absender (`From`). Fuer die SMTP-Anmeldung versucht das Backend zuerst den Accountnamen vor `@`, z. B. `pillekeit`, und danach die vollstaendige Mailadresse. Fehlgeschlagene SMTP-Anmeldungen nennen Host, Port, STARTTLS, die versuchten Logins und die SMTP-Serverantwort, aber nie das Passwort.
 
 ## Logs
 
