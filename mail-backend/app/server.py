@@ -275,7 +275,7 @@ def validate_payload(payload):
         for attachment in attachments:
             if not isinstance(attachment, dict):
                 raise RequestError(400, "Attachment ist ungueltig.")
-            filename = str(attachment.get("filename") or "backup.zip.enc").strip().replace("/", "_").replace("\\", "_")
+            filename = str(attachment.get("filename") or "backup.zip").strip().replace("/", "_").replace("\\", "_")
             content_type = str(attachment.get("contentType") or "application/octet-stream").strip()
             data = str(attachment.get("data") or "")
             try:
