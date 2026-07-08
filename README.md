@@ -77,8 +77,8 @@ KlasseA;Nachname2;Vorname2;account2
 - In der Lehrendenkonfiguration gibt es `Backup` und `Import Backup`.
 - `Backup` erstellt ein passwortgeschuetztes Standard-ZIP mit CSV-Daten und den gespeicherten Bildern, laedt es lokal herunter und sendet es als Mailanhang an die konfigurierte Lehrenden-Mailadresse.
 - Nach dem Entsperren der App wird automatisch ein Backup per Mail versendet, sobald das in der Lehrendenkonfiguration eingestellte Intervall in Tagen abgelaufen ist. Eine reine WebApp kann im Hintergrund nicht laufen; die Pruefung passiert deshalb beim Oeffnen bzw. Entsperren der App.
-- Das ZIP-Passwort ist der `NB_MAIL_PSK` bzw. Pre-Shared-Key aus `mail-backend-config.json`. Dadurch kann das Backup auch ohne n.b. mit kompatiblen ZIP-Tools geoeffnet werden, z. B. mit 7-Zip oder `unzip -P <Pre-Shared-Key> backup.zip`.
-- `Import Backup` liest neue passwortgeschuetzte `.zip`-Backups und weiterhin alte `.zip.enc`-Backups mit demselben Pre-Shared-Key und ersetzt den lokalen Datenbestand inklusive Bilder.
+- Das ZIP-Passwort ist das in der Lehrendenkonfiguration gespeicherte IServ-Passwort. Dadurch kann das Backup auch ohne n.b. mit kompatiblen ZIP-Tools geoeffnet werden, z. B. mit 7-Zip oder `unzip -P <IServ-Passwort> backup.zip`.
+- `Import Backup` liest passwortgeschuetzte `.zip`-Backups mit dem gespeicherten IServ-Passwort und ersetzt den lokalen Datenbestand inklusive Bilder.
 - Fotos werden vor dem Speichern auf eine Kachel-taugliche Groesse verkleinert, damit Backups mit mehreren Klassen weiterhin mailtauglich bleiben.
 
 ### Lokale Daten und Verschluesselung

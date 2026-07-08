@@ -216,8 +216,8 @@ export async function sendBackupMailViaBackend(teacherConfig, attachment) {
   return sendMessagesViaBackend(teacherConfig, [{
     to: teacherConfig.email,
     subject: "n.b. Backup " + today,
-    text: "Automatisches n.b. Backup vom " + today + ". Die Datei ist ein passwortgeschuetztes ZIP; Passwort ist der Mail-Backend Pre-Shared-Key.",
-    html: "<p>Automatisches n.b. Backup vom " + today + ".</p><p>Die Datei ist ein passwortgeschuetztes ZIP; Passwort ist der Mail-Backend Pre-Shared-Key.</p>",
+    text: "Automatisches n.b. Backup vom " + today + ". Die Datei ist ein passwortgeschuetztes ZIP; Passwort ist Ihr IServ-Passwort.",
+    html: "<p>Automatisches n.b. Backup vom " + today + ".</p><p>Die Datei ist ein passwortgeschuetztes ZIP; Passwort ist Ihr IServ-Passwort.</p>",
     attachments: [attachment],
   }]);
 }

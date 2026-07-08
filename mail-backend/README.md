@@ -17,7 +17,7 @@ Das Python-Backend laeuft intern per HTTP. Nginx terminiert TLS auf Port `8123` 
 - Sender und Empfaenger muessen zur Domain `@rbbk-do.de` gehoeren.
 - Optional kann `ALLOWED_SENDERS` gesetzt werden. Dann werden nur diese Lehrenden-Mailadressen als Absender akzeptiert.
 - SMTP-Zugangsdaten werden nicht im Backend gespeichert. Die WebApp sendet Mailadresse und IServ-Passwort nur ueber HTTPS und HMAC-signiert an das Backend.
-- Backup-Anhaenge werden bereits in der WebApp als passwortgeschuetztes Standard-ZIP mit dem Pre-Shared-Key erstellt; das Backend leitet sie nur als Mailanhang weiter.
+- Backup-Anhaenge werden bereits in der WebApp als passwortgeschuetztes Standard-ZIP mit dem gespeicherten IServ-Passwort erstellt; das Backend leitet sie nur als Mailanhang weiter.
 - Der Pre-Shared-Key steht in `.env` und in `webapp/mail-backend-config.json`. Beide Dateien werden nicht versioniert.
 - Die WebApp prueft vor dem Versand eine signierte Backend-Identitaet. Der private Schluessel liegt nur unter `identity/private.pem`, der Public Key wird in `mail-backend-config.json` ausgeliefert.
 
@@ -154,7 +154,7 @@ In der App selbst wird unter der Lehrendenkonfiguration eingetragen:
 - IServPasswort,
 - IP-Adresse oder DNS-Name des Mail-Backends ohne Port, z. B. `10.97.12.34`.
 
-Port `8123` und `https://` setzt die WebApp automatisch. Die Werte werden lokal verschluesselt gespeichert. Die App prueft in dieser Ansicht per Healthcheck, ob das Mail-Backend erreichbar und das Zertifikat vertrauenswuerdig ist. Dort liegen auch die Funktionen `Backup` und `Import Backup`; Backups werden als passwortgeschuetztes Standard-ZIP mit CSV-Daten und Bildern erstellt und koennen mit dem Pre-Shared-Key in kompatiblen ZIP-Tools geoeffnet werden.
+Port `8123` und `https://` setzt die WebApp automatisch. Die Werte werden lokal verschluesselt gespeichert. Die App prueft in dieser Ansicht per Healthcheck, ob das Mail-Backend erreichbar und das Zertifikat vertrauenswuerdig ist. Dort liegen auch die Funktionen `Backup` und `Import Backup`; Backups werden als passwortgeschuetztes Standard-ZIP mit CSV-Daten und Bildern erstellt und koennen mit dem IServ-Passwort in kompatiblen ZIP-Tools geoeffnet werden.
 
 ## WebApp bereitstellen
 

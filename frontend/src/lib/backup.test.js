@@ -10,12 +10,12 @@ const { __backupTest } = require("./backup");
 const decoder = new TextDecoder();
 const readU16 = (bytes, offset) => bytes[offset] | (bytes[offset + 1] << 8);
 
-test("creates password protected ZIP files that can be decrypted with the pre-shared key", () => {
-  const zip = __backupTest.makeZip([{ name: "data/state.csv", data: "key,json\nclasses,[]" }], "secret-psk");
+test("creates password protected ZIP files that can be decrypted with the IServ password", () => {
+  const zip = __backupTest.makeZip([{ name: "data/state.csv", data: "key,json\nclasses,[]" }], "iserv-password");
 
   expect(readU16(zip, 6) & 1).toBe(1);
-  const files = __backupTest.unzipStored(zip, "secret-psk");
+  const files = __backupTest.unzipStored(zip, "iserv-password");
 
   expect(decoder.decode(files.get("data/state.csv"))).toBe("key,json\nclasses,[]");
-  expect(() => __backupTest.unzipStored(zip, "wrong-psk")).toThrow(/Pre-Shared-Key/);
+  expect(() => __backupTest.unzipStored(zip, "wrong-password")).toThrow(/IServ-Passwort/);
 });

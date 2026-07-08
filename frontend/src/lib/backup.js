@@ -1,7 +1,6 @@
 import api from "./api";
-import { loadMailBackendConfig, sendBackupMailViaBackend } from "./mailBackend";
+import { sendBackupMailViaBackend } from "./mailBackend";
 
-const BACKUP_MAGIC = "NBBAK1";
 const BACKUP_VERSION = 1;
 const DEFAULT_BACKUP_INTERVAL_DAYS = 7;
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -94,9 +93,9 @@ function zipCryptoDecrypt(encrypted, password, crc) {
     plain[i] = encrypted[i] ^ zipCryptoByte(keys);
     update(plain[i]);
   }
-  if (plain[11] !== ((crc >>> 24) & 255)) throw new Error("Pre-Shared-Key passt nicht zum Backup-ZIP.");
+  if (plain[11] !== ((crc >>> 24) & 255)) throw new Error("IServ-Passwort passt nicht zum Backup-ZIP.");
   const data = plain.slice(12);
-  if (crc32(data) !== crc) throw new Error("Pre-Shared-Key passt nicht zum Backup-ZIP oder das Backup ist beschaedigt.");
+  if (crc32(data) !== crc) throw new Error("IServ-Passwort passt nicht zum Backup-ZIP oder das Backup ist beschaedigt.");
   return data;
 }
 
@@ -224,24 +223,11 @@ function stateFromZipFiles(files) {
   return state;
 }
 
-async function backupKey(preSharedKey, salt) {
-  const material = await crypto.subtle.importKey("raw", encoder.encode(preSharedKey), "PBKDF2", false, ["deriveKey"]);
-  return crypto.subtle.deriveKey({ name: "PBKDF2", salt, iterations: 210000, hash: "SHA-256" }, material, { name: "AES-GCM", length: 256 }, false, ["encrypt", "decrypt"]);
-}
-
-async function decryptLegacyZip(fileBytes, preSharedKey) {
-  if (decoder.decode(fileBytes.slice(0, BACKUP_MAGIC.length)) !== BACKUP_MAGIC) throw new Error("Backup-Datei hat ein unbekanntes Format.");
-  const headerLength = readU32(fileBytes, BACKUP_MAGIC.length);
-  const headerStart = BACKUP_MAGIC.length + 4;
-  const header = JSON.parse(decoder.decode(fileBytes.slice(headerStart, headerStart + headerLength)));
-  const key = await backupKey(preSharedKey, base64ToBytes(header.salt));
-  return new Uint8Array(await crypto.subtle.decrypt({ name: "AES-GCM", iv: base64ToBytes(header.iv) }, key, fileBytes.slice(headerStart + headerLength)));
-}
-
-async function loadPreSharedKey() {
-  const { preSharedKey } = await loadMailBackendConfig();
-  if (!preSharedKey || preSharedKey.includes("NICHT_INS_REPOSITORY")) throw new Error("Pre-Shared-Key fuer Backups fehlt.");
-  return preSharedKey;
+async function loadBackupPassword() {
+  const configRes = await api.get("/teacher-config");
+  const password = String(configRes.data?.password || "");
+  if (!password) throw new Error("IServ-Passwort fuer Backups fehlt. Bitte zuerst die Lehrendenkonfiguration speichern oder Credentials laden.");
+  return password;
 }
 
 const backupFilename = () => "nb-backup-" + new Date().toISOString().slice(0, 10) + ".zip";
@@ -257,9 +243,9 @@ function triggerDownload(bytes, filename) {
   URL.revokeObjectURL(url);
 }
 
-export async function createEncryptedBackup() {
-  const [stateRes, preSharedKey] = await Promise.all([api.get("/backup/state"), loadPreSharedKey()]);
-  const zip = makeZip(buildFilesFromState(stateRes.data.state || {}), preSharedKey);
+export async function createEncryptedBackup(backupPassword = "") {
+  const [stateRes, password] = await Promise.all([api.get("/backup/state"), backupPassword ? Promise.resolve(backupPassword) : loadBackupPassword()]);
+  const zip = makeZip(buildFilesFromState(stateRes.data.state || {}), password);
   return { bytes: zip, filename: backupFilename(), size: zip.length };
 }
 
@@ -267,7 +253,7 @@ export async function sendBackupToTeacher({ download = false } = {}) {
   const configRes = await api.get("/teacher-config");
   const teacherConfig = configRes.data || {};
   if (!teacherConfig.email || !teacherConfig.password || !teacherConfig.mail_backend_host) throw new Error("Lehrendenkonfiguration fuer Backup unvollstaendig.");
-  const backup = await createEncryptedBackup();
+  const backup = await createEncryptedBackup(teacherConfig.password);
   await sendBackupMailViaBackend(teacherConfig, { filename: backup.filename, data: bytesToBase64(backup.bytes), contentType: "application/zip", size: backup.size });
   await api.post("/backup/mark-sent", { sent_at: new Date().toISOString(), size: backup.size });
   if (download) triggerDownload(backup.bytes, backup.filename);
@@ -300,12 +286,10 @@ export async function maybeSendAutomaticBackup() {
 export const maybeSendWeeklyBackup = maybeSendAutomaticBackup;
 
 export async function importEncryptedBackup(file) {
-  const preSharedKey = await loadPreSharedKey();
-  const bytes = new Uint8Array(await file.arrayBuffer());
-  const legacyMagic = decoder.decode(bytes.slice(0, BACKUP_MAGIC.length));
-  const zipBytes = legacyMagic === BACKUP_MAGIC ? await decryptLegacyZip(bytes, preSharedKey) : bytes;
-  if (readU32(zipBytes, 0) !== 0x04034b50) throw new Error("Backup-Datei hat ein unbekanntes Format.");
-  const state = stateFromZipFiles(unzipStored(zipBytes, preSharedKey));
+  const password = await loadBackupPassword();
+  const zipBytes = new Uint8Array(await file.arrayBuffer());
+  if (readU32(zipBytes, 0) !== 0x04034b50) throw new Error("Backup-Datei hat ein unbekanntes Format. Bitte eine passwortgeschuetzte .zip-Backup-Datei auswaehlen.");
+  const state = stateFromZipFiles(unzipStored(zipBytes, password));
   await api.post("/backup/restore-state", { state });
   return { ok: true };
 }
