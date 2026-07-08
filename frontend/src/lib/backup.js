@@ -1,5 +1,5 @@
 import api from "./api";
-import { sendBackupMailViaBackend } from "./mailBackend";
+import { checkMailBackendHealth, sendBackupMailViaBackend } from "./mailBackend";
 
 const BACKUP_VERSION = 1;
 const DEFAULT_BACKUP_INTERVAL_DAYS = 7;
@@ -249,12 +249,16 @@ export async function createEncryptedBackup(backupPassword = "") {
   return { bytes: zip, filename: backupFilename(), size: zip.length };
 }
 
-export async function sendBackupToTeacher({ download = false } = {}) {
+export async function sendBackupToTeacher({ download = false, healthTimeoutMs } = {}) {
   const configRes = await api.get("/teacher-config");
   const teacherConfig = configRes.data || {};
   if (!teacherConfig.email || !teacherConfig.password || !teacherConfig.mail_backend_host) throw new Error("Lehrendenkonfiguration fuer Backup unvollstaendig.");
+  if (healthTimeoutMs) {
+    const health = await checkMailBackendHealth(teacherConfig.mail_backend_host, { timeoutMs: healthTimeoutMs });
+    if (!health.ok) throw new Error(health.message);
+  }
   const backup = await createEncryptedBackup(teacherConfig.password);
-  await sendBackupMailViaBackend(teacherConfig, { filename: backup.filename, data: bytesToBase64(backup.bytes), contentType: "application/zip", size: backup.size });
+  await sendBackupMailViaBackend(teacherConfig, { filename: backup.filename, data: bytesToBase64(backup.bytes), contentType: "application/zip", size: backup.size }, { healthTimeoutMs });
   await api.post("/backup/mark-sent", { sent_at: new Date().toISOString(), size: backup.size });
   if (download) triggerDownload(backup.bytes, backup.filename);
   return backup;
@@ -276,7 +280,7 @@ export async function maybeSendAutomaticBackup() {
     return { skipped: true, next_at: new Date(lastTime + intervalMs).toISOString() };
   }
   try {
-    await sendBackupToTeacher();
+    await sendBackupToTeacher({ healthTimeoutMs: 1200 });
     return { sent: true };
   } catch (error) {
     return { skipped: true, error: error.message };
