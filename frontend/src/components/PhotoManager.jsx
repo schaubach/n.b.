@@ -41,6 +41,7 @@ export default function PhotoManager({ classId, className, open, onClose, onChan
   const [busyId, setBusyId] = useState(null);
   const [target, setTarget] = useState(null);
   const [cameraOpen, setCameraOpen] = useState(false);
+  const [cameraReady, setCameraReady] = useState(false);
   const [error, setError] = useState(null);
   const inputRef = useRef(null);
   const videoRef = useRef(null);
@@ -67,6 +68,7 @@ export default function PhotoManager({ classId, className, open, onClose, onChan
     }
     if (videoRef.current) videoRef.current.srcObject = null;
     setCameraOpen(false);
+    setCameraReady(false);
   };
 
   useEffect(() => {
@@ -105,19 +107,14 @@ export default function PhotoManager({ classId, className, open, onClose, onChan
     }
 
     setBusyId(student.id);
+    setCameraReady(false);
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: { ideal: "environment" } },
+        video: { facingMode: { ideal: "environment" }, width: { ideal: 1280 }, height: { ideal: 960 } },
         audio: false,
       });
       streamRef.current = stream;
       setCameraOpen(true);
-      setTimeout(() => {
-        if (videoRef.current) {
-          videoRef.current.srcObject = stream;
-          videoRef.current.play?.().catch(() => {});
-        }
-      }, 0);
     } catch (err) {
       setError("Kamera konnte nicht geöffnet werden. Du kannst stattdessen ein Bild auswählen.");
       openFileFallback();
@@ -127,7 +124,7 @@ export default function PhotoManager({ classId, className, open, onClose, onChan
   };
 
   const capturePhoto = async () => {
-    if (!target || !videoRef.current) return;
+    if (!target || !videoRef.current || !cameraReady) return;
     try {
       const photo = drawToDataUrl(videoRef.current);
       stopCamera();
@@ -142,6 +139,34 @@ export default function PhotoManager({ classId, className, open, onClose, onChan
     stopCamera();
     setTarget(null);
   };
+
+  useEffect(() => {
+    if (!cameraOpen || !streamRef.current || !videoRef.current) return;
+    const video = videoRef.current;
+    let cancelled = false;
+    video.muted = true;
+    video.autoplay = true;
+    video.playsInline = true;
+    video.setAttribute("playsinline", "true");
+    video.setAttribute("webkit-playsinline", "true");
+    video.srcObject = streamRef.current;
+
+    const markReady = () => {
+      if (!cancelled && video.videoWidth && video.videoHeight) setCameraReady(true);
+    };
+    video.addEventListener("loadedmetadata", markReady);
+    video.addEventListener("canplay", markReady);
+    const playPromise = video.play?.();
+    if (playPromise?.then) playPromise.then(markReady).catch(() => {});
+    const readyTimer = setInterval(markReady, 250);
+
+    return () => {
+      cancelled = true;
+      clearInterval(readyTimer);
+      video.removeEventListener("loadedmetadata", markReady);
+      video.removeEventListener("canplay", markReady);
+    };
+  }, [cameraOpen]);
 
   const handleFile = async (event) => {
     const file = event.target.files?.[0];
@@ -269,8 +294,13 @@ export default function PhotoManager({ classId, className, open, onClose, onChan
                 data-testid="camera-capture"
               >
                 <div className="w-full max-w-2xl overflow-hidden rounded-3xl border-2 border-white bg-stone-900 shadow-brutal">
-                  <div className="aspect-[3/4] sm:aspect-video bg-black">
+                  <div className="relative aspect-[3/4] sm:aspect-video bg-black">
                     <video ref={videoRef} autoPlay playsInline muted className="w-full h-full object-cover" />
+                    {!cameraReady && (
+                      <div className="absolute inset-0 flex items-center justify-center bg-black/70 text-sm font-bold text-white">
+                        Kamera wird gestartet ...
+                      </div>
+                    )}
                   </div>
                   <div className="bg-white p-4 flex flex-col sm:flex-row gap-3 sm:items-center sm:justify-between">
                     <div className="min-w-0">
@@ -286,7 +316,8 @@ export default function PhotoManager({ classId, className, open, onClose, onChan
                       </button>
                       <button
                         onClick={capturePhoto}
-                        className="flex-1 sm:flex-none px-5 py-3 rounded-xl border-2 border-stone-900 bg-emerald-400 text-stone-900 font-heading font-extrabold shadow-brutal-sm active:translate-y-0.5 active:shadow-none transition-all flex items-center justify-center gap-2"
+                        disabled={!cameraReady}
+                        className="flex-1 sm:flex-none px-5 py-3 rounded-xl border-2 border-stone-900 bg-emerald-400 text-stone-900 font-heading font-extrabold shadow-brutal-sm active:translate-y-0.5 active:shadow-none transition-all flex items-center justify-center gap-2 disabled:opacity-50"
                       >
                         <Camera className="w-5 h-5" /> Aufnehmen
                       </button>

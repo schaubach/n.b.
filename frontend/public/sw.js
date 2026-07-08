@@ -1,5 +1,23 @@
-const CACHE_NAME = "nb-offline-v3";
+const CACHE_NAME = "nb-offline-v4";
 const CORE_ASSETS = ["./", "./index.html", "./manifest.json", "./logo.jpeg", "./icon.svg", "./asset-manifest.json"];
+const NAVIGATION_UPDATE_TIMEOUT_MS = 1800;
+
+function fetchWithTimeout(request, timeoutMs = NAVIGATION_UPDATE_TIMEOUT_MS) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  return fetch(request, { signal: controller.signal }).finally(() => clearTimeout(timer));
+}
+
+function refreshHtmlInBackground(request) {
+  fetchWithTimeout(request).then((response) => {
+    if (!response || !response.ok) return;
+    const copy = response.clone();
+    caches.open(CACHE_NAME).then((cache) => {
+      cache.put(request, copy.clone());
+      cache.put("./index.html", copy);
+    });
+  }).catch(() => {});
+}
 
 async function precache() {
   const cache = await caches.open(CACHE_NAME);
@@ -43,14 +61,19 @@ self.addEventListener("fetch", (event) => {
   const wantsHtml = request.mode === "navigate" || (request.headers.get("accept") || "").includes("text/html");
   if (wantsHtml) {
     event.respondWith(
-      fetch(request).then((response) => {
-        const copy = response.clone();
-        caches.open(CACHE_NAME).then((cache) => {
-          cache.put(request, copy.clone());
-          cache.put("./index.html", copy);
+      caches.match(request).then((cached) => {
+        if (cached) {
+          refreshHtmlInBackground(request);
+          return cached;
+        }
+        return caches.match("./index.html").then((index) => {
+          if (index) {
+            refreshHtmlInBackground(request);
+            return index;
+          }
+          return fetchWithTimeout(request, 3000);
         });
-        return response;
-      }).catch(() => caches.match(request).then((cached) => cached || caches.match("./index.html")))
+      })
     );
     return;
   }

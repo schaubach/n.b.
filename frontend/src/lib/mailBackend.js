@@ -5,6 +5,16 @@ const CONFIG_FILE = (process.env.PUBLIC_URL || "") + "/mail-backend-config.json"
 
 const encoder = new TextEncoder();
 const verifiedIdentityCache = new Map();
+const DEFAULT_HEALTH_TIMEOUT_MS = 3500;
+const DEFAULT_IDENTITY_TIMEOUT_MS = 5000;
+const DEFAULT_SEND_TIMEOUT_MS = 12000;
+
+function fetchWithTimeout(url, options = {}, timeoutMs = DEFAULT_SEND_TIMEOUT_MS) {
+  if (typeof AbortController === "undefined") return fetch(url, options);
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  return fetch(url, { ...options, signal: controller.signal }).finally(() => clearTimeout(timer));
+}
 
 function bytesToHex(buffer) {
   return Array.from(new Uint8Array(buffer), (byte) => byte.toString(16).padStart(2, "0")).join("");
@@ -113,7 +123,7 @@ async function verifyBackendIdentity(host, publicKeyPem, preSharedKey) {
   const challenge = crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) + "-" + Math.random().toString(16).slice(2);
   let response;
   try {
-    response = await fetch("https://" + host + ":" + MAIL_BACKEND_PORT + "/api/identity?challenge=" + encodeURIComponent(challenge), { cache: "no-store" });
+    response = await fetchWithTimeout("https://" + host + ":" + MAIL_BACKEND_PORT + "/api/identity?challenge=" + encodeURIComponent(challenge), { cache: "no-store" }, DEFAULT_IDENTITY_TIMEOUT_MS);
   } catch (error) {
     throw new Error("Mail-Backend nicht erreichbar oder Zertifikat nicht vertrauenswürdig.");
   }
@@ -149,13 +159,13 @@ async function verifyBackendIdentity(host, publicKeyPem, preSharedKey) {
   verifiedIdentityCache.set(cacheKey, true);
 }
 
-export async function checkMailBackendHealth(value) {
+export async function checkMailBackendHealth(value, options = {}) {
   const host = normalizeMailBackendHost(value);
   if (!host) {
     return { ok: false, message: "IP-Adresse des Mail-Backends fehlt." };
   }
   try {
-    const response = await fetch("https://" + host + ":" + MAIL_BACKEND_PORT + "/health", { cache: "no-store" });
+    const response = await fetchWithTimeout("https://" + host + ":" + MAIL_BACKEND_PORT + "/health", { cache: "no-store" }, options.timeoutMs || DEFAULT_HEALTH_TIMEOUT_MS);
     if (!response.ok) {
       return { ok: false, message: "Mail-Backend nicht erreichbar oder Zertifikat nicht vertrauenswürdig." };
     }
@@ -169,10 +179,10 @@ export async function checkMailBackendHealth(value) {
   }
 }
 
-async function sendMessagesViaBackend(teacherConfig, messages) {
+async function sendMessagesViaBackend(teacherConfig, messages, options = {}) {
   const host = normalizeMailBackendHost(teacherConfig?.mail_backend_host);
   if (!host) throw new Error("IP-Adresse des Mail-Backends fehlt.");
-  const health = await checkMailBackendHealth(host);
+  const health = await checkMailBackendHealth(host, { timeoutMs: options.healthTimeoutMs });
   if (!health.ok) throw new Error(health.message);
   const { preSharedKey, backendIdentityPublicKey } = await loadMailBackendConfig();
   await verifyBackendIdentity(host, backendIdentityPublicKey, preSharedKey);
@@ -185,7 +195,7 @@ async function sendMessagesViaBackend(teacherConfig, messages) {
 
   let response;
   try {
-    response = await fetch(url, {
+    response = await fetchWithTimeout(url, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -194,7 +204,7 @@ async function sendMessagesViaBackend(teacherConfig, messages) {
         "X-NB-Signature": signature,
       },
       body,
-    });
+    }, options.sendTimeoutMs || DEFAULT_SEND_TIMEOUT_MS);
   } catch (error) {
     throw new Error("Mail-Backend nicht erreichbar oder Zertifikat nicht vertrauenswürdig.");
   }
@@ -211,7 +221,7 @@ export async function sendGradebookMailsViaBackend(teacherConfig, messages) {
   return sendMessagesViaBackend(teacherConfig, messages);
 }
 
-export async function sendBackupMailViaBackend(teacherConfig, attachment) {
+export async function sendBackupMailViaBackend(teacherConfig, attachment, options = {}) {
   const today = new Date().toLocaleDateString("de-DE");
   return sendMessagesViaBackend(teacherConfig, [{
     to: teacherConfig.email,
@@ -219,5 +229,5 @@ export async function sendBackupMailViaBackend(teacherConfig, attachment) {
     text: "Automatisches n.b. Backup vom " + today + ". Die Datei ist ein passwortgeschuetztes ZIP; Passwort ist Ihr IServ-Passwort.",
     html: "<p>Automatisches n.b. Backup vom " + today + ".</p><p>Die Datei ist ein passwortgeschuetztes ZIP; Passwort ist Ihr IServ-Passwort.</p>",
     attachments: [attachment],
-  }]);
+  }], options);
 }
