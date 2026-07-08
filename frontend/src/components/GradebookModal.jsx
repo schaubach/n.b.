@@ -245,14 +245,16 @@ function gradebookPrintHtml(data, rows, columns) {
   }).join("");
 
   return '<!doctype html><html lang="de"><head><meta charset="utf-8" /><title>' + htmlEscape(title) + '</title><style>'
-    + '@page{size:A4 landscape;margin:10mm}*{box-sizing:border-box}body{font-family:Arial,Helvetica,sans-serif;color:#1c1917;margin:0}'
+    + '@page{size:A4 landscape;margin:10mm}*{box-sizing:border-box}body{font-family:Arial,Helvetica,sans-serif;color:#1c1917;margin:0;padding-top:52px}'
+    + '.print-toolbar{position:fixed;left:0;right:0;top:0;z-index:9999;display:flex;justify-content:space-between;gap:10px;align-items:center;padding:8px 10px;background:#fff;border-bottom:2px solid #1c1917;box-shadow:0 2px 0 #1c1917;font-size:12px;font-weight:800}'
+    + '.print-toolbar-actions{display:flex;gap:8px}.print-toolbar button{appearance:none;border:2px solid #1c1917;border-radius:10px;background:#fff;color:#1c1917;padding:8px 12px;font-weight:900}.print-toolbar button.primary{background:#1c1917;color:#fff}'
     + 'header{display:flex;justify-content:space-between;gap:16px;align-items:end;margin-bottom:12px}h1{font-size:20px;margin:0}.meta{color:#78716c;font-size:11px;font-weight:700}'
     + 'table{width:100%;border-collapse:collapse;table-layout:auto;font-size:10px}th,td{border:1px solid #a8a29e;padding:4px;text-align:center;vertical-align:middle;break-inside:avoid}'
     + 'thead th{background:#292524;color:#fff;font-weight:800}thead th.avg{background:#44403c}th.name{text-align:left;white-space:nowrap;background:#f5f5f4;font-weight:800}'
     + '.kind{font-size:9px;text-transform:uppercase;letter-spacing:.04em;opacity:.88}small{display:block;font-size:8px;line-height:1.2;opacity:.82;margin-top:2px}'
     + '.grade-pill{display:inline-flex;min-width:28px;min-height:20px;padding:2px 5px;border:1.5px solid;border-radius:7px;align-items:center;justify-content:center;flex-direction:column;font-weight:900;line-height:1}'
-    + '.grade-detail{font-size:7px;margin-top:2px;opacity:.85;font-weight:800}.empty{color:#a8a29e;font-weight:800}@media print{body{print-color-adjust:exact;-webkit-print-color-adjust:exact}}'
-    + '</style></head><body><header><div><h1>' + htmlEscape(title) + '</h1><div class="meta">' + htmlEscape(rows.length) + ' Lernende · ' + htmlEscape(now) + '</div></div><div class="meta">n.b.</div></header>'
+    + '.grade-detail{font-size:7px;margin-top:2px;opacity:.85;font-weight:800}.empty{color:#a8a29e;font-weight:800}@media print{body{padding-top:0;print-color-adjust:exact;-webkit-print-color-adjust:exact}.print-toolbar{display:none}}'
+    + '</style></head><body><div class="print-toolbar"><div>Notenstand-Druckansicht</div><div class="print-toolbar-actions"><button type="button" onclick="window.print()">Drucken</button><button type="button" class="primary" onclick="window.close();setTimeout(function(){if(!window.closed){history.length>1?history.back():location.replace(\'about:blank\');}},150);">Schließen</button></div></div><header><div><h1>' + htmlEscape(title) + '</h1><div class="meta">' + htmlEscape(rows.length) + ' Lernende · ' + htmlEscape(now) + '</div></div><div class="meta">n.b.</div></header>'
     + '<table><thead><tr><th>Lernende*r</th>' + sessionHeaders + averageHeaders + '</tr></thead><tbody>' + body + '</tbody></table>'
     + '<script>window.addEventListener("load",function(){setTimeout(function(){window.print();},150);});</script></body></html>';
 }
