@@ -128,9 +128,8 @@ async function verifyBackendIdentity(host, publicKeyPem, preSharedKey) {
   if (payload.serverName && normalizeMailBackendHost(payload.serverName) !== host) {
     throw new Error("Backend-Identitaet passt nicht zur konfigurierten Adresse. " + identityDetails(host, payload, fingerprint, preSharedKey));
   }
-  if (payload.publicKeySha256 && payload.publicKeySha256 !== fingerprint) {
-    throw new Error("Backend-Identitaet passt nicht zum Installationspaket. " + identityDetails(host, payload, fingerprint, preSharedKey));
-  }
+  // The backend fingerprint is diagnostic only: PEM wrapping or a missing final
+  // newline changes this text hash even when the cryptographic key is identical.
   const publicKey = await crypto.subtle.importKey(
     "spki",
     publicKeyPemToArrayBuffer(publicKeyPem),
