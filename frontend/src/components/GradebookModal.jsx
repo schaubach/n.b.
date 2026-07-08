@@ -834,12 +834,13 @@ export default function GradebookModal({ classId, className, open, onClose }) {
                       <tbody>
                         {rows.map((row, index) => {
                           const rowBg = index % 2 === 0 ? "bg-white" : "bg-stone-50";
+                          const inactiveTone = row.student.inactive ? "opacity-60 grayscale" : "";
                           return (
-                            <tr key={row.student.id} className={rowBg}>
+                            <tr key={row.student.id} className={`${rowBg} ${inactiveTone}`}>
                               <td className={`sticky left-0 z-30 border-t-2 border-stone-200 px-3 py-2 font-bold text-stone-900 ${rowBg}`}>
                                 <button type="button" onClick={() => prepareMail([row])} disabled={!row.student.email} className="flex max-w-60 items-center gap-2 rounded-xl px-2 py-1.5 text-left hover:bg-stone-100 disabled:cursor-not-allowed disabled:opacity-35" title={row.student.email ? "Notenstandsmail vorbereiten" : "Keine Mailadresse importiert"}>
                                   <Mail className="h-4 w-4 shrink-0 text-stone-500" />
-                                  <span className="truncate">{row.student.first_name} <span className="font-black">{row.student.last_name}</span></span>
+                                  <span className="truncate">{row.student.first_name} <span className="font-black">{row.student.last_name}</span>{row.student.inactive ? <span className="ml-2 rounded-full bg-stone-200 px-2 py-0.5 text-[10px] font-black uppercase text-stone-600">nicht im Import</span> : null}</span>
                                 </button>
                               </td>
                               {row.sessionCells.map((cell) => <SessionGradeCell key={cell.session.id} row={row} cell={cell} systemId={data.grade_system} onEdit={editGrade} />)}

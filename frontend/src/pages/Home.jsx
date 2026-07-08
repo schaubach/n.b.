@@ -230,7 +230,9 @@ export default function Home() {
               <div className="text-stone-900 font-medium">
                 <span className="font-bold">{result.class_name}</span>{" "}
                 {result.new_class ? "neu angelegt" : "aktualisiert"} ·{" "}
-                {result.added_students} neu, {result.updated_students} aktualisiert ·{" "}
+                {result.added_students} neu, {result.updated_students} aktualisiert
+                {result.reactivated_students ? `, ${result.reactivated_students} reaktiviert` : ""}
+                {result.inactive_students ? `, ${result.inactive_students} ausgegraut` : ""} ·{" "}
                 {result.total_students} Schüler*innen gesamt.
               </div>
               <button onClick={(e) => { e.stopPropagation(); setResult(null); }} className="ml-auto text-stone-500">
