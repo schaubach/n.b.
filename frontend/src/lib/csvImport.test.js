@@ -28,3 +28,11 @@ test("builds learner mail addresses from IServ account column", () => {
     email: "bataa@rbbk-do.de",
   }));
 });
+
+test("uses account-based source keys and keeps legacy name keys for reimports", () => {
+  const parsed = parseClassCsv("Gruppe;Nachname;Vorname;Account\nKlasse.MEDO1;Bata;Anas;bataa");
+  const student = parsed.classes[0].students[0];
+
+  expect(student.source_key).toBe("klasse.medo1::account::bataa");
+  expect(student.legacy_source_key).toBe("klasse.medo1::bata::anas");
+});

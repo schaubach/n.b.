@@ -91,6 +91,8 @@ function studentOut(student) {
     order: student.order || 0,
     email: student.email || "",
     photo: student.photo || null,
+    inactive: !!student.inactive,
+    inactive_at: student.inactive_at || null,
   };
 }
 
@@ -252,9 +254,18 @@ function importParsedCsv(state, parsed, gradeSystem, gradeScaleId = "MEDA") {
 
     let added = 0;
     let updated = 0;
+    let reactivated = 0;
+    let inactive = 0;
+    const importedKeys = new Set();
+    const importedStudentIds = new Set();
     for (const incoming of incomingClass.students) {
       const sourceKey = incoming.source_key || incoming.csv_key;
-      let student = state.students.find((item) => item.class_id === cls.id && (item.source_key || item.csv_key) === sourceKey);
+      const legacySourceKey = incoming.legacy_source_key || sourceKey;
+      const candidateKeys = new Set([sourceKey, legacySourceKey].filter(Boolean));
+      let student = state.students.find((item) => item.class_id === cls.id && !importedStudentIds.has(item.id) && candidateKeys.has(item.source_key || item.csv_key));
+      if (!student && incoming.email) {
+        student = state.students.find((item) => item.class_id === cls.id && !importedStudentIds.has(item.id) && !item.inactive && item.email && item.email.toLowerCase() === incoming.email.toLowerCase());
+      }
       if (!student) {
         student = {
           id: id(),
@@ -265,17 +276,34 @@ function importParsedCsv(state, parsed, gradeSystem, gradeScaleId = "MEDA") {
           order: incoming.order,
           email: incoming.email || "",
           photo: null,
+          inactive: false,
+          inactive_at: null,
           created_at: nowIso(),
         };
         state.students.push(student);
         added += 1;
       } else {
+        if (student.inactive) reactivated += 1;
         student.source_key = sourceKey;
         student.first_name = incoming.first_name;
         student.last_name = incoming.last_name;
         student.order = incoming.order;
         student.email = incoming.email || student.email || "";
+        student.inactive = false;
+        student.inactive_at = null;
         updated += 1;
+      }
+      importedKeys.add(student.source_key || sourceKey);
+      importedStudentIds.add(student.id);
+    }
+
+    for (const student of state.students.filter((item) => item.class_id === cls.id)) {
+      if (!importedKeys.has(student.source_key || student.csv_key || "")) {
+        if (!student.inactive) {
+          student.inactive = true;
+          student.inactive_at = nowIso();
+        }
+        inactive += 1;
       }
     }
 
@@ -285,6 +313,8 @@ function importParsedCsv(state, parsed, gradeSystem, gradeScaleId = "MEDA") {
       new_class: isNew,
       added_students: added,
       updated_students: updated,
+      reactivated_students: reactivated,
+      inactive_students: inactive,
       total_students: state.students.filter((student) => student.class_id === cls.id).length,
     });
   }
@@ -514,8 +544,10 @@ async function post(url, body) {
       const totals = results.reduce((acc, item) => ({
         added_students: acc.added_students + item.added_students,
         updated_students: acc.updated_students + item.updated_students,
+        reactivated_students: acc.reactivated_students + (item.reactivated_students || 0),
+        inactive_students: acc.inactive_students + (item.inactive_students || 0),
         total_students: acc.total_students + item.total_students,
-      }), { added_students: 0, updated_students: 0, total_students: 0 });
+      }), { added_students: 0, updated_students: 0, reactivated_students: 0, inactive_students: 0, total_students: 0 });
       return {
         data: {
           class_id: results[0]?.class_id,

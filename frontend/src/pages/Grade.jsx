@@ -236,7 +236,7 @@ export default function Grade() {
               <motion.div
                 key={student.id}
                 data-testid="student-swipe-card"
-                className="pointer-events-auto relative z-40 w-[168px] h-[224px] sm:w-[210px] sm:h-[280px] bg-white border-2 border-stone-900 rounded-3xl shadow-brutal flex flex-col overflow-hidden cursor-grab active:cursor-grabbing"
+                className={`pointer-events-auto relative z-40 w-[168px] h-[224px] sm:w-[210px] sm:h-[280px] bg-white border-2 border-stone-900 rounded-3xl shadow-brutal flex flex-col overflow-hidden cursor-grab active:cursor-grabbing ${student.inactive ? "opacity-60 grayscale" : ""}`}
                 drag
                 dragSnapToOrigin
                 dragElastic={0.7}
@@ -272,7 +272,7 @@ export default function Grade() {
                     {student.last_name}
                   </span>
                   <span className="mt-1.5 inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-stone-200 text-stone-600 font-bold text-[11px] uppercase tracking-wide border-2 border-stone-900/10">
-                    Tippen = überspringen
+                    {student.inactive ? "Nicht mehr im IServ-Import" : "Tippen = überspringen"}
                   </span>
                 </div>
 

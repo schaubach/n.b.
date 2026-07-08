@@ -84,7 +84,7 @@ export default function Summary() {
               initial={{ opacity: 0, x: -8 }} animate={{ opacity: 1, x: 0 }}
               transition={{ delay: i * 0.015 }}
               data-testid={`summary-row-${s.id}`}
-              className={`w-full text-left flex items-center gap-4 px-4 sm:px-6 py-3 hover:bg-stone-50 transition-colors ${i !== 0 ? "border-t-2 border-stone-100" : ""}`}
+              className={`w-full text-left flex items-center gap-4 px-4 sm:px-6 py-3 hover:bg-stone-50 transition-colors ${i !== 0 ? "border-t-2 border-stone-100" : ""} ${s.inactive ? "opacity-60 grayscale" : ""}`}
             >
               <div className="w-11 h-11 rounded-xl border-2 border-stone-900 overflow-hidden bg-stone-200 shrink-0">
                 {s.photo ? (
@@ -100,7 +100,7 @@ export default function Summary() {
                   {s.first_name} <span className="font-black">{s.last_name}</span>
                 </p>
                 <p className="text-xs text-stone-400 font-bold uppercase tracking-wider flex items-center gap-1">
-                  <Pencil className="w-3 h-3" /> Tippen zum Korrigieren
+                  <Pencil className="w-3 h-3" /> {s.inactive ? "Nicht mehr im IServ-Import · weiter korrigierbar" : "Tippen zum Korrigieren"}
                 </p>
               </div>
               <div

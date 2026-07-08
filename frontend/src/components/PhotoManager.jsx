@@ -216,7 +216,7 @@ export default function PhotoManager({ classId, className, open, onClose, onChan
               ) : (
                 <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
                   {students.map((student) => (
-                    <div key={student.id} className="rounded-2xl border-2 border-stone-900 bg-white p-4 shadow-brutal-sm">
+                    <div key={student.id} className={`rounded-2xl border-2 border-stone-900 bg-white p-4 shadow-brutal-sm ${student.inactive ? "opacity-60 grayscale" : ""}`}>
                       <div className="flex items-center gap-3">
                         <div className="w-20 h-20 rounded-2xl border-2 border-stone-900 overflow-hidden bg-stone-200 shrink-0">
                           {student.photo ? (
@@ -230,7 +230,7 @@ export default function PhotoManager({ classId, className, open, onClose, onChan
                         <div className="min-w-0 flex-1">
                           <p className="font-bold text-stone-900 truncate">{student.first_name}</p>
                           <p className="font-heading font-black text-stone-900 truncate">{student.last_name}</p>
-                          <p className="text-xs font-bold text-stone-400 mt-1">{student.photo ? "Foto gespeichert" : "Noch kein Foto"}</p>
+                          <p className="text-xs font-bold text-stone-400 mt-1">{student.inactive ? "Nicht mehr im IServ-Import" : (student.photo ? "Foto gespeichert" : "Noch kein Foto")}</p>
                         </div>
                       </div>
                       <div className="mt-4 flex gap-2">

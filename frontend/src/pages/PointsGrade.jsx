@@ -277,9 +277,10 @@ export default function PointsGrade() {
               {rows.map((row, rowIndex) => {
                 const bg = rowIndex % 2 === 0 ? "bg-white" : "bg-stone-50";
                 const near = shouldHighlightBetter(row, data.session.grade_system);
+                const inactiveTone = row.student.inactive ? "opacity-60 grayscale" : "";
                 return (
-                  <tr key={row.student.id} className={bg}>
-                    <td className={"sticky left-0 z-20 border-t-2 border-stone-200 px-4 py-3 font-bold text-stone-900 " + bg}>{row.student.first_name} <span className="font-black">{row.student.last_name}</span></td>
+                  <tr key={row.student.id} className={`${bg} ${inactiveTone}`}>
+                    <td className={"sticky left-0 z-20 border-t-2 border-stone-200 px-4 py-3 font-bold text-stone-900 " + bg}>{row.student.first_name} <span className="font-black">{row.student.last_name}</span>{row.student.inactive ? <span className="ml-2 rounded-full bg-stone-200 px-2 py-0.5 text-[10px] font-black uppercase text-stone-600">nicht im Import</span> : null}</td>
                     {columns.map((column) => (
                       <td key={column.id} className="border-l border-t-2 border-stone-200 px-2 py-2 text-center">
                         <input type="number" min="0" step="0.5" value={entries[entryKey(row.student.id, column.id)] || ""} onChange={(event) => updateEntry(row.student.id, column.id, event.target.value)} className="w-24 rounded-xl border-2 border-stone-200 px-2 py-2 text-center font-mono font-black outline-none focus:border-stone-900" />

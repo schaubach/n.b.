@@ -90,22 +90,30 @@ export function parseClassCsv(text, fallbackClassName = "Klasse") {
 
   const groups = new Map();
   const keyCounts = new Map();
+  const legacyKeyCounts = new Map();
   rows.slice(1).forEach((row) => {
     const firstName = valueAt(row, firstIndex);
     const lastName = valueAt(row, lastIndex);
     if (!firstName && !lastName) return;
     const group = valueAt(row, groupIndex) || fallbackClassName;
-    const email = valueAt(row, emailIndex) || accountToEmail(valueAt(row, accountIndex));
+    const account = valueAt(row, accountIndex);
+    const explicitEmail = valueAt(row, emailIndex);
+    const email = explicitEmail || accountToEmail(account);
     if (!groups.has(group)) groups.set(group, []);
-    const baseKey = `${normalizeHeader(group)}::${normalizeHeader(lastName)}::${normalizeHeader(firstName)}`;
+    const legacyBaseKey = `${normalizeHeader(group)}::${normalizeHeader(lastName)}::${normalizeHeader(firstName)}`;
+    const stableIdentity = account || explicitEmail;
+    const baseKey = stableIdentity ? `${normalizeHeader(group)}::account::${normalizeHeader(stableIdentity)}` : legacyBaseKey;
     const count = (keyCounts.get(baseKey) || 0) + 1;
+    const legacyCount = (legacyKeyCounts.get(legacyBaseKey) || 0) + 1;
     keyCounts.set(baseKey, count);
+    legacyKeyCounts.set(legacyBaseKey, legacyCount);
     groups.get(group).push({
       first_name: firstName,
       last_name: lastName,
       order: groups.get(group).length,
       email,
       source_key: count === 1 ? baseKey : `${baseKey}::${count}`,
+      legacy_source_key: legacyCount === 1 ? legacyBaseKey : `${legacyBaseKey}::${legacyCount}`,
     });
   });
 
