@@ -259,7 +259,7 @@ export default function TeacherConfigModal({ open, onClose }) {
                   <label className={"flex items-center justify-center gap-2 rounded-2xl border-2 border-stone-900 bg-white px-5 py-3 font-heading font-extrabold text-stone-900 shadow-brutal-sm " + (backupBusy ? "pointer-events-none opacity-50" : "cursor-pointer")}>
                     <Upload className="h-5 w-5" />
                     Import Backup
-                    <input type="file" accept=".enc,.nbbackup,.zip" onChange={importBackup} disabled={backupBusy} className="hidden" />
+                    <input type="file" onChange={importBackup} disabled={backupBusy} className="hidden" />
                   </label>
                 </div>
 
