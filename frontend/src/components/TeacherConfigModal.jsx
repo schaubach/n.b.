@@ -189,7 +189,7 @@ export default function TeacherConfigModal({ open, onClose }) {
               <X className="h-5 w-5" />
             </button>
             <div className="flex items-center gap-3">
-              <div className="flex h-12 w-12 items-center justify-center rounded-2xl border-2 border-stone-900 bg-stone-900 text-white shadow-brutal-sm">
+              <div className="flex h-12 w-12 items-center justify-center rounded-2xl border-2 border-stone-900 bg-white text-stone-900 shadow-brutal-sm">
                 <Mail className="h-5 w-5" />
                 <UserRound className="-ml-1 h-5 w-5" />
               </div>

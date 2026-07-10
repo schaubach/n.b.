@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Users, Trash2, CheckCircle2,
-  Loader2, FileUp, X, Plus, Camera, Table2, Mail, UserRound, Percent,
+  Loader2, FileUp, X, Plus, Camera, Table2, Mail, UserRound, Percent, Download,
 } from "lucide-react";
 import api from "../lib/api";
 import { GRADE_SYSTEMS } from "../lib/grades";
@@ -14,6 +14,7 @@ import PhotoManager from "../components/PhotoManager";
 import GradebookModal from "../components/GradebookModal";
 import TeacherConfigModal from "../components/TeacherConfigModal";
 import GradeScaleManager from "../components/GradeScaleManager";
+import { sendBackupToTeacher } from "../lib/backup";
 
 export default function Home() {
   const navigate = useNavigate();
@@ -29,6 +30,8 @@ export default function Home() {
   const [teacherConfigOpen, setTeacherConfigOpen] = useState(false);
   const [gradeScaleOpen, setGradeScaleOpen] = useState(false);
   const [gradeScales, setGradeScales] = useState([]);
+  const [backupBusy, setBackupBusy] = useState(false);
+  const [backupMessage, setBackupMessage] = useState("");
   const [importOptions, setImportOptions] = useState(null);
   const fileRef = useRef(null);
 
@@ -92,6 +95,20 @@ export default function Home() {
       setError(e?.response?.data?.detail || "Datei konnte nicht gelesen werden.");
     } finally {
       if (fileRef.current) fileRef.current.value = "";
+    }
+  };
+
+  const runBackup = async () => {
+    setBackupBusy(true);
+    setError("");
+    setBackupMessage("");
+    try {
+      await sendBackupToTeacher({ download: true });
+      setBackupMessage("Backup wurde erstellt, heruntergeladen und an die Lehrendenadresse gesendet.");
+    } catch (err) {
+      setError(err?.message || err?.response?.data?.detail || "Backup konnte nicht erstellt werden.");
+    } finally {
+      setBackupBusy(false);
     }
   };
 
@@ -177,6 +194,17 @@ export default function Home() {
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
             <button
               type="button"
+              onClick={runBackup}
+              disabled={backupBusy}
+              data-testid="home-backup-button"
+              className="inline-flex items-center justify-center gap-2 rounded-2xl border-2 border-stone-900 bg-white px-4 py-3 font-heading font-extrabold text-stone-900 shadow-brutal-sm transition-all active:translate-y-0.5 active:shadow-none disabled:opacity-50"
+              aria-label="Backup erstellen"
+            >
+              {backupBusy ? <Loader2 className="w-5 h-5 animate-spin" /> : <Download className="w-5 h-5" />}
+              <span className="hidden sm:inline">Backup</span>
+            </button>
+            <button
+              type="button"
               onClick={() => setGradeScaleOpen(true)}
               data-testid="grade-scale-button"
               className="inline-flex items-center justify-center gap-2 rounded-2xl border-2 border-stone-900 bg-amber-300 px-4 py-3 font-heading font-extrabold text-stone-900 shadow-brutal-sm transition-all active:translate-y-0.5 active:shadow-none"
@@ -236,6 +264,18 @@ export default function Home() {
                 {result.total_students} Schüler*innen gesamt.
               </div>
               <button onClick={(e) => { e.stopPropagation(); setResult(null); }} className="ml-auto text-stone-500">
+                <X className="w-5 h-5" />
+              </button>
+            </motion.div>
+          )}
+          {backupMessage && (
+            <motion.div
+              initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
+              className="mt-4 flex items-start gap-3 rounded-2xl border-2 border-emerald-700 bg-emerald-100 p-4 text-emerald-950 font-bold shadow-brutal-sm"
+            >
+              <CheckCircle2 className="w-6 h-6 text-emerald-700 shrink-0 mt-0.5" />
+              <span>{backupMessage}</span>
+              <button onClick={(e) => { e.stopPropagation(); setBackupMessage(""); }} className="ml-auto text-emerald-700">
                 <X className="w-5 h-5" />
               </button>
             </motion.div>
@@ -347,13 +387,13 @@ function ClassCard({ c, onStart, onDelete, onDeleteGrades, onPhotos, onGradebook
       data-testid={`class-card-${c.id}`}
       className="rounded-3xl border-2 border-stone-900 bg-white p-6 shadow-brutal-sm flex flex-col"
     >
-      <div className="flex items-start justify-between gap-3">
-        <h3 className="font-heading text-2xl font-black text-stone-900 leading-tight min-w-0">{c.name}</h3>
-        <div className="flex items-center gap-2 shrink-0">
+      <div className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-3">
+        <h3 className="min-w-0 break-words font-heading text-2xl font-black leading-tight text-stone-900 [overflow-wrap:anywhere]">{c.name}</h3>
+        <div className="flex shrink-0 items-center gap-2 self-start">
           <button
             onClick={onPhotos}
             data-testid={`photos-class-${c.id}`}
-            className="text-stone-300 hover:text-emerald-600 transition-colors"
+            className="flex h-9 w-9 items-center justify-center rounded-xl border-2 border-stone-200 bg-white text-stone-400 transition-colors hover:border-emerald-300 hover:text-emerald-600"
             aria-label="Fotos zuordnen"
           >
             <Camera className="w-5 h-5" />
@@ -361,7 +401,7 @@ function ClassCard({ c, onStart, onDelete, onDeleteGrades, onPhotos, onGradebook
           <button
             onClick={onDelete}
             data-testid={`delete-class-${c.id}`}
-            className="text-stone-300 hover:text-rose-600 transition-colors"
+            className="flex h-9 w-9 items-center justify-center rounded-xl border-2 border-stone-200 bg-white text-stone-400 transition-colors hover:border-rose-300 hover:text-rose-600"
             aria-label="Klasse löschen"
           >
             <Trash2 className="w-5 h-5" />
@@ -369,7 +409,7 @@ function ClassCard({ c, onStart, onDelete, onDeleteGrades, onPhotos, onGradebook
         </div>
       </div>
 
-      <div className="mt-2 flex items-center gap-3 text-stone-500 font-medium text-sm">
+      <div className="mt-2 flex min-w-0 flex-wrap items-center gap-2 text-sm font-medium text-stone-500">
         <span className="flex items-center gap-1.5"><Users className="w-4 h-4" /> {c.student_count}</span>
         <span className="flex items-center gap-1.5"><Camera className="w-4 h-4" /> {c.photo_count || 0}</span>
         <span className="px-2 py-0.5 rounded-full bg-stone-100 text-stone-600 font-bold text-xs" data-testid={`class-system-${c.id}`}>

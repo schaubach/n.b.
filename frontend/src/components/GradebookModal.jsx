@@ -4,7 +4,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import { AlertTriangle, CheckCircle2, ChevronLeft, ChevronRight, Download, FileSpreadsheet, Loader2, Mail, Percent, Printer, Send, X } from "lucide-react";
 import api from "../lib/api";
 import { gradeColorClasses, gradeTier } from "../lib/grades";
-import { gradeOptions, overrideOptions } from "../lib/gradebook";
+import { gradeOptions, gradeToNumber, overrideOptions } from "../lib/gradebook";
 import {
   averageColumns,
   averageWeights,
@@ -94,6 +94,27 @@ function studentName(student) {
   return String((student?.first_name || "") + " " + (student?.last_name || "")).trim();
 }
 
+
+function mailHeaderStyle(tone) {
+  if (tone === "ka") return "border:1px solid #1c1917;background:#0284c7;color:#fff;padding:6px;text-align:center";
+  if (tone === "sl") return "border:1px solid #1c1917;background:#059669;color:#fff;padding:6px;text-align:center";
+  if (tone === "final") return "border:1px solid #1c1917;background:#292524;color:#fff;padding:6px;text-align:center";
+  return "border:1px solid #1c1917;background:#292524;color:#fff;padding:6px;text-align:center";
+}
+
+function formatCalculatedDetail(cell, systemId) {
+  if (!cell.calculated_value) return "";
+  if (shouldUseWholeExamGrades(cell.session, systemId) && cell.session.points_mode) {
+    const numeric = gradeToNumber(cell.calculated_value, systemId);
+    if (typeof numeric === "number") return numeric.toFixed(1).replace(".", ",");
+  }
+  if (cell.calculated_value === cell.value) return "";
+  if (shouldUseWholeExamGrades(cell.session, systemId)) {
+    const numeric = gradeToNumber(cell.calculated_value, systemId);
+    if (typeof numeric === "number") return numeric.toFixed(1).replace(".", ",");
+  }
+  return cell.calculated_value;
+}
 function mailGrade(value, systemId, detail = "") {
   if (!value) return '<span style="color:#a8a29e;font-weight:800">-</span>';
   const color = PRINT_COLORS[gradeTier(value, systemId)] || { bg: "#f5f5f4", fg: "#78716c", border: "#d6d3d1" };
@@ -103,9 +124,9 @@ function mailGrade(value, systemId, detail = "") {
 
 function gradebookMailTableHtml(data, row, columns) {
   const examCells = (row.sessionCells || []).filter((cell) => cell.session.category === "klausur");
-  const examHeaders = examCells.map((cell) => '<th style="border:1px solid #a8a29e;background:#0369a1;color:#fff;padding:6px;text-align:center"><div>' + htmlEscape(examTerms(data.grade_system).short) + '</div><small>' + htmlEscape(cell.session.title) + '<br>' + htmlEscape(cell.session.date) + ' · x' + htmlEscape(cell.session.weight ?? 1) + '</small></th>').join("");
-  const examValues = examCells.map((cell) => '<td style="border:1px solid #d6d3d1;padding:6px;text-align:center">' + mailGrade(cell.value, data.grade_system) + '</td>').join("");
-  const averageHeaders = columns.map((column) => '<th style="border:1px solid #a8a29e;background:#44403c;color:#fff;padding:6px;text-align:center"><div>' + htmlEscape(column.label) + '</div><small>' + htmlEscape(column.hint) + '</small></th>').join("");
+  const examHeaders = examCells.map((cell) => '<th style="' + mailHeaderStyle("ka") + '"><div>' + htmlEscape(examTerms(data.grade_system).short) + '</div><small>' + htmlEscape(cell.session.title) + '<br>' + htmlEscape(cell.session.date) + ' · x' + htmlEscape(cell.session.weight ?? 1) + '</small></th>').join("");
+  const examValues = examCells.map((cell) => '<td style="border:1px solid #d6d3d1;padding:6px;text-align:center">' + mailGrade(cell.value, data.grade_system, formatCalculatedDetail(cell, data.grade_system)) + '</td>').join("");
+  const averageHeaders = columns.map((column) => '<th style="' + mailHeaderStyle(column.tone) + '"><div>' + htmlEscape(column.label) + '</div><small>' + htmlEscape(column.hint) + '</small></th>').join("");
   const averageCells = columns.map((column) => {
     const shown = displayFor(row, column.key, data.grade_system);
     return '<td style="border:1px solid #d6d3d1;padding:6px;text-align:center">' + mailGrade(shown, data.grade_system, exactFor(row, column.key)) + '</td>';
@@ -272,7 +293,8 @@ function AverageCell({ row, column, tone, systemId, onEdit }) {
 
 function SessionGradeCell({ row, cell, systemId, onEdit }) {
   const toneBg = cell.session.category === "klausur" ? "bg-sky-50" : "bg-emerald-50";
-  const showCalculated = cell.calculated_value && (cell.manual_override || cell.calculated_value !== cell.value);
+  const calculatedDetail = formatCalculatedDetail(cell, systemId);
+  const showCalculated = calculatedDetail && (cell.session.points_mode || cell.manual_override || cell.calculated_value !== cell.value);
 
   return (
     <td className={`border-l border-t-2 border-stone-200 px-2 py-2 text-center align-middle ${toneBg}`}>
@@ -284,7 +306,7 @@ function SessionGradeCell({ row, cell, systemId, onEdit }) {
           title="Note anpassen"
         >
           <span>{cell.value}</span>
-          {showCalculated && <span className="mt-0.5 text-[10px] font-black opacity-80">ber. {cell.calculated_value}</span>}
+          {showCalculated && <span className="mt-0.5 text-[10px] font-black opacity-80">ber. {calculatedDetail}</span>}
         </button>
       ) : (
         <button
@@ -393,7 +415,7 @@ function HeaderEditor({ editor, onSaveSession, onDeleteSession, onSaveAverageWei
             {isSession && (
               <label className="block">
                 <span className="text-sm font-bold text-stone-700">Datum</span>
-                <input type="date" value={date} onChange={(event) => setDate(event.target.value)} className="mt-1 w-full rounded-xl border-2 border-stone-300 px-4 py-3 font-bold text-stone-900 outline-none focus:border-stone-900" />
+                <input type="date" value={date} onChange={(event) => setDate(event.target.value)} className="mt-1 block min-h-12 w-full appearance-none rounded-xl border-2 border-stone-300 px-4 py-3 leading-none font-bold text-stone-900 outline-none focus:border-stone-900" />
               </label>
             )}
             {canChangeSlType && (
@@ -641,14 +663,14 @@ export default function GradebookModal({ classId, className, open, onClose }) {
                             return (
                               <th key={session.id} className={`sticky top-0 z-40 min-w-32 border-b-2 border-l border-stone-900 text-center align-bottom text-stone-900 ${isKa ? "bg-sky-400" : "bg-emerald-400"}`}>
                                 <div className="relative h-full">
-                                  <button type="button" onClick={() => setHeaderEditor({ kind: "sessionHeader", session })} className="block h-full w-full px-3 py-2 text-stone-900 hover:bg-white/25" title="Spalte bearbeiten">
+                                  <button type="button" onClick={() => setHeaderEditor({ kind: "sessionHeader", session })} className="block h-full w-full px-3 py-2 pr-12 text-stone-900 hover:bg-white/25" title="Spalte bearbeiten">
                                     <span className="inline-flex rounded-full border border-stone-900/20 bg-white/70 px-2 py-0.5 text-[10px] font-black uppercase tracking-wide text-stone-900">{kind}{session.points_mode ? " · P→N" : ""}</span>
                                     <div className="mt-1 font-bold leading-tight">{session.title}</div>
                                     <div className="mt-0.5 text-xs font-bold text-stone-700">{session.date} · x{session.weight ?? 1}</div>
                                   </button>
                                   {session.points_mode && (
-                                    <button type="button" onClick={(event) => { event.stopPropagation(); navigate(`/points/${session.id}`); }} className="absolute right-1.5 top-1.5 rounded-lg border-2 border-stone-900 bg-white p-1 text-stone-900 shadow-brutal-sm hover:bg-amber-100" title="Punkte -> Noten öffnen" aria-label="Punkte -> Noten öffnen">
-                                      <Percent className="h-3.5 w-3.5" />
+                                    <button type="button" onClick={(event) => { event.stopPropagation(); navigate(`/points/${session.id}`); }} className="absolute right-2 top-2 rounded-xl border-2 border-stone-900 bg-white p-1.5 text-stone-900 shadow-brutal-sm hover:bg-amber-100" title="Punkte -> Noten öffnen" aria-label="Punkte -> Noten öffnen">
+                                      <Percent className="h-4 w-4" />
                                     </button>
                                   )}
                                 </div>
