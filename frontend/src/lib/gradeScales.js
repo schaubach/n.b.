@@ -172,7 +172,8 @@ export function evaluatePercent(percent, scale, gradeSystem = "grades_1_6", sess
   const rowIndex = rows.findIndex((row) => percent >= Number(row.minPercent));
   const index = rowIndex >= 0 ? rowIndex : rows.length - 1;
   const row = rows[index];
-  return { value: normalizeExamGradeValue(scaleValueForSystem(row, gradeSystem), session, gradeSystem), row, rowIndex: index, percent };
+  const rawValue = scaleValueForSystem(row, gradeSystem);
+  return { value: normalizeExamGradeValue(rawValue, session, gradeSystem), rawValue, row, rowIndex: index, percent };
 }
 
 export function pointsNeededForBetter(achieved, maxPoints, scale, rowIndex, gradeSystem = "grades_1_6", session = null) {
