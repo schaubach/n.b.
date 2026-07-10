@@ -1,4 +1,5 @@
 import api from "./api";
+import { gradebookCsvFilename, gradebookCsvText } from "./gradebookExport";
 import { checkMailBackendHealth, sendBackupMailViaBackend } from "./mailBackend";
 
 const BACKUP_VERSION = 1;
@@ -184,6 +185,106 @@ const bytesToDataUrl = (bytes, mime = "image/jpeg") => "data:" + mime + ";base64
 const clone = (value) => JSON.parse(JSON.stringify(value));
 const stateKeys = () => ["classes", "students", "sessions", "grades", "gradebook_overrides", "gradebook_weights", "grade_scales", "hidden_grade_scales", "point_sessions", "teacher_config", "backup_meta"];
 
+
+function compareStudents(a, b) {
+  const last = String(a.last_name || "").localeCompare(String(b.last_name || ""), "de", { sensitivity: "base" });
+  if (last !== 0) return last;
+  const first = String(a.first_name || "").localeCompare(String(b.first_name || ""), "de", { sensitivity: "base" });
+  if (first !== 0) return first;
+  return (a.order || 0) - (b.order || 0);
+}
+
+function studentOut(student) {
+  return {
+    id: student.id,
+    class_id: student.class_id,
+    source_key: student.source_key || student.csv_key || "",
+    first_name: student.first_name || "",
+    last_name: student.last_name || "",
+    order: student.order || 0,
+    email: student.email || "",
+    photo: student.photo || null,
+    inactive: !!student.inactive,
+    inactive_at: student.inactive_at || null,
+  };
+}
+
+function gradebookDataFromState(state, cls) {
+  const students = (state.students || [])
+    .filter((student) => student.class_id === cls.id)
+    .sort(compareStudents)
+    .map(studentOut);
+  const sessions = (state.sessions || [])
+    .filter((session) => session.class_id === cls.id)
+    .sort((a, b) => String(a.created_at || "").localeCompare(String(b.created_at || "")))
+    .map((session) => ({
+      id: session.id,
+      class_id: session.class_id,
+      title: session.title,
+      date: session.date,
+      weight: session.weight ?? 1,
+      category: session.category || "sonstige",
+      sl_type: session.category === "klausur" ? null : (session.sl_type === "written" ? "written" : "oral"),
+      points_mode: !!session.points_mode,
+      grade_scale_id: session.grade_scale_id || cls.grade_scale_id || "MEDA",
+      created_at: session.created_at,
+    }));
+  const sessionIds = new Set(sessions.map((session) => session.id));
+  return {
+    class_id: cls.id,
+    class_name: cls.name || "",
+    grade_system: cls.grade_system || "grades_1_6",
+    grade_scale_id: cls.grade_scale_id || "MEDA",
+    grade_scales: state.grade_scales || [],
+    students,
+    sessions,
+    grades: (state.grades || [])
+      .filter((grade) => sessionIds.has(grade.session_id))
+      .map((grade) => ({ session_id: grade.session_id, student_id: grade.student_id, value: grade.value, calculated_value: grade.calculated_value || "", manual_override: !!grade.manual_override })),
+    average_overrides: (state.gradebook_overrides || [])
+      .filter((override) => override.class_id === cls.id)
+      .map((override) => ({ student_id: override.student_id, column: override.column, value: override.value })),
+    average_weights: (state.gradebook_weights || [])
+      .filter((item) => item.class_id === cls.id)
+      .map((item) => ({ column: item.column, weight: item.weight })),
+  };
+}
+
+function safeZipPathPart(value, fallback) {
+  const cleaned = String(value || fallback || "Datei")
+    .trim()
+    .replace(/[\\/:*?"<>|]+/g, "_")
+    .replace(/\s+/g, "_")
+    .replace(/_+/g, "_")
+    .replace(/^_+|_+$/g, "");
+  return cleaned || fallback || "Datei";
+}
+
+function uniqueZipName(name, used) {
+  if (!used.has(name)) {
+    used.add(name);
+    return name;
+  }
+  const dot = name.toLowerCase().endsWith(".csv") ? name.length - 4 : name.length;
+  const base = name.slice(0, dot);
+  const ext = name.slice(dot);
+  let index = 2;
+  while (used.has(`${base}_${index}${ext}`)) index += 1;
+  const next = `${base}_${index}${ext}`;
+  used.add(next);
+  return next;
+}
+
+function addGradebookCsvFiles(files, state) {
+  const usedNames = new Set();
+  (state.classes || []).forEach((cls, index) => {
+    const data = gradebookDataFromState(state, cls);
+    const rawName = gradebookCsvFilename(data) || `Klasse_${index + 1}_Notenstand.csv`;
+    const filename = uniqueZipName(safeZipPathPart(rawName, `Klasse_${index + 1}_Notenstand.csv`), usedNames);
+    files.push({ name: `notenstand/${filename}`, data: gradebookCsvText(data) });
+  });
+}
+
 function buildFilesFromState(rawState) {
   const state = clone(rawState);
   const files = [];
@@ -199,6 +300,7 @@ function buildFilesFromState(rawState) {
     student.photo = "";
     student.photo_file = name;
   }
+  addGradebookCsvFiles(files, state);
   files.push({ name: "data/state.csv", data: "\ufeff" + [["key", "json"], ...stateKeys().map((key) => [key, JSON.stringify(state[key] ?? (key === "teacher_config" || key === "backup_meta" ? {} : []))])].map(csvLine).join("\n") });
   files.push({ name: "data/images.csv", data: "\ufeff" + [["student_id", "file", "mime"], ...imageManifest.map((item) => [item.student_id, item.file, item.mime])].map(csvLine).join("\n") });
   files.push({ name: "manifest.json", data: JSON.stringify({ app: "n.b.", type: "encrypted-backup-source", version: BACKUP_VERSION, created_at: new Date().toISOString() }, null, 2) });
@@ -298,4 +400,4 @@ export async function importEncryptedBackup(file) {
   return { ok: true };
 }
 
-export const __backupTest = { makeZip, unzipStored, crc32 };
+export const __backupTest = { makeZip, unzipStored, crc32, buildFilesFromState };
