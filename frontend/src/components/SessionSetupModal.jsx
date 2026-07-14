@@ -168,7 +168,7 @@ export default function SessionSetupModal({ open, className, category = "sonstig
                     value={date}
                     onChange={(e) => setDate(e.target.value)}
                     data-testid="setup-date-input"
-                    className="mt-1 block min-h-12 w-full appearance-none rounded-xl border-2 border-stone-300 px-4 py-3 leading-none font-medium text-stone-900 outline-none focus:border-stone-900"
+                    className="mt-1 w-full px-4 py-3 rounded-xl border-2 border-stone-300 focus:border-stone-900 outline-none font-medium text-stone-900"
                   />
                 </label>
               </div>

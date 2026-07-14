@@ -156,15 +156,16 @@ function pointSummary(state, session, studentId) {
   const record = (state.point_sessions || []).find((item) => item.session_id === session.id);
   if (!record) return null;
   const max = (record.columns || []).reduce((sum, column) => sum + (Number(column.max_points) || 0), 0);
-  const studentEntries = (record.entries || []).filter((entry) => entry.student_id === studentId);
-  const achieved = studentEntries.reduce((sum, entry) => sum + (Number(entry.points) || 0), 0);
-  if (!studentEntries.length || !(max > 0)) return { achieved: studentEntries.length ? achieved : null, max, percent: null, calculated_value: "" };
+  const achieved = (record.entries || [])
+    .filter((entry) => entry.student_id === studentId)
+    .reduce((sum, entry) => sum + (Number(entry.points) || 0), 0);
+  if (!(max > 0)) return { achieved, max, percent: null, calculated_value: "" };
   const scales = gradeScalesForState(state);
   const scale = session.point_scale_override || findGradeScale(scales, session.grade_scale_id);
   const percent = achieved / max * 100;
   const evaluated = evaluatePercent(percent, scale, session.grade_system, session);
   const better = pointsNeededForBetter(achieved, max, scale, evaluated.rowIndex, session.grade_system, session);
-  return { achieved, max, percent, calculated_value: evaluated.value, calculated_raw_value: evaluated.rawValue || evaluated.value, better };
+  return { achieved, max, percent, calculated_value: evaluated.value, better };
 }
 
 function recalculatePointGrades(state, session) {
@@ -172,19 +173,18 @@ function recalculatePointGrades(state, session) {
   const students = state.students.filter((student) => student.class_id === session.class_id);
   for (const student of students) {
     const summary = pointSummary(state, session, student.id);
-    const value = summary?.calculated_value || "";
-    const calculated = summary?.calculated_raw_value || value;
+    const calculated = summary?.calculated_value || "";
     let grade = state.grades.find((item) => item.session_id === session.id && item.student_id === student.id);
-    if (!value) {
+    if (!calculated) {
       if (grade) state.grades = state.grades.filter((item) => item !== grade);
       continue;
     }
     if (!grade) {
-      grade = { id: id(), session_id: session.id, student_id: student.id, value, calculated_value: calculated, manual_override: false, updated_at: nowIso() };
+      grade = { id: id(), session_id: session.id, student_id: student.id, value: calculated, calculated_value: calculated, manual_override: false, updated_at: nowIso() };
       state.grades.push(grade);
     } else {
       grade.calculated_value = calculated;
-      if (!grade.manual_override) grade.value = value;
+      if (!grade.manual_override) grade.value = calculated;
       grade.updated_at = nowIso();
     }
   }

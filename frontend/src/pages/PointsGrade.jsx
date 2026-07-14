@@ -97,21 +97,17 @@ export default function PointsGrade() {
 
   const rows = useMemo(() => {
     return (data?.students || []).map((student) => {
-      const hasEntries = columns.some((column) => String(entries[entryKey(student.id, column.id)] ?? "").trim() !== "");
-      const achieved = hasEntries ? columns.reduce((sum, column) => sum + numberValue(entries[entryKey(student.id, column.id)]), 0) : null;
-      const percent = hasEntries && maxPoints > 0 ? achieved / maxPoints * 100 : null;
+      const achieved = columns.reduce((sum, column) => sum + numberValue(entries[entryKey(student.id, column.id)]), 0);
+      const percent = maxPoints > 0 ? achieved / maxPoints * 100 : null;
       const evaluated = evaluatePercent(percent, activeScale, data?.session?.grade_system, data?.session);
-      const better = hasEntries ? pointsNeededForBetter(achieved, maxPoints, activeScale, evaluated.rowIndex, data?.session?.grade_system, data?.session) : null;
-      return { student, achieved, max: maxPoints, percent, grade: evaluated.rawValue || evaluated.value, summaryValue: evaluated.value, better, hasEntries };
+      const better = pointsNeededForBetter(achieved, maxPoints, activeScale, evaluated.rowIndex, data?.session?.grade_system, data?.session);
+      return { student, achieved, max: maxPoints, percent, grade: evaluated.value, better };
     });
   }, [columns, entries, data?.students, data?.session?.grade_system, activeScale, maxPoints]);
 
   const scaleSummary = useMemo(() => {
     const counts = new Map();
-    rows.forEach((row) => {
-      const countValue = row.summaryValue || row.grade;
-      if (countValue) counts.set(String(countValue), (counts.get(String(countValue)) || 0) + 1);
-    });
+    rows.forEach((row) => { if (row.grade) counts.set(String(row.grade), (counts.get(String(row.grade)) || 0) + 1); });
     const items = (activeScale?.rows || [])
       .slice()
       .sort((a, b) => Number(b.minPercent) - Number(a.minPercent))
@@ -124,7 +120,7 @@ export default function PointsGrade() {
     items.forEach((item) => {
       const current = grouped.get(item.value);
       if (!current) grouped.set(item.value, { ...item });
-      else grouped.set(item.value, { ...current, minPercent: Math.max(Number(current.minPercent) || 0, Number(item.minPercent) || 0), minPoints: Math.max(current.minPoints, item.minPoints) });
+      else grouped.set(item.value, { ...current, minPercent: Math.min(Number(current.minPercent) || 0, Number(item.minPercent) || 0), minPoints: Math.min(current.minPoints, item.minPoints) });
     });
     return Array.from(grouped.values()).sort((a, b) => Number(b.minPercent) - Number(a.minPercent));
   }, [activeScale, data?.session, data?.session?.grade_system, maxPoints, rows]);
@@ -293,7 +289,7 @@ export default function PointsGrade() {
                     <td className="border-l-2 border-t-2 border-stone-200 px-3 py-2 text-center">
                       <div className="flex items-center justify-center gap-2">
                         {row.grade ? <span className={"rounded-xl border-2 px-3 py-1 font-mono text-xl font-black " + gradeColorClasses(row.grade, data.session.grade_system)}>{row.grade}</span> : <span className="font-bold text-stone-300">-</span>}
-                        <span className="font-mono text-sm font-bold text-stone-600">{row.hasEntries ? `${formatNumber(row.achieved)} / ${formatNumber(row.max)} · ${formatNumber(row.percent)}%` : "keine Punkte"}</span>
+                        <span className="font-mono text-sm font-bold text-stone-600">{formatNumber(row.achieved)} / {formatNumber(row.max)} · {formatNumber(row.percent)}%</span>
                       </div>
                       {row.better && <div className={"mt-1 inline-flex rounded-full px-2 py-0.5 text-xs font-black " + (near ? "bg-amber-300 text-stone-900 ring-2 ring-stone-900" : "bg-stone-100 text-stone-600")}>{formatNumber(row.better.points)} P. bis besser</div>}
                     </td>
