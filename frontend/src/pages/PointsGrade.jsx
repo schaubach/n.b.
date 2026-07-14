@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { ArrowLeft, Loader2, Plus, Save, Trash2 } from "lucide-react";
+import { ArrowLeft, CheckCircle2, Loader2, Plus, Trash2 } from "lucide-react";
 import api from "../lib/api";
 import { gradeColorClasses, gradeTier } from "../lib/grades";
 import { cloneScale, evaluatePercent, findGradeScale, normalizeExamGradeValue, pointsNeededForBetter, scaleValueForSystem, shouldUseWholeExamGrades } from "../lib/gradeScales";
@@ -64,7 +64,6 @@ export default function PointsGrade() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
-  const [savedTick, setSavedTick] = useState(0);
   const dirtyRef = useRef(false);
 
   const markDirty = () => { dirtyRef.current = true; };
@@ -131,6 +130,7 @@ export default function PointsGrade() {
 
   const scaleChanged = useMemo(() => scaleSignature(activeScale) !== scaleSignature(selectedScale), [activeScale, selectedScale]);
   const showScalePoints = data?.session?.grade_system === "points_0_15";
+  const saveStatusLabel = saving ? "speichere" : "gespeichert";
 
   const save = async () => {
     if (!data || !dirtyRef.current) return;
@@ -149,7 +149,6 @@ export default function PointsGrade() {
         entries: payloadEntries,
       });
       dirtyRef.current = false;
-      setSavedTick((tick) => tick + 1);
     } catch (err) {
       setError("Punkte konnten nicht gespeichert werden.");
     } finally {
@@ -236,9 +235,10 @@ export default function PointsGrade() {
           <p className="text-xs font-bold uppercase tracking-[0.18em] text-stone-400">Punkte -> Noten</p>
           <h1 className="truncate font-heading text-xl font-black text-stone-900">{data.session.class_name} · {data.session.title}</h1>
         </div>
-        <button onClick={save} disabled={saving || !dirtyRef.current} className="flex items-center gap-2 rounded-xl border-2 border-stone-900 bg-stone-900 px-4 py-2.5 font-heading font-extrabold text-white disabled:opacity-40">
-          {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />} Speichern
-        </button>
+        <div aria-live="polite" className={"flex items-center gap-2 rounded-xl border-2 px-4 py-2.5 font-heading font-extrabold shadow-brutal-sm " + (saving ? "border-amber-400 bg-amber-100 text-amber-900" : "border-emerald-500 bg-emerald-100 text-emerald-900")}>
+          {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
+          <span>{saveStatusLabel}</span>
+        </div>
       </header>
 
       <div className="flex shrink-0 flex-col gap-3 border-b-2 border-stone-200 bg-white px-4 py-3 sm:flex-row sm:items-center sm:px-6">
@@ -252,7 +252,7 @@ export default function PointsGrade() {
           <Plus className="h-4 w-4" /> Spalte hinzufügen
         </button>
         <div className="text-sm font-bold text-stone-500">
-          {saving ? "Speichert ..." : savedTick ? "Gespeichert" : "Änderungen werden automatisch gespeichert"}
+          {saveStatusLabel}
           {scaleChanged && <span className="ml-2 font-black text-rose-700">Notenskala lokal angepasst</span>}
         </div>
       </div>
