@@ -240,7 +240,7 @@ export default function Home() {
               className="inline-flex items-center justify-center gap-2 rounded-2xl border-2 border-stone-900 bg-stone-900 px-4 py-3 font-heading font-extrabold text-white shadow-brutal-sm transition-all active:translate-y-0.5 active:shadow-none disabled:opacity-60"
             >
               {importing ? <Loader2 className="w-5 h-5 animate-spin" /> : <Plus className="w-5 h-5" />}
-              <span>Klasse aus IServ importieren</span>
+              <span>IServ Gruppenlisten</span>
             </button>
           </div>
         </div>
