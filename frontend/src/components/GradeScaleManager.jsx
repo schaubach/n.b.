@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { Download, FilePlus2, Percent, Plus, Trash2, X } from "lucide-react";
+import { CheckCircle2, Download, FilePlus2, Loader2, Percent, Plus, Trash2, X } from "lucide-react";
 import api from "../lib/api";
 import { gradeColorClasses } from "../lib/grades";
 import { gradeOptions } from "../lib/gradebook";
@@ -63,6 +63,8 @@ export default function GradeScaleManager({ open, onClose, onChanged }) {
   }, [selected]);
 
   const csvText = gradeScaleCsv({ rows });
+  const statusBusy = saving || renaming;
+  const saveStatusLabel = statusBusy ? "speichere" : "gespeichert";
 
   const saveRows = async (nextRows = rows) => {
     if (!selected) return null;
@@ -73,7 +75,6 @@ export default function GradeScaleManager({ open, onClose, onChanged }) {
       setScales(res.data.scales || []);
       setSelected(res.data.scale);
       dirtyRef.current = false;
-      setMessage("Notenskala automatisch gespeichert.");
       if (onChanged) onChanged(res.data.scale);
       return res.data.scale;
     } catch (err) {
@@ -202,6 +203,10 @@ export default function GradeScaleManager({ open, onClose, onChanged }) {
                 <p className="text-xs font-bold uppercase tracking-[0.2em] text-stone-400">Punkte -> Noten</p>
                 <h2 className="font-heading text-2xl font-black text-stone-900">Notenskalen</h2>
               </div>
+              <div aria-live="polite" className={"flex items-center gap-2 rounded-xl border-2 px-4 py-2.5 font-heading font-extrabold shadow-brutal-sm " + (statusBusy ? "border-amber-400 bg-amber-100 text-amber-900" : "border-emerald-500 bg-emerald-100 text-emerald-900")}>
+                {statusBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
+                <span>{saveStatusLabel}</span>
+              </div>
               <button type="button" onClick={onClose} className="text-stone-400 hover:text-stone-900" aria-label="Schließen"><X className="h-5 w-5" /></button>
             </header>
             <div className="grid min-h-0 flex-1 gap-4 overflow-auto p-5 md:grid-cols-[220px_1fr]">
@@ -252,7 +257,6 @@ export default function GradeScaleManager({ open, onClose, onChanged }) {
                   </table>
                 </div>
                 <p className="mt-3 rounded-2xl border-2 border-amber-300 bg-amber-100 px-4 py-3 text-sm font-bold text-amber-950">Bestehende Bewertungen übernehmen Änderungen nicht automatisch.</p>
-                <p className="mt-2 text-sm font-bold text-stone-500">{saving ? "Speichert automatisch ..." : "Änderungen werden automatisch gespeichert."}</p>
                 {message && <p className="mt-3 rounded-xl border-2 border-emerald-300 bg-emerald-100 px-4 py-3 font-bold text-emerald-900">{message}</p>}
                 {error && <p className="mt-3 rounded-xl border-2 border-rose-300 bg-rose-100 px-4 py-3 font-bold text-rose-900">{error}</p>}
                 <div className="mt-4">
