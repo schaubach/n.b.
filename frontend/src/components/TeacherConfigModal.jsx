@@ -1,9 +1,10 @@
 import React, { useEffect, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { AlertTriangle, CheckCircle2, Download, KeyRound, Loader2, Mail, Save, Upload, UserRound, X } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Download, KeyRound, Loader2, Mail, RefreshCw, Save, Upload, UserRound, X } from "lucide-react";
 import api from "../lib/api";
 import { checkMailBackendHealth } from "../lib/mailBackend";
 import { importEncryptedBackup, sendBackupToTeacher } from "../lib/backup";
+import { checkAppUpdate, forceAppUpdate, formatVersion } from "../lib/appUpdate";
 
 export default function TeacherConfigModal({ open, onClose }) {
   const [name, setName] = useState("");
@@ -19,6 +20,8 @@ export default function TeacherConfigModal({ open, onClose }) {
   const [error, setError] = useState("");
   const [backendCheck, setBackendCheck] = useState({ status: "idle", message: "" });
   const [backupBusy, setBackupBusy] = useState(false);
+  const [updateCheck, setUpdateCheck] = useState({ status: "idle", available: false, message: "Version noch nicht geprüft.", local: null, remote: null });
+  const [updateBusy, setUpdateBusy] = useState(false);
 
   const teacherConfigPayload = () => ({
     name,
@@ -65,6 +68,27 @@ export default function TeacherConfigModal({ open, onClose }) {
       .finally(() => setLoading(false));
   }, [open]);
 
+  const checkForUpdate = async () => {
+    setUpdateCheck((current) => ({ ...current, status: "checking", message: "Version wird geprüft..." }));
+    try {
+      const result = await checkAppUpdate();
+      setUpdateCheck({
+        status: result.available ? "available" : "current",
+        available: result.available,
+        local: result.local,
+        remote: result.remote,
+        message: result.available ? "Auf dem Server ist eine neue WebApp-Version verfügbar." : "Diese WebApp ist aktuell.",
+      });
+    } catch (err) {
+      setUpdateCheck((current) => ({ ...current, status: "error", available: false, message: err?.message || "Versionsprüfung nicht möglich." }));
+    }
+  };
+
+  useEffect(() => {
+    if (!open) return;
+    checkForUpdate();
+  }, [open]);
+
   useEffect(() => {
     if (!open || loading) return undefined;
     const host = mailBackendHost.trim();
@@ -84,6 +108,21 @@ export default function TeacherConfigModal({ open, onClose }) {
       window.clearTimeout(timer);
     };
   }, [open, loading, mailBackendHost]);
+
+
+  const runAppUpdate = async () => {
+    setUpdateBusy(true);
+    setMessage("");
+    setError("");
+    setUpdateCheck((current) => ({ ...current, status: "updating", message: "Neue Version wird geladen..." }));
+    try {
+      await forceAppUpdate();
+    } catch (err) {
+      setUpdateCheck((current) => ({ ...current, status: "error", available: true, message: err?.message || "Update konnte nicht durchgeführt werden." }));
+      setError(errorText(err, "Update konnte nicht durchgeführt werden."));
+      setUpdateBusy(false);
+    }
+  };
 
   const runBackup = async () => {
     setBackupBusy(true);
@@ -240,6 +279,22 @@ export default function TeacherConfigModal({ open, onClose }) {
 
                 <div className="mt-5 rounded-2xl border-2 border-amber-300 bg-amber-100 px-4 py-3 text-sm font-bold text-amber-950">
                   SMTP: rbbk-do.de, Port 587, STARTTLS. Der Versand läuft über das lokale Mail-Backend im Schulnetz und wird per HTTPS sowie HMAC-Signatur abgesichert.
+                </div>
+
+                <div className="mt-5 rounded-2xl border-2 border-stone-200 bg-stone-50 px-4 py-3">
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                    <div className="min-w-0">
+                      <p className="text-xs font-bold uppercase tracking-[0.18em] text-stone-400">WebApp-Version</p>
+                      <p className={"mt-1 text-sm font-black " + (updateCheck.available ? "text-amber-800" : updateCheck.status === "error" ? "text-rose-800" : "text-stone-700")}>{updateCheck.message}</p>
+                      <p className="mt-1 text-xs font-bold text-stone-500">Lokal: {formatVersion(updateCheck.local)}</p>
+                      {updateCheck.remote && <p className="text-xs font-bold text-stone-500">Server: {formatVersion(updateCheck.remote)}</p>}
+                      <p className="mt-1 text-xs font-bold text-stone-500">Lokale Noten, Fotos und Konfiguration in IndexedDB bleiben beim Update erhalten.</p>
+                    </div>
+                    <button type="button" onClick={updateCheck.available ? runAppUpdate : checkForUpdate} disabled={updateBusy || updateCheck.status === "checking" || updateCheck.status === "updating"} className={"flex shrink-0 items-center justify-center gap-2 rounded-2xl border-2 px-5 py-3 font-heading font-extrabold shadow-brutal-sm disabled:opacity-50 " + (updateCheck.available ? "border-stone-900 bg-amber-300 text-stone-900" : "border-stone-900 bg-white text-stone-900")}>
+                      {(updateBusy || updateCheck.status === "checking" || updateCheck.status === "updating") ? <Loader2 className="h-5 w-5 animate-spin" /> : <RefreshCw className="h-5 w-5" />}
+                      {updateCheck.available ? "Neue Version" : updateCheck.status === "current" ? "Aktuell" : "Version prüfen"}
+                    </button>
+                  </div>
                 </div>
 
                 <div className="mt-5">
