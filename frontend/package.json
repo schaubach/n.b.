@@ -14,6 +14,7 @@
     "start": "react-scripts start",
     "prebuild": "node scripts/write-app-version.js",
     "build": "INLINE_RUNTIME_CHUNK=false GENERATE_SOURCEMAP=false react-scripts build",
+    "pretest": "node scripts/write-app-version.js",
     "test": "react-scripts test",
     "eject": "react-scripts eject"
   },
