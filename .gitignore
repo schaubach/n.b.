@@ -9,6 +9,7 @@ credentials.json
 # Frontend generated artifacts
 frontend/node_modules/
 frontend/build/
+frontend/public/app-version.json
 
 
 # Windows alternate data stream metadata

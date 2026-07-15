@@ -10,7 +10,9 @@
     "react-router-dom": "^6.24.0"
   },
   "scripts": {
+    "prestart": "node scripts/write-app-version.js",
     "start": "react-scripts start",
+    "prebuild": "node scripts/write-app-version.js",
     "build": "INLINE_RUNTIME_CHUNK=false GENERATE_SOURCEMAP=false react-scripts build",
     "test": "react-scripts test",
     "eject": "react-scripts eject"
