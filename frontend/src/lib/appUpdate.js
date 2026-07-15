@@ -1,3 +1,5 @@
+import { APP_VERSION } from "../generated/appVersion";
+
 const VERSION_FILE = `${process.env.PUBLIC_URL || "."}/app-version.json`;
 const CHECK_TIMEOUT_MS = 3500;
 const UPDATE_TIMEOUT_MS = 20000;
@@ -28,10 +30,11 @@ async function readJson(response) {
 }
 
 export async function localAppVersion() {
+  if (APP_VERSION?.buildId) return { ...APP_VERSION, source: "bundle" };
   if ("caches" in window) {
     const cached = await caches.match(VERSION_FILE) || await caches.match("./app-version.json");
     const parsed = await readJson(cached);
-    if (parsed) return parsed;
+    if (parsed) return { ...parsed, source: "cache" };
   }
   return null;
 }
