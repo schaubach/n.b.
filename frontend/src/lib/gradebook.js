@@ -15,6 +15,18 @@ export const POINT_NUMBER = {
   "3": 4.7, "2": 5.0, "1": 5.3, "0": 6.0,
 };
 
+export const POINT_GRADE_LABEL = {
+  "15": "1+", "14": "1", "13": "1-",
+  "12": "2+", "11": "2", "10": "2-",
+  "9": "3+", "8": "3", "7": "3-",
+  "6": "4+", "5": "4", "4": "4-",
+  "3": "5+", "2": "5", "1": "5-", "0": "6",
+};
+
+export function pointGradeLabel(value) {
+  return POINT_GRADE_LABEL[String(value ?? "").trim()] || "";
+}
+
 export function gradeToNumber(value, systemId) {
   if (value === null || value === undefined || value === "") return null;
   const map = systemId === "points_0_15" ? POINT_NUMBER : GRADE_NUMBER;

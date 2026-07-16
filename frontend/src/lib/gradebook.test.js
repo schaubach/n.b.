@@ -4,6 +4,7 @@ import {
   gradeOptions,
   gradeToNumber,
   overrideOptions,
+  pointGradeLabel,
   weightedAverage,
   wholeGradeFromAverage,
 } from "./gradebook";
@@ -39,4 +40,7 @@ test("uses system-specific grade, override and display values", () => {
   expect(overrideOptions("points_0_15").at(-1)).toBe("0");
   expect(displayValueFromAverage(1.7, "grades_1_6")).toBe("2");
   expect(displayValueFromAverage(1.7, "points_0_15")).toBe("12");
+  expect(pointGradeLabel("15")).toBe("1+");
+  expect(pointGradeLabel("14")).toBe("1");
+  expect(pointGradeLabel("0")).toBe("6");
 });
