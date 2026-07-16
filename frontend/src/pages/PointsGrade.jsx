@@ -3,7 +3,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import { ArrowLeft, CheckCircle2, Loader2, Plus, Trash2 } from "lucide-react";
 import api from "../lib/api";
 import { gradeColorClasses, gradeTier } from "../lib/grades";
-import { cloneScale, evaluatePercent, findGradeScale, normalizeExamGradeValue, pointsNeededForBetter, scaleValueForSystem, shouldUseWholeExamGrades } from "../lib/gradeScales";
+import { evaluatePercent, findGradeScale, normalizeExamGradeValue, normalizePointScale, pointsNeededForBetter, scaleValueForSystem, shouldUseWholeExamGrades } from "../lib/gradeScales";
 
 function numberValue(value) {
   const n = Number(String(value ?? "").replace(",", "."));
@@ -24,14 +24,8 @@ function makeColumn(index) {
   return { id: crypto.randomUUID ? crypto.randomUUID() : String(Date.now() + Math.random()), title: "Aufgabe " + index, max_points: 0 };
 }
 
-function normalizeScale(scale) {
-  const copy = cloneScale(scale || {});
-  copy.rows = (copy.rows || []).map((row) => ({
-    grade: row.grade || "",
-    points: row.points || "",
-    minPercent: row.minPercent ?? 0,
-  }));
-  return copy;
+function normalizeScale(scale, gradeSystem = "grades_1_6") {
+  return normalizePointScale(scale || {}, gradeSystem);
 }
 
 function scaleSignature(scale) {
@@ -77,7 +71,7 @@ export default function PointsGrade() {
         const loadedColumns = res.data.columns?.length ? res.data.columns : [makeColumn(1)];
         setColumns(loadedColumns);
         setScaleId(res.data.session.grade_scale_id || res.data.grade_scale?.id || "MEDA");
-        setLocalScale(normalizeScale(res.data.grade_scale));
+        setLocalScale(normalizeScale(res.data.grade_scale, res.data.session.grade_system));
         const map = {};
         (res.data.entries || []).forEach((entry) => { map[entryKey(entry.student_id, entry.column_id)] = String(entry.points ?? ""); });
         setEntries(map);
@@ -91,7 +85,7 @@ export default function PointsGrade() {
   }, [sessionId]);
 
   const selectedScale = useMemo(() => findGradeScale(data?.grade_scales || [], scaleId), [data?.grade_scales, scaleId]);
-  const activeScale = useMemo(() => localScale || normalizeScale(selectedScale), [localScale, selectedScale]);
+  const activeScale = useMemo(() => localScale || normalizeScale(selectedScale, data?.session?.grade_system), [localScale, selectedScale, data?.session?.grade_system]);
   const maxPoints = useMemo(() => maxPointsFromColumns(columns), [columns]);
 
   const rows = useMemo(() => {
@@ -144,7 +138,7 @@ export default function PointsGrade() {
       });
       await api.put("/sessions/" + sessionId + "/points", {
         grade_scale_id: scaleId,
-        scale_override: normalizeScale({ ...activeScale, id: scaleId, name: selectedScale?.name || activeScale?.name || "Bewertungsskala" }),
+        scale_override: normalizeScale({ ...activeScale, id: scaleId, name: selectedScale?.name || activeScale?.name || "Bewertungsskala" }, data?.session?.grade_system),
         columns,
         entries: payloadEntries,
       });
@@ -165,7 +159,7 @@ export default function PointsGrade() {
   const selectScale = (nextId) => {
     const next = findGradeScale(data?.grade_scales || [], nextId);
     setScaleId(nextId);
-    setLocalScale(normalizeScale(next));
+    setLocalScale(normalizeScale(next, data?.session?.grade_system));
     markDirty();
   };
 
@@ -195,7 +189,7 @@ export default function PointsGrade() {
 
   const updateScaleRow = (index, patch) => {
     setLocalScale((current) => {
-      const base = normalizeScale(current || selectedScale);
+      const base = normalizeScale(current || selectedScale, data?.session?.grade_system);
       base.rows = base.rows.map((row, rowIndex) => rowIndex === index ? { ...row, ...patch } : row);
       return base;
     });
@@ -204,7 +198,7 @@ export default function PointsGrade() {
 
   const removeScaleRow = (index) => {
     setLocalScale((current) => {
-      const base = normalizeScale(current || selectedScale);
+      const base = normalizeScale(current || selectedScale, data?.session?.grade_system);
       base.rows = base.rows.filter((_, rowIndex) => rowIndex !== index);
       if (!base.rows.length) base.rows = [{ grade: "", points: "", minPercent: 0 }];
       return base;
