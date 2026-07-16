@@ -63,7 +63,8 @@ function weightedPair(first, second, firstWeight, secondWeight) {
   return null;
 }
 
-function roundedAverageNumber(value, systemId) {
+function effectiveAverageNumber(value, systemId) {
+  if (systemId === "points_0_15") return typeof value === "number" ? value : null;
   return gradeToNumber(displayValueFromAverage(value, systemId), systemId);
 }
 
@@ -99,12 +100,12 @@ export function buildGradebookRows(data) {
       ka: overrideMap.get(`${student.id}:ka`) || "",
       final: overrideMap.get(`${student.id}:final`) || "",
     };
-    const effectiveSlOral = overridesForStudent.sl_oral ? gradeToNumber(overridesForStudent.sl_oral, data.grade_system) : roundedAverageNumber(slOralAverage, data.grade_system);
-    const effectiveSlWritten = overridesForStudent.sl_written ? gradeToNumber(overridesForStudent.sl_written, data.grade_system) : roundedAverageNumber(slWrittenAverage, data.grade_system);
+    const effectiveSlOral = overridesForStudent.sl_oral ? gradeToNumber(overridesForStudent.sl_oral, data.grade_system) : effectiveAverageNumber(slOralAverage, data.grade_system);
+    const effectiveSlWritten = overridesForStudent.sl_written ? gradeToNumber(overridesForStudent.sl_written, data.grade_system) : effectiveAverageNumber(slWrittenAverage, data.grade_system);
     const computedEffectiveSl = weightedPair(effectiveSlOral, effectiveSlWritten, weights.sl_oral, weights.sl_written);
     const effectiveSl = overridesForStudent.sl ? gradeToNumber(overridesForStudent.sl, data.grade_system) : computedEffectiveSl;
     const effectiveKa = overridesForStudent.ka ? gradeToNumber(overridesForStudent.ka, data.grade_system) : kaAverage;
-    const finalGrade = finalGradeFromAverages(effectiveSl, effectiveKa);
+    const finalGrade = finalGradeFromAverages(effectiveSl, effectiveKa, data.grade_system);
 
     return {
       student,
