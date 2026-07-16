@@ -78,6 +78,7 @@ test("0-15 point scales fill and evaluate every point grade", () => {
   const normalized = normalizePointScale(scale, "points_0_15");
 
   expect(normalized.rows.map((row) => row.points)).toEqual(["15", "14", "13", "12", "11", "10", "9", "8", "7", "6", "5", "4", "3", "2", "1", "0"]);
+  expect(evaluatePercent(100, scale, "points_0_15", { category: "klausur" }).value).toBe("15");
   expect(evaluatePercent(82, scale, "points_0_15", { category: "klausur" }).value).toBe("12");
   const better = pointsNeededForBetter(82, 100, scale, 3, "points_0_15", { category: "klausur" });
   expect(better.target).toBe("13");

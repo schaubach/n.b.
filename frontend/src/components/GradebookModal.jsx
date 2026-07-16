@@ -4,7 +4,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import { AlertTriangle, CheckCircle2, ChevronLeft, ChevronRight, Download, FileSpreadsheet, Loader2, Mail, Percent, Printer, Send, X } from "lucide-react";
 import api from "../lib/api";
 import { gradeColorClasses, gradeTier } from "../lib/grades";
-import { gradeOptions, gradeToNumber, overrideOptions } from "../lib/gradebook";
+import { gradeOptions, gradeToNumber, overrideOptions, pointGradeLabel } from "../lib/gradebook";
 import {
   averageColumns,
   averageWeights,
@@ -103,6 +103,9 @@ function mailHeaderStyle(tone) {
 }
 
 function formatCalculatedDetail(cell, systemId) {
+  if (systemId === "points_0_15" && cell.session.points_mode) {
+    return pointGradeLabel(cell.calculated_value || cell.value);
+  }
   if (!cell.calculated_value) return "";
   if (shouldUseWholeExamGrades(cell.session, systemId) && cell.session.points_mode) {
     const numeric = gradeToNumber(cell.calculated_value, systemId);
