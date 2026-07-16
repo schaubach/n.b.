@@ -1,6 +1,6 @@
 {
   "name": "n-b",
-  "version": "1.0.0",
+  "version": "1.2.1",
   "private": true,
   "dependencies": {
     "framer-motion": "^11.3.0",
