@@ -68,7 +68,7 @@ function gradebookPrintHtml(data, rows, columns) {
   }).join("");
   const averageHeaders = columns.map((column) => '<th class="avg"><div>' + htmlEscape(column.label) + '</div><small>' + htmlEscape(column.hint) + '</small></th>').join("");
   const body = rows.map((row) => {
-    const sessionCells = row.sessionCells.map((cell) => '<td>' + printGrade(cell.value, data.grade_system) + '</td>').join("");
+    const sessionCells = row.sessionCells.map((cell) => '<td>' + printGrade(cell.value, data.grade_system, formatCalculatedDetail(cell, data.grade_system)) + '</td>').join("");
     const averageCells = columns.map((column) => {
       const shown = displayFor(row, column.key, data.grade_system);
       return '<td>' + printGrade(shown, data.grade_system, exactFor(row, column.key)) + '</td>';
