@@ -153,6 +153,12 @@ function pointSessionFor(state, sessionId) {
   return record;
 }
 
+function sessionGradeSystem(state, session) {
+  if (session?.grade_system) return session.grade_system;
+  const cls = state.classes.find((item) => item.id === session?.class_id);
+  return cls?.grade_system || "grades_1_6";
+}
+
 function pointSummary(state, session, studentId) {
   const record = (state.point_sessions || []).find((item) => item.session_id === session.id);
   if (!record) return null;
@@ -160,15 +166,17 @@ function pointSummary(state, session, studentId) {
   const studentEntries = (record.entries || []).filter((entry) => entry.student_id === studentId);
   const achieved = studentEntries.reduce((sum, entry) => sum + (Number(entry.points) || 0), 0);
   if (!studentEntries.length || !(max > 0)) return { achieved: studentEntries.length ? achieved : null, max, percent: null, calculated_value: "" };
+  const gradeSystem = sessionGradeSystem(state, session);
+  const sessionForCalc = { ...session, grade_system: gradeSystem };
   const scales = gradeScalesForState(state);
-  const scale = normalizePointScale(session.point_scale_override || findGradeScale(scales, session.grade_scale_id), session.grade_system);
+  const scale = normalizePointScale(session.point_scale_override || findGradeScale(scales, session.grade_scale_id), gradeSystem);
   const percent = achieved / max * 100;
-  const evaluated = evaluatePercent(percent, scale, session.grade_system, session);
-  const better = pointsNeededForBetter(achieved, max, scale, evaluated.rowIndex, session.grade_system, session);
+  const evaluated = evaluatePercent(percent, scale, gradeSystem, sessionForCalc);
+  const better = pointsNeededForBetter(achieved, max, scale, evaluated.rowIndex, gradeSystem, sessionForCalc);
   return { achieved, max, percent, calculated_value: evaluated.value, calculated_raw_value: evaluated.rawValue || evaluated.value, better };
 }
 
-function recalculatePointGrades(state, session) {
+export function recalculatePointGrades(state, session) {
   const record = pointSessionFor(state, session.id);
   const students = state.students.filter((student) => student.class_id === session.class_id);
   for (const student of students) {
