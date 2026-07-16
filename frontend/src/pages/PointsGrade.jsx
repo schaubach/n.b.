@@ -3,6 +3,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import { ArrowLeft, CheckCircle2, Loader2, Plus, Trash2 } from "lucide-react";
 import api from "../lib/api";
 import { gradeColorClasses, gradeTier } from "../lib/grades";
+import { pointGradeLabel } from "../lib/gradebook";
 import { evaluatePercent, findGradeScale, normalizeExamGradeValue, normalizePointScale, pointsNeededForBetter, scaleValueForSystem, shouldUseWholeExamGrades } from "../lib/gradeScales";
 
 function numberValue(value) {
@@ -45,6 +46,22 @@ function shouldHighlightBetter(row, gradeSystem) {
   if (!row.better || !(row.better.points > 0) || row.better.points > 1) return false;
   if (gradeSystem === "points_0_15") return true;
   return gradeTier(row.grade, gradeSystem) !== gradeTier(row.better.target, gradeSystem);
+}
+
+function pointInfo(value, gradeSystem) {
+  return gradeSystem === "points_0_15" ? pointGradeLabel(value) : "";
+}
+
+function GradePill({ value, gradeSystem, size = "normal" }) {
+  if (!value) return <span className="font-bold text-stone-300">-</span>;
+  const info = pointInfo(value, gradeSystem);
+  const sizeClass = size === "large" ? "px-3 py-1 text-xl" : "px-3 py-1";
+  return (
+    <span className={"inline-flex min-w-14 flex-col items-center justify-center rounded-xl border-2 font-mono font-black leading-none " + sizeClass + " " + gradeColorClasses(value, gradeSystem)}>
+      <span>{value}</span>
+      {info && <span className="mt-0.5 text-[10px] font-black opacity-85">{info}</span>}
+    </span>
+  );
 }
 
 export default function PointsGrade() {
@@ -286,7 +303,7 @@ export default function PointsGrade() {
                     ))}
                     <td className="border-l-2 border-t-2 border-stone-200 px-3 py-2 text-center">
                       <div className="flex items-center justify-center gap-2">
-                        {row.grade ? <span className={"rounded-xl border-2 px-3 py-1 font-mono text-xl font-black " + gradeColorClasses(row.grade, data.session.grade_system)}>{row.grade}</span> : <span className="font-bold text-stone-300">-</span>}
+                        <GradePill value={row.grade} gradeSystem={data.session.grade_system} size="large" />
                         <span className="font-mono text-sm font-bold text-stone-600">{row.hasEntries ? `${formatNumber(row.achieved)} / ${formatNumber(row.max)} · ${formatNumber(row.percent)}%` : "keine Punkte"}</span>
                       </div>
                       {row.better && <div className={"mt-1 inline-flex rounded-full px-2 py-0.5 text-xs font-black " + (near ? "bg-amber-300 text-stone-900 ring-2 ring-stone-900" : "bg-stone-100 text-stone-600")}>{formatNumber(row.better.points)} P. bis {row.better.target || "besser"}</div>}
@@ -306,7 +323,7 @@ export default function PointsGrade() {
             <table className="w-full border-separate border-spacing-0 text-sm">
               <thead>
                 <tr>
-                  <th className="bg-stone-100 px-3 py-2 text-left font-heading font-black text-stone-900">Note</th>
+                  <th className="bg-stone-100 px-3 py-2 text-left font-heading font-black text-stone-900">{showScalePoints ? "Notenpunkte" : "Note"}</th>
                   <th className="bg-stone-100 px-3 py-2 text-left font-heading font-black text-stone-900">ab Punktzahl</th>
                   <th className="bg-stone-100 px-3 py-2 text-left font-heading font-black text-stone-900">Prozent</th>
                   <th className="bg-stone-100 px-3 py-2 text-left font-heading font-black text-stone-900">vergeben</th>
@@ -315,7 +332,7 @@ export default function PointsGrade() {
               <tbody>
                 {scaleSummary.map((item, index) => (
                   <tr key={index}>
-                    <td className="border-t-2 border-stone-200 p-2"><span className={"inline-flex min-w-14 justify-center rounded-xl border-2 px-3 py-1 font-mono font-black " + gradeColorClasses(item.value, data.session.grade_system)}>{item.value || "-"}</span></td>
+                    <td className="border-t-2 border-stone-200 p-2"><GradePill value={item.value} gradeSystem={data.session.grade_system} /></td>
                     <td className="border-t-2 border-stone-200 px-3 py-2 font-mono font-black text-stone-900">ab {formatNumber(item.minPoints)} P.</td>
                     <td className="border-t-2 border-stone-200 px-3 py-2 font-mono font-bold text-stone-700">{formatNumber(Number(item.minPercent) || 0)}%</td>
                     <td className="border-t-2 border-stone-200 px-3 py-2 font-heading text-lg font-black text-stone-900">{item.count}</td>
@@ -333,8 +350,8 @@ export default function PointsGrade() {
             <table className="w-full border-separate border-spacing-0 text-sm">
               <thead>
                 <tr>
-                  <th className="bg-stone-100 px-2 py-2 text-left font-heading font-black text-stone-900">Note</th>
-                  {showScalePoints && <th className="bg-stone-100 px-2 py-2 text-left font-heading font-black text-stone-900">Punkte</th>}
+                  <th className="bg-stone-100 px-2 py-2 text-left font-heading font-black text-stone-900">{showScalePoints ? "Notenpunkte" : "Note"}</th>
+                  {showScalePoints && <th className="bg-stone-100 px-2 py-2 text-left font-heading font-black text-stone-900">Info</th>}
                   <th className="bg-stone-100 px-2 py-2 text-left font-heading font-black text-stone-900">%</th>
                   <th className="bg-stone-100 px-2 py-2"></th>
                 </tr>
@@ -344,8 +361,14 @@ export default function PointsGrade() {
                   const value = scaleValueForSystem(row, data.session.grade_system);
                   return (
                     <tr key={index}>
-                      <td className="border-t-2 border-stone-200 p-2"><input value={row.grade} onChange={(event) => updateScaleRow(index, { grade: event.target.value })} className={"w-20 rounded-xl border-2 px-2 py-2 text-center font-mono font-black " + gradeColorClasses(value, data.session.grade_system)} /></td>
-                      {showScalePoints && <td className="border-t-2 border-stone-200 p-2"><input value={row.points} onChange={(event) => updateScaleRow(index, { points: event.target.value })} className="w-20 rounded-xl border-2 border-stone-200 px-2 py-2 text-center font-mono font-black" /></td>}
+                      <td className="border-t-2 border-stone-200 p-2">
+                        <input
+                          value={showScalePoints ? row.points : row.grade}
+                          onChange={(event) => updateScaleRow(index, showScalePoints ? { points: event.target.value } : { grade: event.target.value })}
+                          className={"w-20 rounded-xl border-2 px-2 py-2 text-center font-mono font-black " + gradeColorClasses(value, data.session.grade_system)}
+                        />
+                      </td>
+                      {showScalePoints && <td className="border-t-2 border-stone-200 p-2"><input value={row.grade} onChange={(event) => updateScaleRow(index, { grade: event.target.value })} className="w-20 rounded-xl border-2 border-stone-200 px-2 py-2 text-center font-mono font-black" /></td>}
                       <td className="border-t-2 border-stone-200 p-2"><input type="number" step="0.1" value={row.minPercent} onChange={(event) => updateScaleRow(index, { minPercent: event.target.value })} className="w-24 rounded-xl border-2 border-stone-200 px-2 py-2 text-center font-mono font-black" /></td>
                       <td className="border-t-2 border-stone-200 p-2"><button type="button" onClick={() => removeScaleRow(index)} className="rounded-xl border-2 border-rose-300 bg-white p-2 text-rose-700"><Trash2 className="h-4 w-4" /></button></td>
                     </tr>
