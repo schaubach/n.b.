@@ -7,6 +7,7 @@ import {
   findGradeScale,
   gradeScaleCsv,
   normalizeExamGradeValue,
+  normalizePointScale,
   parseGradeScaleCsv,
   pointsNeededForBetter,
 } from "./gradeScales";
@@ -160,7 +161,7 @@ function pointSummary(state, session, studentId) {
   const achieved = studentEntries.reduce((sum, entry) => sum + (Number(entry.points) || 0), 0);
   if (!studentEntries.length || !(max > 0)) return { achieved: studentEntries.length ? achieved : null, max, percent: null, calculated_value: "" };
   const scales = gradeScalesForState(state);
-  const scale = session.point_scale_override || findGradeScale(scales, session.grade_scale_id);
+  const scale = normalizePointScale(session.point_scale_override || findGradeScale(scales, session.grade_scale_id), session.grade_system);
   const percent = achieved / max * 100;
   const evaluated = evaluatePercent(percent, scale, session.grade_system, session);
   const better = pointsNeededForBetter(achieved, max, scale, evaluated.rowIndex, session.grade_system, session);
@@ -669,7 +670,7 @@ async function put(url, body) {
           ...body.scale_override,
           id: body.scale_override.id || session.grade_scale_id,
           name: body.scale_override.name || "Bewertungsskala",
-          rows: (body.scale_override.rows || []).map((row) => ({ grade: String(row.grade || ""), points: String(row.points || ""), minPercent: Number(row.minPercent) || 0 })),
+          rows: normalizePointScale(body.scale_override, cls.grade_system).rows,
         };
       }
       const record = pointSessionFor(state, session.id);

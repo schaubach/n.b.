@@ -3,34 +3,11 @@ import { AnimatePresence, motion } from "framer-motion";
 import { CheckCircle2, Download, FilePlus2, Loader2, Percent, Plus, Trash2, X } from "lucide-react";
 import api from "../lib/api";
 import { gradeColorClasses } from "../lib/grades";
-import { gradeOptions } from "../lib/gradebook";
-import { gradeScaleCsv, parseGradeScaleCsv } from "../lib/gradeScales";
+import { gradeScaleCsv, normalizePointScale, parseGradeScaleCsv } from "../lib/gradeScales";
 import { triggerDownload } from "../lib/exportClass";
 
-const FIXED_GRADES = gradeOptions("grades_1_6");
-const FIXED_POINTS = gradeOptions("points_0_15");
-
-function defaultPercent(index, total) {
-  return Math.max(0, Math.round((100 - (index * (100 / Math.max(1, total - 1)))) * 10) / 10);
-}
-
 function fixedRowsFrom(scale) {
-  const byGrade = new Map();
-  const byPoint = new Map();
-  (scale?.rows || []).forEach((row) => {
-    const clean = { grade: String(row.grade || "").trim(), points: String(row.points || "").trim(), minPercent: row.minPercent ?? 0 };
-    if (clean.grade) byGrade.set(clean.grade, clean);
-    if (clean.points) byPoint.set(clean.points, clean);
-  });
-  return FIXED_GRADES.map((grade, index) => {
-    const points = FIXED_POINTS[index] || "";
-    const source = byGrade.get(grade) || byPoint.get(points);
-    return {
-      grade,
-      points,
-      minPercent: source?.minPercent ?? defaultPercent(index, FIXED_GRADES.length),
-    };
-  });
+  return normalizePointScale(scale || {}, "grades_1_6").rows;
 }
 
 export default function GradeScaleManager({ open, onClose, onChanged }) {

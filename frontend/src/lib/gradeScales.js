@@ -143,6 +143,76 @@ export function cloneScale(scale) {
   return { ...scale, rows: (scale?.rows || []).map((row) => ({ ...row })) };
 }
 
+export const POINT_SCALE_GRADES_1_6 = ["1+", "1", "1-", "2+", "2", "2-", "3+", "3", "3-", "4+", "4", "4-", "5+", "5", "5-", "6"];
+export const POINT_SCALE_POINTS_0_15 = ["15", "14", "13", "12", "11", "10", "9", "8", "7", "6", "5", "4", "3", "2", "1", "0"];
+
+function defaultPercent(index, total) {
+  return Math.max(0, Math.round((100 - (index * (100 / Math.max(1, total - 1)))) * 10) / 10);
+}
+
+function clampPercent(value) {
+  if (!Number.isFinite(value)) return 0;
+  return Math.max(0, Math.min(100, Math.round(value * 10) / 10));
+}
+
+function inferredPercent(index, anchors, total) {
+  const exact = anchors.find((anchor) => anchor.index === index);
+  if (exact) return exact.minPercent;
+  if (!anchors.length) return defaultPercent(index, total);
+  const before = anchors.filter((anchor) => anchor.index < index).at(-1);
+  const after = anchors.find((anchor) => anchor.index > index);
+  if (before && after) {
+    const span = after.index - before.index;
+    const factor = span > 0 ? (index - before.index) / span : 0;
+    return clampPercent(before.minPercent + ((after.minPercent - before.minPercent) * factor));
+  }
+  if (after) {
+    const next = anchors.find((anchor) => anchor.index > after.index);
+    const step = next ? (after.minPercent - next.minPercent) / (next.index - after.index) : 100 / Math.max(1, total - 1);
+    return clampPercent(after.minPercent + (step * (after.index - index)));
+  }
+  if (before) {
+    const previous = anchors.filter((anchor) => anchor.index < before.index).at(-1);
+    const step = previous ? (previous.minPercent - before.minPercent) / (before.index - previous.index) : 100 / Math.max(1, total - 1);
+    return clampPercent(before.minPercent - (step * (index - before.index)));
+  }
+  return defaultPercent(index, total);
+}
+
+export function normalizePointScale(scale, gradeSystem = "grades_1_6") {
+  const copy = cloneScale(scale || {});
+  copy.rows = (copy.rows || []).map((row) => ({
+    grade: String(row.grade || "").trim(),
+    points: String(row.points || "").trim(),
+    minPercent: Number(row.minPercent) || 0,
+  }));
+  if (gradeSystem === "points_0_15") return copy;
+
+  const byGrade = new Map();
+  const byPoint = new Map();
+  copy.rows.forEach((row) => {
+    if (row.grade) byGrade.set(row.grade, row);
+    if (row.points) byPoint.set(row.points, row);
+  });
+  const anchors = POINT_SCALE_GRADES_1_6.map((grade, index) => {
+    const points = POINT_SCALE_POINTS_0_15[index] || "";
+    const source = byGrade.get(grade) || byPoint.get(points);
+    return source ? { index, minPercent: Number(source.minPercent) || 0 } : null;
+  }).filter(Boolean).sort((a, b) => a.index - b.index);
+
+  copy.rows = POINT_SCALE_GRADES_1_6.map((grade, index) => {
+    const points = POINT_SCALE_POINTS_0_15[index] || "";
+    const source = byGrade.get(grade) || byPoint.get(points);
+    return {
+      grade,
+      points,
+      minPercent: source ? Number(source.minPercent) || 0 : inferredPercent(index, anchors, POINT_SCALE_GRADES_1_6.length),
+    };
+  });
+  return copy;
+}
+
+
 export function scaleValueForSystem(row, gradeSystem) {
   if (!row) return "";
   if (gradeSystem === "points_0_15") {
@@ -165,7 +235,7 @@ export function normalizeExamGradeValue(value, session, gradeSystem) {
 }
 
 export function evaluatePercent(percent, scale, gradeSystem = "grades_1_6", session = null) {
-  const rows = (scale?.rows || []).slice().sort((a, b) => b.minPercent - a.minPercent);
+  const rows = (normalizePointScale(scale, gradeSystem).rows || []).slice().sort((a, b) => b.minPercent - a.minPercent);
   if (typeof percent !== "number" || !Number.isFinite(percent) || rows.length === 0) {
     return { value: "", row: null, rowIndex: -1, percent: null };
   }
@@ -177,7 +247,7 @@ export function evaluatePercent(percent, scale, gradeSystem = "grades_1_6", sess
 }
 
 export function pointsNeededForBetter(achieved, maxPoints, scale, rowIndex, gradeSystem = "grades_1_6", session = null) {
-  const rows = (scale?.rows || []).slice().sort((a, b) => b.minPercent - a.minPercent);
+  const rows = (normalizePointScale(scale, gradeSystem).rows || []).slice().sort((a, b) => b.minPercent - a.minPercent);
   if (!(maxPoints > 0) || rowIndex <= 0 || rowIndex >= rows.length) return null;
   const currentValue = normalizeExamGradeValue(scaleValueForSystem(rows[rowIndex], gradeSystem), session, gradeSystem);
   const better = rows.slice(0, rowIndex).reverse().find((row) => normalizeExamGradeValue(scaleValueForSystem(row, gradeSystem), session, gradeSystem) !== currentValue);
