@@ -29,8 +29,11 @@ export function pointGradeLabel(value) {
 
 export function gradeToNumber(value, systemId) {
   if (value === null || value === undefined || value === "") return null;
-  const map = systemId === "points_0_15" ? POINT_NUMBER : GRADE_NUMBER;
-  const numeric = map[String(value)];
+  if (systemId === "points_0_15") {
+    const numeric = Number(String(value).replace(",", "."));
+    return Number.isFinite(numeric) ? numeric : null;
+  }
+  const numeric = GRADE_NUMBER[String(value)];
   return typeof numeric === "number" ? numeric : null;
 }
 
@@ -60,7 +63,13 @@ export function wholeGradeFromAverage(value) {
   return 6;
 }
 
-export function finalGradeFromAverages(slAverage, kaAverage) {
+export function finalGradeFromAverages(slAverage, kaAverage, systemId = "grades_1_6") {
+  if (systemId === "points_0_15") {
+    if (typeof slAverage !== "number" && typeof kaAverage !== "number") return null;
+    if (typeof slAverage !== "number") return kaAverage;
+    if (typeof kaAverage !== "number") return slAverage;
+    return (slAverage + kaAverage) / 2;
+  }
   const sl = wholeGradeFromAverage(slAverage);
   const ka = wholeGradeFromAverage(kaAverage);
   if (sl === null && ka === null) return null;
@@ -91,17 +100,7 @@ export function overrideOptions(systemId) {
 export function displayValueFromAverage(value, systemId) {
   if (typeof value !== "number") return "";
   if (systemId !== "points_0_15") return String(wholeGradeFromAverage(value));
-
-  let best = "";
-  let bestDistance = Infinity;
-  Object.entries(POINT_NUMBER).forEach(([point, numeric]) => {
-    const distance = Math.abs(numeric - value);
-    if (distance < bestDistance) {
-      bestDistance = distance;
-      best = point;
-    }
-  });
-  return best;
+  return String(Math.max(0, Math.min(15, Math.round(value))));
 }
 
 export function csvEscape(value) {
