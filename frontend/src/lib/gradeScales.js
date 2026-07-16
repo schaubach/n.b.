@@ -186,7 +186,6 @@ export function normalizePointScale(scale, gradeSystem = "grades_1_6") {
     points: String(row.points || "").trim(),
     minPercent: Number(row.minPercent) || 0,
   }));
-  if (gradeSystem === "points_0_15") return copy;
 
   const byGrade = new Map();
   const byPoint = new Map();
@@ -194,19 +193,26 @@ export function normalizePointScale(scale, gradeSystem = "grades_1_6") {
     if (row.grade) byGrade.set(row.grade, row);
     if (row.points) byPoint.set(row.points, row);
   });
-  const anchors = POINT_SCALE_GRADES_1_6.map((grade, index) => {
-    const points = POINT_SCALE_POINTS_0_15[index] || "";
-    const source = byGrade.get(grade) || byPoint.get(points);
+
+  const targetGrades = POINT_SCALE_GRADES_1_6;
+  const targetPoints = POINT_SCALE_POINTS_0_15;
+  const anchors = targetGrades.map((grade, index) => {
+    const points = targetPoints[index] || "";
+    const source = gradeSystem === "points_0_15"
+      ? (byPoint.get(points) || byGrade.get(grade))
+      : (byGrade.get(grade) || byPoint.get(points));
     return source ? { index, minPercent: Number(source.minPercent) || 0 } : null;
   }).filter(Boolean).sort((a, b) => a.index - b.index);
 
-  copy.rows = POINT_SCALE_GRADES_1_6.map((grade, index) => {
-    const points = POINT_SCALE_POINTS_0_15[index] || "";
-    const source = byGrade.get(grade) || byPoint.get(points);
+  copy.rows = targetGrades.map((grade, index) => {
+    const points = targetPoints[index] || "";
+    const source = gradeSystem === "points_0_15"
+      ? (byPoint.get(points) || byGrade.get(grade))
+      : (byGrade.get(grade) || byPoint.get(points));
     return {
       grade,
       points,
-      minPercent: source ? Number(source.minPercent) || 0 : inferredPercent(index, anchors, POINT_SCALE_GRADES_1_6.length),
+      minPercent: source ? Number(source.minPercent) || 0 : inferredPercent(index, anchors, targetGrades.length),
     };
   });
   return copy;
@@ -246,18 +252,29 @@ export function evaluatePercent(percent, scale, gradeSystem = "grades_1_6", sess
   return { value: normalizeExamGradeValue(rawValue, session, gradeSystem), rawValue, row, rowIndex: index, percent };
 }
 
+function gradeTierValue(value) {
+  const match = String(value || "").match(/\d+/);
+  return match ? Number(match[0]) : null;
+}
+
 export function pointsNeededForBetter(achieved, maxPoints, scale, rowIndex, gradeSystem = "grades_1_6", session = null) {
   const rows = (normalizePointScale(scale, gradeSystem).rows || []).slice().sort((a, b) => b.minPercent - a.minPercent);
   if (!(maxPoints > 0) || rowIndex <= 0 || rowIndex >= rows.length) return null;
   const currentValue = normalizeExamGradeValue(scaleValueForSystem(rows[rowIndex], gradeSystem), session, gradeSystem);
-  const better = rows.slice(0, rowIndex).reverse().find((row) => normalizeExamGradeValue(scaleValueForSystem(row, gradeSystem), session, gradeSystem) !== currentValue);
+  const currentTier = gradeSystem === "points_0_15" || shouldUseWholeExamGrades(session, gradeSystem) ? null : gradeTierValue(currentValue);
+  const better = rows.slice(0, rowIndex).reverse().find((row) => {
+    const value = normalizeExamGradeValue(scaleValueForSystem(row, gradeSystem), session, gradeSystem);
+    if (currentTier !== null) return gradeTierValue(value) !== currentTier;
+    return value !== currentValue;
+  });
   if (!better) return null;
+  const target = normalizeExamGradeValue(scaleValueForSystem(better, gradeSystem), session, gradeSystem);
   const neededTotal = (Number(better.minPercent) / 100) * maxPoints;
   const missing = neededTotal - Number(achieved || 0);
   if (!(missing > 0)) return null;
   return {
     points: Math.ceil(missing * 10) / 10,
-    target: normalizeExamGradeValue(scaleValueForSystem(better, gradeSystem), session, gradeSystem),
+    target,
     minPercent: better.minPercent,
   };
 }

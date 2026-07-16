@@ -1,4 +1,4 @@
-import { allGradeScales, evaluatePercent, normalizeExamGradeValue, normalizePointScale, parseGradeScaleCsv } from "./gradeScales";
+import { allGradeScales, evaluatePercent, normalizeExamGradeValue, normalizePointScale, parseGradeScaleCsv, pointsNeededForBetter } from "./gradeScales";
 
 test("imports tendency grades from comma separated scale csv", () => {
   const scale = parseGradeScaleCsv("Note,Punkte,Prozent_ab\n2+,12,80\n2,11,75\n2-,10,70\n5+,3,33\n5,2,27\n5-,1,20\n", "MEDA.csv");
@@ -63,4 +63,38 @@ test("written SL points grades keep tendencies while exams keep whole grades", (
   expect(writtenSl.rawValue).toBe("2+");
   expect(exam.value).toBe("2");
   expect(exam.rawValue).toBe("2+");
+});
+
+
+test("0-15 point scales fill and evaluate every point grade", () => {
+  const scale = { rows: [
+    { grade: "1", points: "14", minPercent: 90 },
+    { grade: "2", points: "11", minPercent: 75 },
+    { grade: "3", points: "8", minPercent: 60 },
+    { grade: "4", points: "5", minPercent: 45 },
+    { grade: "5", points: "2", minPercent: 30 },
+    { grade: "6", points: "0", minPercent: 0 },
+  ] };
+  const normalized = normalizePointScale(scale, "points_0_15");
+
+  expect(normalized.rows.map((row) => row.points)).toEqual(["15", "14", "13", "12", "11", "10", "9", "8", "7", "6", "5", "4", "3", "2", "1", "0"]);
+  expect(evaluatePercent(82, scale, "points_0_15", { category: "klausur" }).value).toBe("12");
+  const better = pointsNeededForBetter(82, 100, scale, 3, "points_0_15", { category: "klausur" });
+  expect(better.target).toBe("13");
+  expect(better.points).toBe(3);
+});
+
+test("written 1-6 SL distance targets the next better grade tier", () => {
+  const scale = { rows: [
+    { grade: "1", points: "14", minPercent: 90 },
+    { grade: "2", points: "11", minPercent: 75 },
+    { grade: "3", points: "8", minPercent: 60 },
+  ] };
+
+  const writtenSl = evaluatePercent(82, scale, "grades_1_6", { category: "sonstige", sl_type: "written" });
+  const better = pointsNeededForBetter(82, 100, scale, writtenSl.rowIndex, "grades_1_6", { category: "sonstige", sl_type: "written" });
+
+  expect(writtenSl.value).toBe("2+");
+  expect(better.target).toBe("1-");
+  expect(better.points).toBe(3);
 });

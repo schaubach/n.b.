@@ -289,7 +289,7 @@ export default function PointsGrade() {
                         {row.grade ? <span className={"rounded-xl border-2 px-3 py-1 font-mono text-xl font-black " + gradeColorClasses(row.grade, data.session.grade_system)}>{row.grade}</span> : <span className="font-bold text-stone-300">-</span>}
                         <span className="font-mono text-sm font-bold text-stone-600">{row.hasEntries ? `${formatNumber(row.achieved)} / ${formatNumber(row.max)} · ${formatNumber(row.percent)}%` : "keine Punkte"}</span>
                       </div>
-                      {row.better && <div className={"mt-1 inline-flex rounded-full px-2 py-0.5 text-xs font-black " + (near ? "bg-amber-300 text-stone-900 ring-2 ring-stone-900" : "bg-stone-100 text-stone-600")}>{formatNumber(row.better.points)} P. bis besser</div>}
+                      {row.better && <div className={"mt-1 inline-flex rounded-full px-2 py-0.5 text-xs font-black " + (near ? "bg-amber-300 text-stone-900 ring-2 ring-stone-900" : "bg-stone-100 text-stone-600")}>{formatNumber(row.better.points)} P. bis {row.better.target || "besser"}</div>}
                     </td>
                   </tr>
                 );
