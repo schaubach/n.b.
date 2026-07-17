@@ -4,7 +4,8 @@ global.TextEncoder = TextEncoder;
 global.TextDecoder = TextDecoder;
 global.crypto = { randomUUID: () => "grade-1", getRandomValues: (bytes) => bytes.fill(1) };
 
-const { recalculatePointGrades } = require("./localApi");
+const localApi = require("./localApi");
+const { recalculatePointGrades, oralGradeStatsForClass } = localApi;
 const { normalizePointScale } = require("./gradeScales");
 
 function baseState() {
@@ -41,4 +42,30 @@ test("point recalculation uses class grade system for 0-15 KL main value", () =>
   expect(state.grades).toHaveLength(1);
   expect(state.grades[0].value).toBe("15");
   expect(state.grades[0].calculated_value).toBe("15");
+});
+
+test("oral assessment stats count only oral SL grades", () => {
+  const state = {
+    classes: [{ id: "class-1", name: "BK A", grade_system: "grades_1_6" }],
+    students: [
+      { id: "student-1", class_id: "class-1", first_name: "Ada", last_name: "Lovelace" },
+      { id: "student-2", class_id: "class-1", first_name: "Grace", last_name: "Hopper" },
+    ],
+    sessions: [
+      { id: "session-1", class_id: "class-1", title: "Mündlich 1", date: "01.07.2026", category: "sonstige", sl_type: "oral" },
+      { id: "session-2", class_id: "class-1", title: "Mündlich 2", date: "02.07.2026", category: "sonstige", sl_type: "oral" },
+      { id: "session-3", class_id: "class-1", title: "Schriftlich", date: "03.07.2026", category: "sonstige", sl_type: "written" },
+    ],
+    grades: [
+      { session_id: "session-1", student_id: "student-1", value: "2" },
+      { session_id: "session-2", student_id: "student-1", value: "3" },
+      { session_id: "session-3", student_id: "student-2", value: "1" },
+    ],
+  };
+
+  const stats = oralGradeStatsForClass(state, "class-1");
+
+  expect(stats.counts.get("student-1")).toBe(2);
+  expect(stats.counts.get("student-2")).toBe(0);
+  expect(stats.average).toBe(1);
 });
