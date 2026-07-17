@@ -139,7 +139,7 @@ export default function PointsGrade() {
     return Array.from(grouped.values()).sort((a, b) => Number(b.minPercent) - Number(a.minPercent));
   }, [activeScale, data?.session, data?.session?.grade_system, maxPoints, rows]);
 
-  const scaleChanged = useMemo(() => scaleSignature(activeScale) !== scaleSignature(selectedScale), [activeScale, selectedScale]);
+  const scaleChanged = useMemo(() => scaleSignature(activeScale) !== scaleSignature(normalizeScale(selectedScale, data?.session?.grade_system)), [activeScale, selectedScale, data?.session?.grade_system]);
   const showScalePoints = data?.session?.grade_system === "points_0_15";
   const saveStatusLabel = saving ? "speichere" : "gespeichert";
 
