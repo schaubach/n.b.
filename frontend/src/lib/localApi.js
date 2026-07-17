@@ -159,6 +159,20 @@ function sessionGradeSystem(state, session) {
   return cls?.grade_system || "grades_1_6";
 }
 
+export function oralGradeStatsForClass(state, classId) {
+  const oralSessionIds = new Set(state.sessions
+    .filter((session) => session.class_id === classId && session.category !== "klausur" && (session.sl_type || "oral") === "oral")
+    .map((session) => session.id));
+  const students = state.students.filter((student) => student.class_id === classId);
+  const counts = new Map(students.map((student) => [student.id, 0]));
+  (state.grades || []).forEach((grade) => {
+    if (!grade.value || !oralSessionIds.has(grade.session_id) || !counts.has(grade.student_id)) return;
+    counts.set(grade.student_id, counts.get(grade.student_id) + 1);
+  });
+  const average = students.length ? Array.from(counts.values()).reduce((sum, count) => sum + count, 0) / students.length : 0;
+  return { counts, average };
+}
+
 function pointSummary(state, session, studentId) {
   const record = (state.point_sessions || []).find((item) => item.session_id === session.id);
   if (!record) return null;
@@ -437,12 +451,18 @@ async function get(url) {
   if (sessionOne) {
     const session = findSession(state, sessionOne[1]);
     const cls = findClass(state, session.class_id);
+    const oralStats = oralGradeStatsForClass(state, session.class_id);
     const students = state.students
       .filter((student) => student.class_id === session.class_id)
       .sort(compareStudents)
       .map((student) => {
         const grade = state.grades.find((item) => item.session_id === session.id && item.student_id === student.id);
-        return { ...studentOut(student), grade: grade?.value || null };
+        return {
+          ...studentOut(student),
+          grade: grade?.value || null,
+          oral_grade_count: oralStats.counts.get(student.id) || 0,
+          oral_grade_average: oralStats.average,
+        };
       });
     return {
       data: {

@@ -12,6 +12,28 @@ function vibrate(ms) {
   try { if (navigator.vibrate) navigator.vibrate(ms); } catch (e) {}
 }
 
+function refreshOralAverage(students) {
+  const average = students.length
+    ? students.reduce((sum, student) => sum + (Number(student.oral_grade_count) || 0), 0) / students.length
+    : 0;
+  return students.map((student) => ({ ...student, oral_grade_average: average }));
+}
+
+function oralAssessmentTone(student) {
+  const count = Number(student?.oral_grade_count);
+  const average = Number(student?.oral_grade_average);
+  if (!Number.isFinite(count) || !Number.isFinite(average) || average <= 0) {
+    return { card: "border-2 border-stone-900", title: "" };
+  }
+  if (count <= average - 1) {
+    return { card: "border-4 border-rose-500 ring-4 ring-rose-200", title: `Selten mündlich bewertet: ${count} von Ø ${average.toFixed(1).replace(".", ",")}` };
+  }
+  if (count >= average + 1) {
+    return { card: "border-4 border-emerald-500 ring-4 ring-emerald-200", title: `Oft mündlich bewertet: ${count} von Ø ${average.toFixed(1).replace(".", ",")}` };
+  }
+  return { card: "border-2 border-stone-900", title: `Mündliche Bewertungen: ${count} von Ø ${average.toFixed(1).replace(".", ",")}` };
+}
+
 export default function Grade() {
   const { sessionId } = useParams();
   const navigate = useNavigate();
@@ -79,14 +101,24 @@ export default function Grade() {
     const student = students[index];
     if (!student || assigningRef.current) return;
     const finalValue = normalizeExamGradeValue(value, session, session.grade_system);
+    const isOralSession = session.category !== "klausur" && (session.sl_type || "oral") === "oral";
+    const incrementsOralCount = isOralSession && !student.grade;
     assigningRef.current = true;
     setFlash({ value: finalValue, color: gradeAccent(finalValue, session.grade_system) || color });
     setActive(null);
     vibrate(30);
     api.post(`/sessions/${sessionId}/grades`, { student_id: student.id, value: finalValue }).catch(() => {});
+    setStudents((current) => refreshOralAverage(current.map((item) => {
+      if (item.id !== student.id) return item;
+      return {
+        ...item,
+        grade: finalValue,
+        oral_grade_count: incrementsOralCount ? (Number(item.oral_grade_count) || 0) + 1 : item.oral_grade_count,
+      };
+    })));
     setTimeout(() => {
       setExitDir(exitVec || { x: 0, y: 0 });
-      setHistory((h) => [...h, { studentId: student.id, index }]);
+      setHistory((h) => [...h, { studentId: student.id, index, incrementsOralCount }]);
       setIndex((i) => i + 1);
       setFlash(null);
       assigningRef.current = false;
@@ -144,6 +176,14 @@ export default function Grade() {
     if (history.length === 0) return;
     const last = history[history.length - 1];
     setHistory((h) => h.slice(0, -1));
+    setStudents((current) => refreshOralAverage(current.map((item) => {
+      if (item.id !== last.studentId) return item;
+      return {
+        ...item,
+        grade: null,
+        oral_grade_count: last.incrementsOralCount ? Math.max(0, (Number(item.oral_grade_count) || 0) - 1) : item.oral_grade_count,
+      };
+    })));
     setExitDir({ x: 0, y: 0 });
     setIndex(last.index);
     vibrate(12);
@@ -160,6 +200,7 @@ export default function Grade() {
 
   const done = index >= students.length;
   const student = students[index];
+  const cardTone = oralAssessmentTone(student);
   const total = students.length;
   const byZone = (z) => cells.filter((c) => c.zone === z);
   const flankLeft = cells.find((c) => c.zone === "flankLeft");
@@ -236,7 +277,8 @@ export default function Grade() {
               <motion.div
                 key={student.id}
                 data-testid="student-swipe-card"
-                className={`pointer-events-auto relative z-40 w-[168px] h-[224px] sm:w-[210px] sm:h-[280px] bg-white border-2 border-stone-900 rounded-3xl shadow-brutal flex flex-col overflow-hidden cursor-grab active:cursor-grabbing ${student.inactive ? "opacity-60 grayscale" : ""}`}
+                className={`pointer-events-auto relative z-40 w-[168px] h-[224px] sm:w-[210px] sm:h-[280px] bg-white rounded-3xl shadow-brutal flex flex-col overflow-hidden cursor-grab active:cursor-grabbing ${cardTone.card} ${student.inactive ? "opacity-60 grayscale" : ""}`}
+                title={cardTone.title}
                 drag
                 dragSnapToOrigin
                 dragElastic={0.7}

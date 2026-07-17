@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { AnimatePresence, motion } from "framer-motion";
-import { AlertTriangle, CheckCircle2, ChevronLeft, ChevronRight, Download, FileSpreadsheet, Loader2, Mail, Percent, Printer, Send, X } from "lucide-react";
+import { AlertTriangle, CheckCircle2, ChevronLeft, ChevronRight, Download, Eye, FileSpreadsheet, Loader2, Mail, Percent, Printer, Send, X } from "lucide-react";
 import api from "../lib/api";
 import { gradeColorClasses, gradeTier } from "../lib/grades";
 import { gradeOptions, gradeToNumber, overrideOptions } from "../lib/gradebook";
@@ -259,14 +259,14 @@ function MailConfirmModal({ request, sending, result, onSend, onClose }) {
   );
 }
 
-function AverageCell({ row, column, tone, systemId, onEdit }) {
+function AverageCell({ row, column, tone, systemId, onEdit, veiled = false }) {
   const shown = displayFor(row, column, systemId);
   const exact = exactFor(row, column);
   const overridden = !!row.overrides[column];
   const toneBg = tone === "sl" ? "bg-emerald-50" : tone === "ka" ? "bg-sky-50" : "bg-stone-50";
 
   return (
-    <td className={`border-l-2 border-t-2 border-stone-200 px-3 py-2 text-center align-middle ${toneBg}`}>
+    <td className={`relative border-l-2 border-t-2 border-stone-200 px-3 py-2 text-center align-middle ${toneBg} ${veiled ? "pointer-events-none" : ""}`}>
       {shown ? (
         <button
           type="button"
@@ -288,17 +288,18 @@ function AverageCell({ row, column, tone, systemId, onEdit }) {
           -
         </button>
       )}
+      {veiled && <div className="absolute inset-0 z-20 bg-white/95 backdrop-blur-[1px]" aria-hidden="true" />}
     </td>
   );
 }
 
-function SessionGradeCell({ row, cell, systemId, onEdit }) {
+function SessionGradeCell({ row, cell, systemId, onEdit, veiled = false }) {
   const toneBg = cell.session.category === "klausur" ? "bg-sky-50" : "bg-emerald-50";
   const calculatedDetail = formatCalculatedDetail(cell, systemId);
   const showCalculated = calculatedDetail && (cell.session.points_mode || cell.manual_override || cell.calculated_value !== cell.value);
 
   return (
-    <td className={`border-l border-t-2 border-stone-200 px-2 py-2 text-center align-middle ${toneBg}`}>
+    <td className={`relative border-l border-t-2 border-stone-200 px-2 py-2 text-center align-middle ${toneBg} ${veiled ? "pointer-events-none" : ""}`}>
       {cell.value ? (
         <button
           type="button"
@@ -319,6 +320,7 @@ function SessionGradeCell({ row, cell, systemId, onEdit }) {
           -
         </button>
       )}
+      {veiled && <div className="absolute inset-0 z-20 bg-white/95 backdrop-blur-[1px]" aria-hidden="true" />}
     </td>
   );
 }
@@ -459,6 +461,7 @@ export default function GradebookModal({ classId, className, open, onClose }) {
   const [mailRequest, setMailRequest] = useState(null);
   const [mailSending, setMailSending] = useState(false);
   const [mailResult, setMailResult] = useState(null);
+  const [focusedStudentId, setFocusedStudentId] = useState(null);
 
   useEffect(() => {
     if (!open) return undefined;
@@ -475,6 +478,7 @@ export default function GradebookModal({ classId, className, open, onClose }) {
     setHeaderEditor(null);
     setMailRequest(null);
     setMailResult(null);
+    setFocusedStudentId(null);
     api.get(`/classes/${classId}/gradebook`)
       .then((res) => setData(res.data))
       .catch(() => setError("Notenstand konnte nicht geladen werden."))
@@ -692,16 +696,23 @@ export default function GradebookModal({ classId, className, open, onClose }) {
                         {rows.map((row, index) => {
                           const rowBg = index % 2 === 0 ? "bg-white" : "bg-stone-50";
                           const inactiveTone = row.student.inactive ? "opacity-60 grayscale" : "";
+                          const isFocused = focusedStudentId === row.student.id;
+                          const isVeiled = !!focusedStudentId && !isFocused;
                           return (
-                            <tr key={row.student.id} className={`${rowBg} ${inactiveTone}`}>
+                            <tr key={row.student.id} className={`${rowBg} ${inactiveTone} ${isVeiled ? "text-stone-300" : ""}`}>
                               <td className={`sticky left-0 z-30 border-t-2 border-stone-200 px-3 py-2 font-bold text-stone-900 ${rowBg}`}>
-                                <button type="button" onClick={() => prepareMail([row])} disabled={!row.student.email} className="flex max-w-60 items-center gap-2 rounded-xl px-2 py-1.5 text-left hover:bg-stone-100 disabled:cursor-not-allowed disabled:opacity-35" title={row.student.email ? "Notenstandsmail vorbereiten" : "Keine Mailadresse importiert"}>
-                                  <Mail className="h-4 w-4 shrink-0 text-stone-500" />
-                                  <span className="truncate">{row.student.first_name} <span className="font-black">{row.student.last_name}</span>{row.student.inactive ? <span className="ml-2 rounded-full bg-stone-200 px-2 py-0.5 text-[10px] font-black uppercase text-stone-600">nicht im Import</span> : null}</span>
-                                </button>
+                                <div className="flex max-w-72 items-center gap-1.5">
+                                  <button type="button" onClick={() => setFocusedStudentId(isFocused ? null : row.student.id)} className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-xl border-2 transition-colors ${isFocused ? "border-stone-900 bg-amber-300 text-stone-900" : "border-stone-200 bg-white text-stone-500 hover:border-stone-900 hover:text-stone-900"}`} title={isFocused ? "Alle Zeilen anzeigen" : "Nur diese Zeile lesbar anzeigen"} aria-label={isFocused ? "Alle Zeilen anzeigen" : "Nur diese Zeile lesbar anzeigen"}>
+                                    <Eye className="h-4 w-4" />
+                                  </button>
+                                  <button type="button" onClick={() => prepareMail([row])} disabled={!row.student.email} className="flex min-w-0 flex-1 items-center gap-2 rounded-xl px-2 py-1.5 text-left hover:bg-stone-100 disabled:cursor-not-allowed disabled:opacity-35" title={row.student.email ? "Notenstandsmail vorbereiten" : "Keine Mailadresse importiert"}>
+                                    <Mail className="h-4 w-4 shrink-0 text-stone-500" />
+                                    <span className="truncate">{row.student.first_name} <span className="font-black">{row.student.last_name}</span>{row.student.inactive ? <span className="ml-2 rounded-full bg-stone-200 px-2 py-0.5 text-[10px] font-black uppercase text-stone-600">nicht im Import</span> : null}</span>
+                                  </button>
+                                </div>
                               </td>
-                              {row.sessionCells.map((cell) => <SessionGradeCell key={cell.session.id} row={row} cell={cell} systemId={data.grade_system} onEdit={editGrade} />)}
-                              {columns.map((column) => <AverageCell key={column.key} row={row} column={column.key} tone={column.tone} systemId={data.grade_system} onEdit={editAverage} />)}
+                              {row.sessionCells.map((cell) => <SessionGradeCell key={cell.session.id} row={row} cell={cell} systemId={data.grade_system} onEdit={editGrade} veiled={isVeiled} />)}
+                              {columns.map((column) => <AverageCell key={column.key} row={row} column={column.key} tone={column.tone} systemId={data.grade_system} onEdit={editAverage} veiled={isVeiled} />)}
                             </tr>
                           );
                         })}
