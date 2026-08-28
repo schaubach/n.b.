@@ -5,7 +5,7 @@ global.TextDecoder = TextDecoder;
 global.crypto = { randomUUID: () => "grade-1", getRandomValues: (bytes) => bytes.fill(1) };
 
 const localApi = require("./localApi");
-const { recalculatePointGrades, oralGradeStatsForClass } = localApi;
+const { recalculatePointGrades, oralGradeStatsForClass, normalizeSeatingPlan } = localApi;
 const { normalizePointScale } = require("./gradeScales");
 
 function baseState() {
@@ -68,4 +68,33 @@ test("oral assessment stats count only oral SL grades", () => {
   expect(stats.counts.get("student-1")).toBe(2);
   expect(stats.counts.get("student-2")).toBe(0);
   expect(stats.average).toBe(1);
+});
+
+test("normalizes saved seating plans and appends newly imported students without closing gaps", () => {
+  const state = {
+    students: [
+      { id: "student-1", class_id: "class-1", first_name: "Ada", last_name: "Alpha" },
+      { id: "student-2", class_id: "class-1", first_name: "Berta", last_name: "Beta" },
+      { id: "student-3", class_id: "class-1", first_name: "Clara", last_name: "Gamma" },
+    ],
+    seating_plans: [],
+  };
+  const plan = normalizeSeatingPlan(state, "class-1", {
+    rows: 2,
+    columns: 4,
+    seats: [
+      { row: 0, column: 0, student_id: "student-1" },
+      { row: 0, column: 3, student_id: "student-3" },
+      { row: 1, column: 0, student_id: "student-outside-class" },
+    ],
+  });
+
+  expect(plan.rows).toBe(2);
+  expect(plan.columns).toBe(4);
+  expect(plan.seats).toEqual(expect.arrayContaining([
+    { row: 0, column: 0, student_id: "student-1" },
+    { row: 0, column: 1, student_id: "student-2" },
+    { row: 0, column: 3, student_id: "student-3" },
+  ]));
+  expect(plan.seats).toHaveLength(3);
 });

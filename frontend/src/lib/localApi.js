@@ -69,6 +69,7 @@ function classOut(state, cls) {
     created_at: cls.created_at,
     student_count: studentCount,
     photo_count: state.students.filter((student) => student.class_id === classId && student.photo).length,
+    has_seating_plan: (state.seating_plans || []).some((plan) => plan.class_id === classId),
     session_count: sessions.length,
     sonstige_count: sonstige,
     klausur_count: klausur,
@@ -81,6 +82,43 @@ function compareStudents(a, b) {
   const first = String(a.first_name || "").localeCompare(String(b.first_name || ""), "de", { sensitivity: "base" });
   if (first !== 0) return first;
   return (a.order || 0) - (b.order || 0);
+}
+
+function clampInteger(value, minimum, maximum, fallback) {
+  const parsed = Number.parseInt(value, 10);
+  if (!Number.isFinite(parsed)) return fallback;
+  return Math.min(maximum, Math.max(minimum, parsed));
+}
+
+export function normalizeSeatingPlan(state, classId, sourcePlan = null) {
+  const students = state.students.filter((student) => student.class_id === classId).sort(compareStudents);
+  const validStudents = new Set(students.map((student) => student.id));
+  const saved = sourcePlan || (state.seating_plans || []).find((plan) => plan.class_id === classId);
+  const columns = clampInteger(saved?.columns, 2, 12, 4);
+  let rows = clampInteger(saved?.rows, 1, 30, Math.max(1, Math.ceil(students.length / columns)));
+  const usedStudents = new Set();
+  const occupiedCells = new Set();
+  const seats = [];
+  (saved?.seats || []).forEach((seat) => {
+    const row = Number.parseInt(seat.row, 10);
+    const column = Number.parseInt(seat.column, 10);
+    const studentId = String(seat.student_id || "");
+    const cellKey = `${row}:${column}`;
+    if (!Number.isInteger(row) || row < 0 || row >= rows || !Number.isInteger(column) || column < 0 || column >= columns || !validStudents.has(studentId) || usedStudents.has(studentId) || occupiedCells.has(cellKey)) return;
+    seats.push({ row, column, student_id: studentId });
+    usedStudents.add(studentId);
+    occupiedCells.add(cellKey);
+  });
+  students.filter((student) => !usedStudents.has(student.id)).forEach((student) => {
+    let flat = 0;
+    while (occupiedCells.has(`${Math.floor(flat / columns)}:${flat % columns}`)) flat += 1;
+    const row = Math.floor(flat / columns);
+    const column = flat % columns;
+    rows = Math.max(rows, row + 1);
+    seats.push({ row, column, student_id: student.id });
+    occupiedCells.add(`${row}:${column}`);
+  });
+  return { class_id: classId, rows, columns, seats, updated_at: saved?.updated_at || null };
 }
 function studentOut(student) {
   return {
@@ -437,6 +475,22 @@ async function get(url) {
       },
     };
   }
+  const classSeatingPlan = path.match(/^\/classes\/([^/]+)\/seating-plan$/);
+  if (classSeatingPlan) {
+    const cls = findClass(state, classSeatingPlan[1]);
+    const saved = (state.seating_plans || []).find((plan) => plan.class_id === cls.id) || null;
+    const students = state.students.filter((student) => student.class_id === cls.id).sort(compareStudents).map(studentOut);
+    return {
+      data: {
+        class_id: cls.id,
+        class_name: cls.name || "",
+        grade_system: cls.grade_system || "grades_1_6",
+        saved: !!saved,
+        plan: normalizeSeatingPlan(state, cls.id, saved),
+        students,
+      },
+    };
+  }
   const classOne = path.match(/^\/classes\/([^/]+)$/);
   if (classOne) {
     const cls = findClass(state, classOne[1]);
@@ -473,6 +527,7 @@ async function get(url) {
         weight: session.weight ?? 1,
         category: session.category || "sonstige",
         sl_type: session.category === "klausur" ? null : (session.sl_type === "written" ? "written" : "oral"),
+        entry_mode: session.entry_mode === "seat_plan" ? "seat_plan" : "standard",
         points_mode: !!session.points_mode,
         grade_scale_id: session.grade_scale_id || cls.grade_scale_id || "MEDA",
         created_at: session.created_at,
@@ -601,6 +656,7 @@ async function post(url, body) {
         weight: body.weight ?? 1,
         category: body.category === "klausur" ? "klausur" : "sonstige",
         sl_type: body.category === "klausur" ? null : (body.sl_type === "written" ? "written" : "oral"),
+        entry_mode: body.category !== "klausur" && body.sl_type !== "written" && body.entry_mode === "seat_plan" ? "seat_plan" : "standard",
         points_mode: !!body.points_mode,
         grade_scale_id: body.grade_scale_id || cls.grade_scale_id || "MEDA",
         created_at: nowIso(),
@@ -638,6 +694,18 @@ async function post(url, body) {
 
 async function put(url, body) {
   const path = normalizePath(url);
+
+  const seatingPlanUpdate = path.match(/^\/classes\/([^/]+)\/seating-plan$/);
+  if (seatingPlanUpdate) {
+    return mutateState((state) => {
+      const cls = findClass(state, seatingPlanUpdate[1]);
+      const plan = normalizeSeatingPlan(state, cls.id, body || {});
+      plan.updated_at = nowIso();
+      state.seating_plans = (state.seating_plans || []).filter((item) => item.class_id !== cls.id);
+      state.seating_plans.push(plan);
+      return { data: { ok: true, plan } };
+    });
+  }
 
   const gradeScaleUpdate = path.match(/^\/grade-scales\/([^/]+)$/);
   if (gradeScaleUpdate) {
@@ -829,6 +897,7 @@ async function del(url) {
       const studentIds = state.students.filter((student) => student.class_id === classId).map((student) => student.id);
       state.classes = state.classes.filter((cls) => cls.id !== classId);
       state.students = state.students.filter((student) => student.class_id !== classId);
+      state.seating_plans = (state.seating_plans || []).filter((plan) => plan.class_id !== classId);
       state.sessions = state.sessions.filter((session) => session.class_id !== classId);
       state.grades = state.grades.filter((grade) => !sessionIds.includes(grade.session_id) && !studentIds.includes(grade.student_id));
       state.gradebook_overrides = (state.gradebook_overrides || []).filter((override) => override.class_id !== classId && !studentIds.includes(override.student_id));
@@ -868,7 +937,4 @@ async function del(url) {
 
 const api = { get, post, put, delete: del };
 export default api;
-
-
-
 

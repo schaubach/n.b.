@@ -44,3 +44,18 @@ test("adds one gradebook CSV per class to backup files", () => {
   expect(gradebook.data).toContain("Ada;Alpha;2;2;2");
   expect(gradebook.data.indexOf("Ada;Alpha")).toBeLessThan(gradebook.data.indexOf("Berta;Beta"));
 });
+
+test("includes class seating plans in the encrypted state CSV", () => {
+  const files = __backupTest.buildFilesFromState({
+    classes: [{ id: "class-1", name: "BK A", grade_system: "grades_1_6" }],
+    students: [{ id: "student-1", class_id: "class-1", first_name: "Ada", last_name: "Alpha" }],
+    seating_plans: [{ class_id: "class-1", rows: 1, columns: 4, seats: [{ row: 0, column: 2, student_id: "student-1" }] }],
+    sessions: [],
+    grades: [],
+  });
+  const stateCsv = files.find((file) => file.name === "data/state.csv");
+
+  expect(stateCsv.data).toContain("seating_plans");
+  expect(stateCsv.data).toContain("student-1");
+  expect(stateCsv.data).toContain("class-1");
+});

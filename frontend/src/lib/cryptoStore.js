@@ -134,6 +134,7 @@ function emptyState() {
   return {
     classes: [],
     students: [],
+    seating_plans: [],
     sessions: [],
     grades: [],
     gradebook_overrides: [],

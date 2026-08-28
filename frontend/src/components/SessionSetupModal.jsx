@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { X, Play, ClipboardList, MessageCircle, Pencil, Percent } from "lucide-react";
+import { X, Play, ClipboardList, MessageCircle, Pencil, Percent, LayoutGrid } from "lucide-react";
 
 function todayISO() {
   const d = new Date();
@@ -24,6 +24,7 @@ export default function SessionSetupModal({ open, className, category = "sonstig
   const [weight, setWeight] = useState("1");
   const [date, setDate] = useState(todayISO());
   const [slType, setSlType] = useState("oral");
+  const [entryMode, setEntryMode] = useState("standard");
   const [pointsMode, setPointsMode] = useState(false);
   const [selectedScale, setSelectedScale] = useState(gradeScaleId || "MEDA");
 
@@ -33,6 +34,7 @@ export default function SessionSetupModal({ open, className, category = "sonstig
       setWeight("1");
       setDate(todayISO());
       setSlType("oral");
+      setEntryMode("standard");
       setPointsMode(false);
       setSelectedScale(gradeScaleId || "MEDA");
     }
@@ -48,6 +50,7 @@ export default function SessionSetupModal({ open, className, category = "sonstig
       date: isoToDE(date),
       category,
       sl_type: isKlausur ? null : slType,
+      entry_mode: !isKlausur && slType === "oral" ? entryMode : "standard",
       points_mode: canUsePoints && pointsMode,
       grade_scale_id: selectedScale,
     });
@@ -67,7 +70,7 @@ export default function SessionSetupModal({ open, className, category = "sonstig
             animate={{ scale: 1, y: 0, opacity: 1 }}
             exit={{ scale: 0.95, opacity: 0 }}
             transition={{ type: "spring", stiffness: 320, damping: 26 }}
-            className="relative w-full max-w-md bg-white border-2 border-stone-900 rounded-3xl shadow-brutal p-6 sm:p-8"
+            className="relative w-full max-w-xl bg-white border-2 border-stone-900 rounded-3xl shadow-brutal p-6 sm:p-8"
           >
             <button
               onClick={onClose}
@@ -105,16 +108,17 @@ export default function SessionSetupModal({ open, className, category = "sonstig
               {!isKlausur && (
                 <div>
                   <span className="text-sm font-bold text-stone-700">Art</span>
-                  <div className="mt-1 grid grid-cols-2 gap-2">
+                  <div className="mt-1 grid grid-cols-1 gap-2 sm:grid-cols-3">
                     <button
                       type="button"
                       onClick={() => {
                         if (title.trim() === "schriftlicher Test") setTitle("mündliche Mitarbeit");
                         setSlType("oral");
+                        setEntryMode("standard");
                         setPointsMode(false);
                       }}
                       data-testid="setup-sl-type-oral"
-                      className={`flex items-center justify-center gap-2 rounded-xl border-2 px-4 py-3 font-heading font-extrabold transition-all ${slType === "oral" ? "border-stone-900 bg-emerald-400 text-stone-900 shadow-brutal-sm" : "border-stone-300 bg-white text-stone-500"}`}
+                      className={`flex items-center justify-center gap-2 rounded-xl border-2 px-4 py-3 font-heading font-extrabold transition-all ${slType === "oral" && entryMode === "standard" ? "border-stone-900 bg-emerald-400 text-stone-900 shadow-brutal-sm" : "border-stone-300 bg-white text-stone-500"}`}
                     >
                       <MessageCircle className="w-5 h-5" /> mündl.
                     </button>
@@ -128,6 +132,19 @@ export default function SessionSetupModal({ open, className, category = "sonstig
                       className={`flex items-center justify-center gap-2 rounded-xl border-2 px-4 py-3 font-heading font-extrabold transition-all ${slType === "written" ? "border-stone-900 bg-emerald-400 text-stone-900 shadow-brutal-sm" : "border-stone-300 bg-white text-stone-500"}`}
                     >
                       <Pencil className="w-5 h-5" /> schrftl.
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (title.trim() === "schriftlicher Test") setTitle("mündliche Mitarbeit");
+                        setSlType("oral");
+                        setEntryMode("seat_plan");
+                        setPointsMode(false);
+                      }}
+                      data-testid="setup-sl-type-seat-plan"
+                      className={`flex items-center justify-center gap-2 rounded-xl border-2 px-3 py-3 font-heading font-extrabold transition-all ${slType === "oral" && entryMode === "seat_plan" ? "border-stone-900 bg-emerald-400 text-stone-900 shadow-brutal-sm" : "border-stone-300 bg-white text-stone-500"}`}
+                    >
+                      <LayoutGrid className="w-5 h-5" /> mdl. über Sitzplan
                     </button>
                   </div>
                 </div>

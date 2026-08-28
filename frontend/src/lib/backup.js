@@ -183,7 +183,7 @@ function dataUrlToBytes(dataUrl) {
 }
 const bytesToDataUrl = (bytes, mime = "image/jpeg") => "data:" + mime + ";base64," + bytesToBase64(bytes);
 const clone = (value) => JSON.parse(JSON.stringify(value));
-const stateKeys = () => ["classes", "students", "sessions", "grades", "gradebook_overrides", "gradebook_weights", "grade_scales", "hidden_grade_scales", "point_sessions", "teacher_config", "backup_meta"];
+const stateKeys = () => ["classes", "students", "seating_plans", "sessions", "grades", "gradebook_overrides", "gradebook_weights", "grade_scales", "hidden_grade_scales", "point_sessions", "teacher_config", "backup_meta"];
 
 
 function compareStudents(a, b) {

@@ -114,7 +114,7 @@ export default function Home() {
 
   const startRound = async (classId, opts) => {
     const res = await api.post("/sessions", { class_id: classId, ...opts });
-    navigate(res.data.points_mode ? `/points/${res.data.id}` : `/grade/${res.data.id}`);
+    navigate(res.data.points_mode ? `/points/${res.data.id}` : res.data.entry_mode === "seat_plan" ? `/seat-plan/${res.data.id}` : `/grade/${res.data.id}`);
   };
 
   const removeClass = (cls) => {
