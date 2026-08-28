@@ -1,6 +1,7 @@
 import { getState, mutateState, replaceState } from "./cryptoStore";
 import { GRADE_SYSTEMS } from "./grades";
 import { parseClassCsv } from "./csvImport";
+import { nameSimilarity } from "./seatPlanPdf";
 import {
   allGradeScales,
   evaluatePercent,
@@ -91,11 +92,31 @@ function clampInteger(value, minimum, maximum, fallback) {
 }
 
 export function normalizeSeatingPlan(state, classId, sourcePlan = null) {
-  const students = state.students.filter((student) => student.class_id === classId).sort(compareStudents);
+  const students = state.students
+    .filter((student) => student.class_id === classId && !student.inactive)
+    .sort(compareStudents);
   const validStudents = new Set(students.map((student) => student.id));
-  const saved = sourcePlan || (state.seating_plans || []).find((plan) => plan.class_id === classId);
+  const stored = (state.seating_plans || []).find((plan) => plan.class_id === classId) || null;
+  const saved = sourcePlan ? { ...(stored || {}), ...sourcePlan } : stored;
   const columns = clampInteger(saved?.columns, 2, 12, 4);
   let rows = clampInteger(saved?.rows, 1, 30, Math.max(1, Math.ceil(students.length / columns)));
+  const rawPdfEntries = Array.isArray(saved?.pdf_only_entries)
+    ? saved.pdf_only_entries
+    : (saved?.pdf_only_names || []).map((name) => ({ name }));
+  const seenPdfNames = new Set();
+  const pdfOnlyEntries = rawPdfEntries.flatMap((entry) => {
+    const name = String(entry?.name || entry || "").trim().slice(0, 160);
+    const row = Number.parseInt(entry?.row, 10);
+    const column = Number.parseInt(entry?.column, 10);
+    const key = `${name.toLocaleLowerCase("de")}:${Number.isInteger(row) ? row : ""}:${Number.isInteger(column) ? column : ""}`;
+    if (!name || seenPdfNames.has(key)) return [];
+    seenPdfNames.add(key);
+    return [{
+      name,
+      row: Number.isInteger(row) && row >= 0 && row < rows ? row : null,
+      column: Number.isInteger(column) && column >= 0 && column < columns ? column : null,
+    }];
+  }).slice(0, 200);
   const usedStudents = new Set();
   const occupiedCells = new Set();
   const seats = [];
@@ -109,16 +130,50 @@ export function normalizeSeatingPlan(state, classId, sourcePlan = null) {
     usedStudents.add(studentId);
     occupiedCells.add(cellKey);
   });
-  students.filter((student) => !usedStudents.has(student.id)).forEach((student) => {
-    let flat = 0;
-    while (occupiedCells.has(`${Math.floor(flat / columns)}:${flat % columns}`)) flat += 1;
-    const row = Math.floor(flat / columns);
-    const column = flat % columns;
-    rows = Math.max(rows, row + 1);
-    seats.push({ row, column, student_id: student.id });
-    occupiedCells.add(`${row}:${column}`);
-  });
-  return { class_id: classId, rows, columns, seats, updated_at: saved?.updated_at || null };
+  if (saved?.preserve_unplaced) {
+    students.filter((student) => !usedStudents.has(student.id)).forEach((student) => {
+      const matches = pdfOnlyEntries.map((entry, index) => ({
+        entry,
+        index,
+        score: nameSimilarity(student, entry.name),
+      })).filter(({ entry, score }) => (
+        score >= 0.82
+        && entry.row !== null
+        && entry.column !== null
+        && !occupiedCells.has(`${entry.row}:${entry.column}`)
+      )).sort((a, b) => b.score - a.score);
+      const match = matches[0];
+      if (!match) return;
+      seats.push({ row: match.entry.row, column: match.entry.column, student_id: student.id });
+      usedStudents.add(student.id);
+      occupiedCells.add(`${match.entry.row}:${match.entry.column}`);
+      pdfOnlyEntries.splice(match.index, 1);
+    });
+  } else {
+    students.filter((student) => !usedStudents.has(student.id)).forEach((student) => {
+      let flat = 0;
+      while (occupiedCells.has(`${Math.floor(flat / columns)}:${flat % columns}`)) flat += 1;
+      const row = Math.floor(flat / columns);
+      const column = flat % columns;
+      rows = Math.max(rows, row + 1);
+      seats.push({ row, column, student_id: student.id });
+      occupiedCells.add(`${row}:${column}`);
+    });
+  }
+  const remainingPdfOnlyEntries = pdfOnlyEntries.filter((entry) => (
+    entry.row === null
+    || entry.column === null
+    || !occupiedCells.has(`${entry.row}:${entry.column}`)
+  ));
+  return {
+    class_id: classId,
+    rows,
+    columns,
+    seats,
+    preserve_unplaced: !!saved?.preserve_unplaced,
+    pdf_only_entries: remainingPdfOnlyEntries,
+    updated_at: saved?.updated_at || null,
+  };
 }
 function studentOut(student) {
   return {
@@ -366,6 +421,13 @@ function importParsedCsv(state, parsed, gradeSystem, gradeScaleId = "MEDA") {
         }
         inactive += 1;
       }
+    }
+
+    const seatingPlanIndex = (state.seating_plans || []).findIndex((plan) => plan.class_id === cls.id);
+    if (seatingPlanIndex >= 0) {
+      const normalizedPlan = normalizeSeatingPlan(state, cls.id, state.seating_plans[seatingPlanIndex]);
+      normalizedPlan.updated_at = nowIso();
+      state.seating_plans[seatingPlanIndex] = normalizedPlan;
     }
 
     results.push({
@@ -937,4 +999,3 @@ async function del(url) {
 
 const api = { get, post, put, delete: del };
 export default api;
-

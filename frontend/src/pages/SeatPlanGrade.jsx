@@ -51,6 +51,8 @@ export default function SeatPlanGrade() {
   const [rows, setRows] = useState(1);
   const [columns, setColumns] = useState(4);
   const [cells, setCells] = useState([]);
+  const [preserveUnplaced, setPreserveUnplaced] = useState(false);
+  const [pdfOnlyEntries, setPdfOnlyEntries] = useState([]);
   const [loading, setLoading] = useState(true);
   const [parsing, setParsing] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -75,6 +77,8 @@ export default function SeatPlanGrade() {
         setRows(nextPlan.rows);
         setColumns(nextPlan.columns);
         setCells(cellsFromPlan(nextPlan));
+        setPreserveUnplaced(!!nextPlan.preserve_unplaced);
+        setPdfOnlyEntries(nextPlan.pdf_only_entries || []);
         if (!planRes.data.saved) setMessage("Standard-Sitzplan erstellt. Du kannst ihn direkt verwenden oder eine Sitzplan-PDF hochladen.");
       } catch (err) {
         setError(err?.response?.data?.detail || err?.message || "Sitzplan konnte nicht geladen werden.");
@@ -85,12 +89,22 @@ export default function SeatPlanGrade() {
   }, [sessionId]);
 
   const studentsById = useMemo(() => new Map(students.map((student) => [student.id, student])), [students]);
+  const activeStudents = useMemo(() => students.filter((student) => !student.inactive), [students]);
+  const inactiveStudents = useMemo(() => students.filter((student) => student.inactive), [students]);
+  const seatedStudentIds = useMemo(() => new Set(cells.filter(Boolean)), [cells]);
+  const csvOnlyStudents = useMemo(() => preserveUnplaced
+    ? activeStudents.filter((student) => !seatedStudentIds.has(student.id))
+    : [], [activeStudents, preserveUnplaced, seatedStudentIds]);
   const gradedCount = students.filter((student) => student.grade).length;
 
-  const persist = async (nextRows, nextColumns, nextCells) => {
+  const persist = async (nextRows, nextColumns, nextCells, metadata = {}) => {
+    const nextPreserveUnplaced = metadata.preserveUnplaced ?? preserveUnplaced;
+    const nextPdfOnlyEntries = metadata.pdfOnlyEntries ?? pdfOnlyEntries;
     setRows(nextRows);
     setColumns(nextColumns);
     setCells(nextCells);
+    setPreserveUnplaced(nextPreserveUnplaced);
+    setPdfOnlyEntries(nextPdfOnlyEntries);
     setSaving(true);
     setError("");
     try {
@@ -98,10 +112,14 @@ export default function SeatPlanGrade() {
         rows: nextRows,
         columns: nextColumns,
         seats: seatsFromCells(nextCells, nextColumns),
+        preserve_unplaced: nextPreserveUnplaced,
+        pdf_only_entries: nextPdfOnlyEntries,
       });
       setRows(result.data.plan.rows);
       setColumns(result.data.plan.columns);
       setCells(cellsFromPlan(result.data.plan));
+      setPreserveUnplaced(!!result.data.plan.preserve_unplaced);
+      setPdfOnlyEntries(result.data.plan.pdf_only_entries || []);
     } catch (err) {
       setError(err?.response?.data?.detail || err?.message || "Sitzplan konnte nicht gespeichert werden.");
     } finally {
@@ -117,11 +135,15 @@ export default function SeatPlanGrade() {
     try {
       const parsed = await parseSeatPlanPdf(file, students);
       const nextCells = cellsFromPlan(parsed);
-      await persist(parsed.rows, parsed.columns, nextCells);
+      await persist(parsed.rows, parsed.columns, nextCells, {
+        preserveUnplaced: true,
+        pdfOnlyEntries: parsed.pdf_only_entries,
+      });
       const uncertain = parsed.uncertain.length;
-      const unmatched = parsed.unmatched.length;
-      setEditing(uncertain > 0 || unmatched > 0);
-      setMessage(`${parsed.matched} Namen wurden räumlich zugeordnet.${unmatched ? ` ${unmatched} nicht erkannte Namen wurden am Ende ergänzt.` : ""}${uncertain ? ` Bitte prüfe ${uncertain} unsichere Zuordnung${uncertain === 1 ? "" : "en"}.` : ""}`);
+      const csvOnly = parsed.unmatched.length;
+      const pdfOnly = parsed.pdf_only_entries.length;
+      setEditing(uncertain > 0 || csvOnly > 0 || pdfOnly > 0);
+      setMessage(`${parsed.matched} aktive Namen wurden räumlich zugeordnet.${csvOnly ? ` ${csvOnly} gibt es nur in der IServ-Gruppenliste.` : ""}${pdfOnly ? ` ${pdfOnly} gibt es nur im Sitzplan-PDF.` : ""}${uncertain ? ` Bitte prüfe ${uncertain} unsichere Zuordnung${uncertain === 1 ? "" : "en"}.` : ""}`);
     } catch (err) {
       setError(err?.message || "Die Sitzplan-PDF konnte nicht ausgewertet werden.");
     } finally {
@@ -237,13 +259,57 @@ export default function SeatPlanGrade() {
             {cells.map((studentId, index) => {
               const student = studentsById.get(studentId);
               return editing ? (
-                <SeatEditor key={index} student={student} students={students} onChange={(value) => assignSeat(index, value)} />
+                <SeatEditor key={index} student={student} students={activeStudents} onChange={(value) => assignSeat(index, value)} />
               ) : (
                 <SeatCard key={index} student={student} systemId={session.grade_system} onClick={() => student && setPicker(student)} />
               );
             })}
           </div>
         </div>
+
+        {(csvOnlyStudents.length > 0 || pdfOnlyEntries.length > 0) && (
+          <section className="mt-5 rounded-2xl border-2 border-amber-500 bg-amber-50 p-4 shadow-brutal-sm">
+            <h2 className="font-heading text-lg font-black text-stone-900">Nicht zugeordnete Lernende</h2>
+            {csvOnlyStudents.length > 0 && (
+              <div className="mt-4">
+                <h3 className="mb-2 text-sm font-black uppercase text-stone-600">Nur in der IServ-Gruppenliste</h3>
+                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-6">
+                  {csvOnlyStudents.map((student) => (
+                    <SeatCard key={student.id} student={student} systemId={session.grade_system} onClick={() => setPicker(student)} />
+                  ))}
+                </div>
+              </div>
+            )}
+            {pdfOnlyEntries.length > 0 && (
+              <div className="mt-4">
+                <h3 className="mb-2 text-sm font-black uppercase text-stone-600">Nur im Sitzplan-PDF</h3>
+                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-6">
+                  {pdfOnlyEntries.map((entry, index) => (
+                    <div key={`${entry.name}-${index}`} className="flex min-h-32 flex-col items-center justify-center rounded-xl border-2 border-dashed border-amber-600 bg-white p-3 text-center">
+                      <LayoutGrid className="h-7 w-7 text-amber-600" />
+                      <span className="mt-2 font-heading font-black text-stone-900">{entry.name}</span>
+                      <span className="mt-1 text-xs font-bold text-stone-500">Kein CSV-Datensatz · nicht benotbar</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </section>
+        )}
+
+        {inactiveStudents.length > 0 && (
+          <section className="mt-5 rounded-2xl border-2 border-stone-400 bg-white p-4 shadow-brutal-sm">
+            <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
+              <h2 className="font-heading text-lg font-black text-stone-900">Nicht mehr aktive Lernende</h2>
+              <span className="text-sm font-bold text-stone-500">Nicht mehr im aktuellen IServ-Import · weiterhin benotbar</span>
+            </div>
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-6">
+              {inactiveStudents.map((student) => (
+                <SeatCard key={student.id} student={student} systemId={session.grade_system} onClick={() => setPicker(student)} />
+              ))}
+            </div>
+          </section>
+        )}
       </main>
 
       <GradePicker student={picker} systemId={session.grade_system} onPick={(value) => setGrade(picker, value)} onRemove={() => setGrade(picker, null)} onClose={() => setPicker(null)} />

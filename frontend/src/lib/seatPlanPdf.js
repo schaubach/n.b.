@@ -129,6 +129,7 @@ function matchStudents(page, students) {
       y: possibility.candidate.y,
       score: possibility.score,
       text: possibility.candidate.text,
+      itemIds: possibility.candidate.itemIds,
     });
   });
   return matches;
@@ -248,7 +249,7 @@ function gridFromLines(page) {
     y1: Math.max(Number(line.y1), Number(line.y2)),
     dx: Math.abs(Number(line.x2) - Number(line.x1)),
   })).filter((line) => line.dx <= 2 && line.y1 - line.y0 >= page.height * 0.08);
-  if (vertical.length < 6) return null;
+  if (vertical.length < 3) return null;
 
   const rowGroups = groupObjects(
     vertical.slice().sort((a, b) => a.y0 - b.y0 || a.y1 - b.y1),
@@ -283,6 +284,32 @@ function gridFromLines(page) {
   };
 }
 
+function gridCellForPoint(grid, x, y) {
+  const row = grid.rows.findIndex((candidate) => y >= candidate.y0 - 2 && y <= candidate.y1 + 2);
+  const column = grid.boundaries.slice(0, -1).findIndex((boundary, index) => (
+    x >= boundary - 2 && x <= grid.boundaries[index + 1] + 2
+  ));
+  return row >= 0 && column >= 0 ? { row, column, key: `${row}:${column}` } : null;
+}
+
+function gridCellTexts(page, grid) {
+  const cells = new Map();
+  (page.items || []).forEach((item) => {
+    const text = String(item.str || "").trim();
+    if (!/[A-Za-zÄÖÜäöüß]/.test(text)) return;
+    const point = center(item);
+    const position = gridCellForPoint(grid, point.x, point.y);
+    if (!position) return;
+    const current = cells.get(position.key) || { ...position, items: [] };
+    current.items.push({ text, x: point.x, y: point.y });
+    cells.set(position.key, current);
+  });
+  return Array.from(cells.values()).map((cell) => ({
+    ...cell,
+    text: cell.items.slice().sort((a, b) => a.y - b.y || a.x - b.x).map((item) => item.text).join(" ").trim(),
+  })).filter((cell) => normalize(cell.text).length >= 2);
+}
+
 function inferColumns(matches, pages) {
   const normalizedX = matches.map((match) => match.x / pages[match.pageIndex].width);
   const centers = cluster(normalizedX, 0.022).map((item) => item.average);
@@ -292,19 +319,6 @@ function inferColumns(matches, pages) {
   const origin = Math.min(...centers);
   const columns = Math.max(2, Math.min(12, Math.round((Math.max(...centers) - origin) / step) + 1));
   return { columns, origin, step };
-}
-
-function appendUnmatched(plan, students, matchedIds) {
-  const unmatched = students.filter((student) => !matchedIds.has(student.id));
-  if (!unmatched.length) return plan;
-  const startIndex = plan.rows * plan.columns;
-  const neededRows = Math.ceil(unmatched.length / plan.columns);
-  unmatched.forEach((student, index) => {
-    const flat = startIndex + index;
-    plan.seats.push({ row: Math.floor(flat / plan.columns), column: flat % plan.columns, student_id: student.id });
-  });
-  plan.rows += neededRows;
-  return plan;
 }
 
 export function defaultSeatPlan(students, columns = DEFAULT_COLUMNS) {
@@ -321,39 +335,38 @@ export function defaultSeatPlan(students, columns = DEFAULT_COLUMNS) {
 }
 
 export function buildSeatPlanFromTextPages(pages, students) {
+  const activeStudents = (students || []).filter((student) => !student.inactive);
+  const activeStudentIds = new Set(activeStudents.map((student) => student.id));
   const pageMatches = (pages || []).map((page) => matchStudents(page, students));
   const allMatches = pageMatches.flatMap((matches, pageIndex) => matches.map((match) => ({ ...match, pageIndex })));
-  if (!allMatches.length) throw new Error("In der PDF konnten keine Namen aus dieser Klasse erkannt werden.");
-  const inferredGrid = inferColumns(allMatches, pages);
   const pageGrids = (pages || []).map(gridFromLines);
   const lineColumnCounts = pageGrids.filter(Boolean).map((grid) => grid.boundaries.length - 1);
   const lineColumns = lineColumnCounts.length
     ? lineColumnCounts.slice().sort((a, b) => lineColumnCounts.filter((value) => value === b).length - lineColumnCounts.filter((value) => value === a).length || b - a)[0]
     : null;
+  if (!allMatches.length && !lineColumns) throw new Error("In der PDF konnten keine Namen oder Sitzplätze erkannt werden.");
+  const inferredGrid = allMatches.length
+    ? inferColumns(allMatches, pages)
+    : { columns: lineColumns || DEFAULT_COLUMNS, origin: 0, step: 1 / (lineColumns || DEFAULT_COLUMNS) };
   const columns = lineColumns || inferredGrid.columns;
   const seats = [];
+  const pageRowOffsets = [];
   let rowOffset = 0;
   pageMatches.forEach((matches, pageIndex) => {
     const page = pages[pageIndex];
     const lineGrid = pageGrids[pageIndex];
+    pageRowOffsets[pageIndex] = rowOffset;
     if (lineGrid && lineGrid.boundaries.length - 1 === columns) {
-      matches.forEach((match) => {
-        const localRow = lineGrid.rows.reduce((best, row, index) => {
-          if (match.y >= row.y0 - 2 && match.y <= row.y1 + 2) return index;
-          const distance = Math.abs((row.y0 + row.y1) / 2 - match.y);
-          const bestDistance = Math.abs((lineGrid.rows[best].y0 + lineGrid.rows[best].y1) / 2 - match.y);
-          return distance < bestDistance ? index : best;
-        }, 0);
-        const centers = lineGrid.boundaries.slice(0, -1).map((boundary, index) => (boundary + lineGrid.boundaries[index + 1]) / 2);
-        const column = centers.reduce((best, value, index) => Math.abs(value - match.x) < Math.abs(centers[best] - match.x) ? index : best, 0);
-        seats.push({ row: rowOffset + localRow, column, student_id: match.student_id, confidence: match.score });
+      matches.filter((match) => activeStudentIds.has(match.student_id)).forEach((match) => {
+        const position = gridCellForPoint(lineGrid, match.x, match.y);
+        if (position) seats.push({ row: rowOffset + position.row, column: position.column, student_id: match.student_id, confidence: match.score });
       });
       rowOffset += lineGrid.rows.length;
       return;
     }
     if (!matches.length) return;
     const rowClusters = cluster(matches.map((match) => match.y / page.height), 0.065);
-    matches.forEach((match) => {
+    matches.filter((match) => activeStudentIds.has(match.student_id)).forEach((match) => {
       const normalizedY = match.y / page.height;
       const row = rowOffset + rowClusters.reduce((best, rowCluster, index) => (
         Math.abs(rowCluster.average - normalizedY) < Math.abs(rowClusters[best].average - normalizedY) ? index : best
@@ -365,21 +378,44 @@ export function buildSeatPlanFromTextPages(pages, students) {
     rowOffset += rowClusters.length;
   });
   const occupied = new Map();
+  const acceptedStudents = new Set();
   seats.sort((a, b) => b.confidence - a.confidence).forEach((seat) => {
     const key = `${seat.row}:${seat.column}`;
-    if (!occupied.has(key)) occupied.set(key, seat);
+    if (!occupied.has(key) && !acceptedStudents.has(seat.student_id)) {
+      occupied.set(key, seat);
+      acceptedStudents.add(seat.student_id);
+    }
   });
   const accepted = Array.from(occupied.values());
   const matchedIds = new Set(accepted.map((seat) => seat.student_id));
-  const plan = appendUnmatched({
+  const pdfOnlyEntries = [];
+  pageGrids.forEach((grid, pageIndex) => {
+    if (!grid || grid.boundaries.length - 1 !== columns) return;
+    const matchedCells = new Set(pageMatches[pageIndex].map((match) => gridCellForPoint(grid, match.x, match.y)?.key).filter(Boolean));
+    gridCellTexts(pages[pageIndex], grid).forEach((cell) => {
+      if (!matchedCells.has(cell.key)) {
+        pdfOnlyEntries.push({ name: cell.text, row: (pageRowOffsets[pageIndex] || 0) + cell.row, column: cell.column });
+      }
+    });
+  });
+  const uniquePdfOnly = [];
+  const seenPdfNames = new Set();
+  pdfOnlyEntries.forEach((entry) => {
+    const key = `${normalize(entry.name)}:${entry.row}:${entry.column}`;
+    if (!key || seenPdfNames.has(key)) return;
+    seenPdfNames.add(key);
+    uniquePdfOnly.push(entry);
+  });
+  const plan = {
     rows: Math.max(1, rowOffset),
     columns,
     seats: accepted.map(({ confidence, ...seat }) => seat),
-  }, students, matchedIds);
+  };
   return {
     ...plan,
     matched: matchedIds.size,
-    unmatched: students.filter((student) => !matchedIds.has(student.id)).map((student) => student.id),
+    unmatched: activeStudents.filter((student) => !matchedIds.has(student.id)).map((student) => student.id),
+    pdf_only_entries: uniquePdfOnly,
     uncertain: accepted.filter((seat) => seat.confidence < 0.82).map((seat) => seat.student_id),
   };
 }

@@ -76,3 +76,29 @@ test("keeps completely empty rows from the PDF table grid", () => {
     { row: 3, column: 3, student_id: "student-4" },
   ]));
 });
+
+test("separates CSV-only, PDF-only and inactive learners", () => {
+  const rowLines = [0, 100, 200, 300, 400].map((x) => ({ x1: x, y1: 0, x2: x, y2: 100 }));
+  const comparedStudents = [
+    students[0],
+    { ...students[1], inactive: true },
+    students[2],
+  ];
+  const pages = [{
+    width: 400,
+    height: 200,
+    lines: rowLines,
+    items: [
+      { str: "Bata Anas", x: 20, y: 35, width: 60, height: 20 },
+      { str: "Mikolajewski Oskar", x: 105, y: 35, width: 90, height: 20 },
+      { str: "Neue Person", x: 210, y: 35, width: 70, height: 20 },
+    ],
+  }];
+
+  const plan = buildSeatPlanFromTextPages(pages, comparedStudents);
+
+  expect(plan.seats).toEqual([{ row: 0, column: 0, student_id: "student-1" }]);
+  expect(plan.unmatched).toEqual(["student-3"]);
+  expect(plan.pdf_only_entries).toEqual([{ name: "Neue Person", row: 0, column: 2 }]);
+  expect(plan.seats.some((seat) => seat.student_id === "student-2")).toBe(false);
+});

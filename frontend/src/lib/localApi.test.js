@@ -98,3 +98,65 @@ test("normalizes saved seating plans and appends newly imported students without
   ]));
   expect(plan.seats).toHaveLength(3);
 });
+
+test("removes inactive students from the active seating grid", () => {
+  const state = {
+    students: [
+      { id: "student-1", class_id: "class-1", first_name: "Ada", last_name: "Alpha" },
+      { id: "student-2", class_id: "class-1", first_name: "Berta", last_name: "Beta", inactive: true },
+      { id: "student-3", class_id: "class-1", first_name: "Clara", last_name: "Gamma" },
+    ],
+    seating_plans: [],
+  };
+  const plan = normalizeSeatingPlan(state, "class-1", {
+    rows: 1,
+    columns: 4,
+    seats: [
+      { row: 0, column: 0, student_id: "student-1" },
+      { row: 0, column: 1, student_id: "student-2" },
+    ],
+  });
+
+  expect(plan.seats).toEqual(expect.arrayContaining([
+    { row: 0, column: 0, student_id: "student-1" },
+    { row: 0, column: 1, student_id: "student-3" },
+  ]));
+  expect(plan.seats.some((seat) => seat.student_id === "student-2")).toBe(false);
+});
+
+test("keeps CSV-only students outside PDF layouts", () => {
+  const state = {
+    students: [
+      { id: "student-1", class_id: "class-1", first_name: "Ada", last_name: "Alpha" },
+      { id: "student-2", class_id: "class-1", first_name: "Berta", last_name: "Beta" },
+    ],
+    seating_plans: [],
+  };
+  const plan = normalizeSeatingPlan(state, "class-1", {
+    rows: 1,
+    columns: 4,
+    preserve_unplaced: true,
+    pdf_only_entries: [{ name: "Unbekannt Person", row: 0, column: 2 }],
+    seats: [{ row: 0, column: 0, student_id: "student-1" }],
+  });
+
+  expect(plan.seats).toEqual([{ row: 0, column: 0, student_id: "student-1" }]);
+  expect(plan.pdf_only_entries).toEqual([{ name: "Unbekannt Person", row: 0, column: 2 }]);
+});
+
+test("places a newly imported learner into a matching PDF-only seat", () => {
+  const state = {
+    students: [{ id: "student-1", class_id: "class-1", first_name: "Ada", last_name: "Alpha" }],
+    seating_plans: [],
+  };
+  const plan = normalizeSeatingPlan(state, "class-1", {
+    rows: 1,
+    columns: 4,
+    preserve_unplaced: true,
+    pdf_only_entries: [{ name: "Alpha Ada", row: 0, column: 2 }],
+    seats: [],
+  });
+
+  expect(plan.seats).toEqual([{ row: 0, column: 2, student_id: "student-1" }]);
+  expect(plan.pdf_only_entries).toEqual([]);
+});
