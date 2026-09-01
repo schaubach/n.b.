@@ -4,7 +4,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import {
   Users, Trash2, CheckCircle2,
   Loader2, FileUp, X, Plus, Camera, Table2, Mail, UserRound, Percent, Download,
-  Copy, MoreVertical, Pencil,
+  Copy, MoreVertical,
 } from "lucide-react";
 import api from "../lib/api";
 import { GRADE_SYSTEMS } from "../lib/grades";
@@ -427,10 +427,9 @@ function ClassCard({ c, onStart, onDelete, onDeleteGrades, onPhotos, onGradebook
       className={`relative rounded-3xl border-2 border-stone-900 bg-white p-6 shadow-brutal-sm flex flex-col ${menuOpen ? "z-20" : "z-0"}`}
     >
       <div className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-3">
-        <button type="button" onClick={onRename} data-testid={`rename-class-${c.id}`} className="group min-w-0 text-left" title="Klassenname ändern">
-          <span className="flex min-w-0 items-start gap-2 break-words font-heading text-2xl font-black leading-tight text-stone-900 [overflow-wrap:anywhere]">
-            <span className="min-w-0">{c.name}</span>
-            <Pencil className="mt-1 h-4 w-4 shrink-0 text-stone-300 transition-colors group-hover:text-stone-700" />
+        <button type="button" onClick={onRename} data-testid={`rename-class-${c.id}`} className="min-w-0 text-left" title="Klassenname ändern">
+          <span className="block min-w-0 break-words font-heading text-2xl font-black leading-tight text-stone-900 [overflow-wrap:anywhere]">
+            {c.name}
           </span>
         </button>
         <div className="flex shrink-0 items-center gap-2 self-start">
@@ -455,11 +454,16 @@ function ClassCard({ c, onStart, onDelete, onDeleteGrades, onPhotos, onGradebook
               <MoreVertical className="h-5 w-5" />
             </button>
             {menuOpen && (
-              <div role="menu" className="absolute right-0 top-11 z-30 w-48 overflow-hidden rounded-xl border-2 border-stone-900 bg-white p-1.5 shadow-brutal-sm">
+              <div role="menu" className="absolute right-0 top-11 z-30 w-52 overflow-hidden rounded-xl border-2 border-stone-900 bg-white p-1.5 shadow-brutal-sm">
                 <button type="button" role="menuitem" data-testid={`duplicate-class-${c.id}`} disabled={busy} onClick={() => { setMenuOpen(false); run(onDuplicate); }} className="flex w-full items-center gap-2 rounded-lg px-3 py-2.5 text-left font-bold text-stone-800 hover:bg-stone-100 disabled:opacity-50">
                   <Copy className="h-4 w-4" /> Duplizieren
                 </button>
-                <button type="button" role="menuitem" data-testid={`delete-class-${c.id}`} onClick={() => { setMenuOpen(false); onDelete(); }} className="flex w-full items-center gap-2 rounded-lg px-3 py-2.5 text-left font-bold text-rose-700 hover:bg-rose-50">
+                {sessions > 0 && (
+                  <button type="button" role="menuitem" data-testid={`delete-sessions-${c.id}`} disabled={busy} onClick={() => { setMenuOpen(false); onDeleteGrades(); }} className="flex w-full items-center gap-2 rounded-lg px-3 py-2.5 text-left font-bold text-stone-800 hover:bg-stone-100 disabled:opacity-50">
+                    <Trash2 className="h-4 w-4 text-rose-600" /> Bewertungen löschen
+                  </button>
+                )}
+                <button type="button" role="menuitem" data-testid={`delete-class-${c.id}`} onClick={() => { setMenuOpen(false); onDelete(); }} className="mt-1 flex w-full items-center gap-2 rounded-lg border-t-2 border-stone-100 px-3 py-2.5 text-left font-bold text-rose-700 hover:bg-rose-50">
                   <Trash2 className="h-4 w-4" /> Klasse löschen
                 </button>
               </div>
@@ -512,7 +516,7 @@ function ClassCard({ c, onStart, onDelete, onDeleteGrades, onPhotos, onGradebook
       </div>
 
       {sessions > 0 && (
-        <div className="mt-4 pt-3 border-t-2 border-stone-100 space-y-2">
+        <div className="mt-4 pt-3 border-t-2 border-stone-100">
           <button
             onClick={() => run(onGradebook)}
             disabled={busy}
@@ -521,15 +525,6 @@ function ClassCard({ c, onStart, onDelete, onDeleteGrades, onPhotos, onGradebook
           >
             <Table2 className="w-4 h-4" />
             Notenstand
-          </button>
-          <button
-            onClick={() => run(onDeleteGrades)}
-            disabled={busy}
-            data-testid={`delete-sessions-${c.id}`}
-            className="w-full px-4 py-3 bg-white text-rose-700 font-bold rounded-xl border-2 border-rose-300 active:scale-[0.99] transition-all flex items-center justify-center gap-2 text-sm disabled:opacity-50"
-          >
-            <Trash2 className="w-4 h-4" />
-            Löschen
           </button>
         </div>
       )}
