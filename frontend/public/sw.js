@@ -1,5 +1,6 @@
-const CACHE_NAME = "nb-offline-v4";
+const CACHE_NAME = "nb-offline-v5";
 const CORE_ASSETS = ["./", "./index.html", "./manifest.json", "./logo.jpeg", "./icon.svg", "./asset-manifest.json", "./app-version.json"];
+const GRADE_SCALE_INDEX = "./notenskala/index.json";
 const NAVIGATION_UPDATE_TIMEOUT_MS = 1800;
 
 function fetchWithTimeout(request, timeoutMs = NAVIGATION_UPDATE_TIMEOUT_MS) {
@@ -13,6 +14,20 @@ function cacheBustedUrl(asset) {
   const url = new URL(asset, self.location.href);
   url.searchParams.set("__nb_update", String(Date.now()));
   return url.href;
+}
+
+function validGradeScaleFilename(name) {
+  return typeof name === "string" && /\.csv$/i.test(name) && !name.includes("/") && !name.includes("\\");
+}
+
+async function bundledGradeScaleAssets(reload = false) {
+  const response = await fetch(reload ? cacheBustedUrl(GRADE_SCALE_INDEX) : GRADE_SCALE_INDEX, {
+    cache: reload ? "reload" : "default",
+    credentials: "same-origin",
+  });
+  if (!response || !response.ok) throw new Error("Notenskalen-Index konnte nicht geladen werden.");
+  const files = await response.json();
+  return [GRADE_SCALE_INDEX, ...(Array.isArray(files) ? files.filter(validGradeScaleFilename).map((name) => `./notenskala/${encodeURIComponent(name)}`) : [])];
 }
 
 async function fetchAndPut(cache, asset) {
@@ -32,6 +47,7 @@ async function updateOfflineCache() {
   Object.values(manifest.files || {}).forEach((asset) => {
     if (typeof asset === "string" && !asset.endsWith(".map")) assets.add(asset);
   });
+  (await bundledGradeScaleAssets(true)).forEach((asset) => assets.add(asset));
   await Promise.all(Array.from(assets).map((asset) => fetchAndPut(cache, asset)));
 }
 
@@ -55,6 +71,9 @@ async function precache() {
     Object.values(manifest.files || {}).forEach((asset) => {
       if (typeof asset === "string" && !asset.endsWith(".map")) assets.add(asset);
     });
+  } catch (error) {}
+  try {
+    (await bundledGradeScaleAssets()).forEach((asset) => assets.add(asset));
   } catch (error) {}
   await cache.addAll(Array.from(assets));
 }

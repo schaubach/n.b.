@@ -208,6 +208,65 @@ function findStudent(state, studentId) {
   return student;
 }
 
+function uniqueClassName(state, requestedName) {
+  const requested = String(requestedName || "").trim().slice(0, 120);
+  if (!requested) httpError("Klassenname darf nicht leer sein.");
+  const names = new Set(state.classes.map((cls) => String(cls.name || "").trim().toLocaleLowerCase("de")));
+  if (!names.has(requested.toLocaleLowerCase("de"))) return requested;
+  let number = 2;
+  while (names.has(`${requested} ${number}`.toLocaleLowerCase("de"))) number += 1;
+  return `${requested} ${number}`;
+}
+
+export function duplicateClassInState(state, classId, requestedName = "", createId = id) {
+  const source = findClass(state, classId);
+  const duplicateId = createId();
+  const duplicateName = uniqueClassName(state, requestedName || `${source.name || "Klasse"} (Kopie)`);
+  const timestamp = nowIso();
+  const duplicate = {
+    ...source,
+    id: duplicateId,
+    source_id: `copy:${duplicateId}`,
+    name: duplicateName,
+    created_at: timestamp,
+    updated_at: timestamp,
+  };
+  state.classes.push(duplicate);
+
+  const studentIds = new Map();
+  state.students.filter((student) => student.class_id === source.id).forEach((student) => {
+    const studentId = createId();
+    studentIds.set(student.id, studentId);
+    const copiedStudent = {
+      ...student,
+      id: studentId,
+      class_id: duplicateId,
+      source_key: `copy:${duplicateId}:${studentId}`,
+      created_at: timestamp,
+      updated_at: timestamp,
+    };
+    delete copiedStudent.csv_key;
+    state.students.push(copiedStudent);
+  });
+
+  const sourcePlan = (state.seating_plans || []).find((plan) => plan.class_id === source.id);
+  if (sourcePlan) {
+    state.seating_plans = state.seating_plans || [];
+    state.seating_plans.push({
+      ...sourcePlan,
+      class_id: duplicateId,
+      seats: (sourcePlan.seats || []).flatMap((seat) => {
+        const studentId = studentIds.get(seat.student_id);
+        return studentId ? [{ ...seat, student_id: studentId }] : [];
+      }),
+      pdf_only_entries: (sourcePlan.pdf_only_entries || []).map((entry) => ({ ...entry })),
+      updated_at: timestamp,
+    });
+  }
+
+  return classOut(state, duplicate);
+}
+
 async function parseCsvForm(formData) {
   const file = formData.get("file");
   if (!file || !file.text) httpError("Keine CSV-Datei uebergeben.");
@@ -226,6 +285,33 @@ function csvEscape(value) {
 
 function gradeScalesForState(state) {
   return allGradeScales(state.grade_scales, state.hidden_grade_scales);
+}
+
+export function applyBundledGradeScales(state, bundledScales, version) {
+  state.grade_scales = state.grade_scales || [];
+  state.app_meta = state.app_meta || {};
+  (bundledScales || []).forEach((scale) => {
+    const nameKey = String(scale.name || scale.id || "").trim().toLocaleLowerCase("de");
+    if (!nameKey || !(scale.rows || []).length) return;
+    const replaced = state.grade_scales.filter((current) => (
+      current.id === scale.id
+      || String(current.name || current.id || "").trim().toLocaleLowerCase("de") === nameKey
+    ));
+    const replacedIds = new Set(replaced.map((current) => current.id));
+    state.grade_scales = state.grade_scales.filter((current) => !replaced.includes(current));
+    state.grade_scales.push({
+      ...scale,
+      built_in: true,
+      bundled: true,
+      rows: scale.rows.map((row) => ({ ...row })),
+    });
+    unhideGradeScale(state, scale.id);
+    state.classes.forEach((cls) => { if (replacedIds.has(cls.grade_scale_id)) cls.grade_scale_id = scale.id; });
+    state.sessions.forEach((session) => { if (replacedIds.has(session.grade_scale_id)) session.grade_scale_id = scale.id; });
+  });
+  state.app_meta.bundled_grade_scales_version = String(version || "");
+  state.app_meta.bundled_grade_scales_synced_at = nowIso();
+  return gradeScalesForState(state);
 }
 
 function hideGradeScale(state, scaleId) {
@@ -451,6 +537,7 @@ async function get(url) {
   if (path === "/") return { data: { app: "n.b.", status: "ok", storage: "local-encrypted" } };
   if (path === "/backup/state") return { data: { state: JSON.parse(JSON.stringify(state)) } };
   if (path === "/grade-systems") return { data: GRADE_SYSTEMS };
+  if (path === "/grade-scales/bundled-version") return { data: { version: state.app_meta?.bundled_grade_scales_version || "" } };
   if (path === "/grade-scales") return { data: gradeScalesForState(state) };
   const sessionPoints = path.match(/^\/sessions\/([^/]+)\/points$/);
   if (sessionPoints) {
@@ -665,6 +752,22 @@ async function post(url, body) {
     });
   }
 
+  if (path === "/grade-scales/sync-bundled") {
+    return mutateState((state) => {
+      const version = String(body.version || "").trim().slice(0, 120);
+      if (!version) httpError("WebApp-Version fehlt.");
+      if (state.app_meta?.bundled_grade_scales_version === version) {
+        return { data: { ok: true, changed: false, scales: gradeScalesForState(state) } };
+      }
+      const bundled = (body.scales || []).map((item) => {
+        const parsed = parseGradeScaleCsv(item.csv || "", item.name || "Skala");
+        return { ...parsed, built_in: true, bundled: true };
+      });
+      const scales = applyBundledGradeScales(state, bundled, version);
+      return { data: { ok: true, changed: true, scales } };
+    });
+  }
+
   if (path === "/import/peek") {
     const parsed = await parseCsvForm(body);
     const state = await getState();
@@ -728,6 +831,13 @@ async function post(url, body) {
     });
   }
 
+  const classDuplicate = path.match(/^\/classes\/([^/]+)\/duplicate$/);
+  if (classDuplicate) {
+    return mutateState((state) => ({
+      data: duplicateClassInState(state, classDuplicate[1], body?.name || ""),
+    }));
+  }
+
   const gradePost = path.match(/^\/sessions\/([^/]+)\/grades$/);
   if (gradePost) {
     return mutateState((state) => {
@@ -756,6 +866,18 @@ async function post(url, body) {
 
 async function put(url, body) {
   const path = normalizePath(url);
+
+  const classUpdate = path.match(/^\/classes\/([^/]+)$/);
+  if (classUpdate) {
+    return mutateState((state) => {
+      const cls = findClass(state, classUpdate[1]);
+      const name = String(body.name || "").trim().slice(0, 120);
+      if (!name) httpError("Klassenname darf nicht leer sein.");
+      cls.name = name;
+      cls.updated_at = nowIso();
+      return { data: classOut(state, cls) };
+    });
+  }
 
   const seatingPlanUpdate = path.match(/^\/classes\/([^/]+)\/seating-plan$/);
   if (seatingPlanUpdate) {

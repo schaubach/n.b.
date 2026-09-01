@@ -131,7 +131,7 @@ export function allGradeScales(customScales = [], hiddenScaleIds = []) {
   const map = new Map(DEFAULT_GRADE_SCALES
     .filter((scale) => !hidden.has(scale.id))
     .map((scale) => [scale.id, scale]));
-  (customScales || []).forEach((scale) => map.set(scale.id, { ...scale, built_in: false }));
+  (customScales || []).forEach((scale) => map.set(scale.id, { ...scale, built_in: !!scale.built_in }));
   return Array.from(map.values()).sort((a, b) => String(a.name).localeCompare(String(b.name), "de", { sensitivity: "base" }));
 }
 

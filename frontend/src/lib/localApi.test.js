@@ -5,7 +5,7 @@ global.TextDecoder = TextDecoder;
 global.crypto = { randomUUID: () => "grade-1", getRandomValues: (bytes) => bytes.fill(1) };
 
 const localApi = require("./localApi");
-const { recalculatePointGrades, oralGradeStatsForClass, normalizeSeatingPlan } = localApi;
+const { applyBundledGradeScales, duplicateClassInState, recalculatePointGrades, oralGradeStatsForClass, normalizeSeatingPlan } = localApi;
 const { normalizePointScale } = require("./gradeScales");
 
 function baseState() {
@@ -159,4 +159,66 @@ test("places a newly imported learner into a matching PDF-only seat", () => {
 
   expect(plan.seats).toEqual([{ row: 0, column: 2, student_id: "student-1" }]);
   expect(plan.pdf_only_entries).toEqual([]);
+});
+
+test("duplicates class data, photos and seating plan without assessments", () => {
+  const state = {
+    classes: [{ id: "class-1", source_id: "csv:bk-a", name: "BK A", grade_system: "grades_1_6", grade_scale_id: "MEDA", created_at: "old" }],
+    students: [
+      { id: "student-1", class_id: "class-1", first_name: "Ada", last_name: "Alpha", photo: "data:image/jpeg;base64,PHOTO", inactive: false },
+      { id: "student-2", class_id: "class-1", first_name: "Berta", last_name: "Beta", photo: null, inactive: true },
+    ],
+    seating_plans: [{ class_id: "class-1", rows: 1, columns: 2, seats: [{ row: 0, column: 0, student_id: "student-1" }], pdf_only_entries: [{ name: "Nur PDF", row: 0, column: 1 }] }],
+    sessions: [{ id: "session-1", class_id: "class-1" }],
+    grades: [{ id: "grade-1", session_id: "session-1", student_id: "student-1", value: "2" }],
+    gradebook_overrides: [{ class_id: "class-1", student_id: "student-1", column: "final", value: "2" }],
+    gradebook_weights: [{ class_id: "class-1", column: "oral", weight: 2 }],
+    point_sessions: [{ session_id: "session-1", columns: [], entries: [] }],
+    grade_scales: [],
+    hidden_grade_scales: [],
+  };
+  const ids = ["class-copy", "student-copy-1", "student-copy-2"];
+
+  const result = duplicateClassInState(state, "class-1", "", () => ids.shift());
+
+  expect(result).toMatchObject({ id: "class-copy", name: "BK A (Kopie)", student_count: 2, photo_count: 1, session_count: 0 });
+  const copiedStudents = state.students.filter((student) => student.class_id === "class-copy");
+  expect(copiedStudents).toHaveLength(2);
+  expect(copiedStudents[0]).toMatchObject({ id: "student-copy-1", photo: "data:image/jpeg;base64,PHOTO", inactive: false });
+  expect(copiedStudents[1]).toMatchObject({ id: "student-copy-2", inactive: true });
+  expect(state.seating_plans.find((plan) => plan.class_id === "class-copy")).toMatchObject({
+    seats: [{ row: 0, column: 0, student_id: "student-copy-1" }],
+    pdf_only_entries: [{ name: "Nur PDF", row: 0, column: 1 }],
+  });
+  expect(state.sessions.filter((session) => session.class_id === "class-copy")).toEqual([]);
+  expect(state.grades).toHaveLength(1);
+  expect(state.gradebook_overrides.filter((item) => item.class_id === "class-copy")).toEqual([]);
+  expect(state.gradebook_weights.filter((item) => item.class_id === "class-copy")).toEqual([]);
+});
+
+test("bundled grade scales replace same-name local scales and keep custom scales", () => {
+  const state = {
+    classes: [{ id: "class-1", grade_scale_id: "legacy-meda" }],
+    sessions: [{ id: "session-1", grade_scale_id: "legacy-meda" }],
+    grade_scales: [
+      { id: "legacy-meda", name: "MEDA", rows: [{ grade: "1", points: "15", minPercent: 77 }] },
+      { id: "Eigene", name: "Eigene", rows: [{ grade: "1", points: "15", minPercent: 88 }] },
+    ],
+    hidden_grade_scales: ["MEDA"],
+    app_meta: {},
+  };
+
+  const scales = applyBundledGradeScales(state, [{
+    id: "MEDA",
+    name: "MEDA",
+    rows: [{ grade: "1+", points: "15", minPercent: 95 }],
+  }], "1.6.1");
+
+  expect(scales.find((scale) => scale.id === "MEDA")).toMatchObject({ built_in: true, rows: [{ grade: "1+", points: "15", minPercent: 95 }] });
+  expect(scales.find((scale) => scale.id === "Eigene")).toBeTruthy();
+  expect(state.grade_scales.some((scale) => scale.id === "legacy-meda")).toBe(false);
+  expect(state.classes[0].grade_scale_id).toBe("MEDA");
+  expect(state.sessions[0].grade_scale_id).toBe("MEDA");
+  expect(state.hidden_grade_scales).not.toContain("MEDA");
+  expect(state.app_meta.bundled_grade_scales_version).toBe("1.6.1");
 });

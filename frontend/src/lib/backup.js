@@ -183,7 +183,9 @@ function dataUrlToBytes(dataUrl) {
 }
 const bytesToDataUrl = (bytes, mime = "image/jpeg") => "data:" + mime + ";base64," + bytesToBase64(bytes);
 const clone = (value) => JSON.parse(JSON.stringify(value));
-const stateKeys = () => ["classes", "students", "seating_plans", "sessions", "grades", "gradebook_overrides", "gradebook_weights", "grade_scales", "hidden_grade_scales", "point_sessions", "teacher_config", "backup_meta"];
+const stateKeys = () => ["classes", "students", "seating_plans", "sessions", "grades", "gradebook_overrides", "gradebook_weights", "grade_scales", "hidden_grade_scales", "point_sessions", "teacher_config", "backup_meta", "app_meta"];
+const objectStateKeys = new Set(["teacher_config", "backup_meta", "app_meta"]);
+const emptyStateValue = (key) => objectStateKeys.has(key) ? {} : [];
 
 
 function compareStudents(a, b) {
@@ -301,7 +303,7 @@ function buildFilesFromState(rawState) {
     student.photo_file = name;
   }
   addGradebookCsvFiles(files, state);
-  files.push({ name: "data/state.csv", data: "\ufeff" + [["key", "json"], ...stateKeys().map((key) => [key, JSON.stringify(state[key] ?? (key === "teacher_config" || key === "backup_meta" ? {} : []))])].map(csvLine).join("\n") });
+  files.push({ name: "data/state.csv", data: "\ufeff" + [["key", "json"], ...stateKeys().map((key) => [key, JSON.stringify(state[key] ?? emptyStateValue(key))])].map(csvLine).join("\n") });
   files.push({ name: "data/images.csv", data: "\ufeff" + [["student_id", "file", "mime"], ...imageManifest.map((item) => [item.student_id, item.file, item.mime])].map(csvLine).join("\n") });
   files.push({ name: "manifest.json", data: JSON.stringify({ app: "n.b.", type: "encrypted-backup-source", version: BACKUP_VERSION, created_at: new Date().toISOString() }, null, 2) });
   return files;
@@ -314,7 +316,7 @@ function stateFromZipFiles(files) {
   const restored = {};
   for (const row of rows.slice(1)) if (row[0]) restored[row[0]] = JSON.parse(row[1] || "null");
   const state = {};
-  for (const key of stateKeys()) state[key] = restored[key] ?? (key === "teacher_config" || key === "backup_meta" ? {} : []);
+  for (const key of stateKeys()) state[key] = restored[key] ?? emptyStateValue(key);
   for (const student of state.students || []) {
     if (student.photo_file && files.has(student.photo_file)) {
       const mime = student.photo_file.toLowerCase().endsWith(".png") ? "image/png" : "image/jpeg";

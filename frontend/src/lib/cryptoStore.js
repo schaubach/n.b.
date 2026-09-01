@@ -144,6 +144,7 @@ function emptyState() {
     point_sessions: [],
     teacher_config: {},
     backup_meta: {},
+    app_meta: {},
   };
 }
 

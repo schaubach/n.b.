@@ -4,6 +4,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import {
   Users, Trash2, CheckCircle2,
   Loader2, FileUp, X, Plus, Camera, Table2, Mail, UserRound, Percent, Download,
+  Copy, MoreVertical, Pencil,
 } from "lucide-react";
 import api from "../lib/api";
 import { GRADE_SYSTEMS } from "../lib/grades";
@@ -15,6 +16,7 @@ import GradebookModal from "../components/GradebookModal";
 import TeacherConfigModal from "../components/TeacherConfigModal";
 import GradeScaleManager from "../components/GradeScaleManager";
 import { sendBackupToTeacher } from "../lib/backup";
+import { syncBundledGradeScales } from "../lib/bundledGradeScales";
 
 export default function Home() {
   const navigate = useNavigate();
@@ -31,8 +33,9 @@ export default function Home() {
   const [gradeScaleOpen, setGradeScaleOpen] = useState(false);
   const [gradeScales, setGradeScales] = useState([]);
   const [backupBusy, setBackupBusy] = useState(false);
-  const [backupMessage, setBackupMessage] = useState("");
+  const [noticeMessage, setNoticeMessage] = useState("");
   const [importOptions, setImportOptions] = useState(null);
+  const [renameClass, setRenameClass] = useState(null);
   const fileRef = useRef(null);
 
   const closeModal = () => setModal({ open: false });
@@ -40,6 +43,7 @@ export default function Home() {
   const load = async () => {
     setLoading(true);
     try {
+      try { await syncBundledGradeScales(); } catch (syncError) { console.warn("Standardnotenskalen konnten nicht synchronisiert werden.", syncError); }
       const [res, scaleRes] = await Promise.all([api.get("/classes"), api.get("/grade-scales")]);
       setClasses(res.data);
       setGradeScales(scaleRes.data);
@@ -101,10 +105,10 @@ export default function Home() {
   const runBackup = async () => {
     setBackupBusy(true);
     setError("");
-    setBackupMessage("");
+    setNoticeMessage("");
     try {
       await sendBackupToTeacher({ download: true });
-      setBackupMessage("Backup wurde erstellt, heruntergeladen und an die Lehrendenadresse gesendet.");
+      setNoticeMessage("Backup wurde erstellt, heruntergeladen und an die Lehrendenadresse gesendet.");
     } catch (err) {
       setError(err?.message || err?.response?.data?.detail || "Backup konnte nicht erstellt werden.");
     } finally {
@@ -115,6 +119,25 @@ export default function Home() {
   const startRound = async (classId, opts) => {
     const res = await api.post("/sessions", { class_id: classId, ...opts });
     navigate(res.data.points_mode ? `/points/${res.data.id}` : res.data.entry_mode === "seat_plan" ? `/seat-plan/${res.data.id}` : `/grade/${res.data.id}`);
+  };
+
+  const duplicateClass = async (cls) => {
+    setError(null);
+    setNoticeMessage("");
+    try {
+      const response = await api.post(`/classes/${cls.id}/duplicate`, {});
+      await load();
+      setNoticeMessage(`Klasse „${response.data.name}“ wurde ohne Bewertungen dupliziert.`);
+    } catch (err) {
+      setError(err?.response?.data?.detail || "Klasse konnte nicht dupliziert werden.");
+    }
+  };
+
+  const saveClassName = async (cls, name) => {
+    const response = await api.put(`/classes/${cls.id}`, { name });
+    setRenameClass(null);
+    await load();
+    setNoticeMessage(`Klasse wurde in „${response.data.name}“ umbenannt.`);
   };
 
   const removeClass = (cls) => {
@@ -268,14 +291,14 @@ export default function Home() {
               </button>
             </motion.div>
           )}
-          {backupMessage && (
+          {noticeMessage && (
             <motion.div
               initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
               className="mt-4 flex items-start gap-3 rounded-2xl border-2 border-emerald-700 bg-emerald-100 p-4 text-emerald-950 font-bold shadow-brutal-sm"
             >
               <CheckCircle2 className="w-6 h-6 text-emerald-700 shrink-0 mt-0.5" />
-              <span>{backupMessage}</span>
-              <button onClick={(e) => { e.stopPropagation(); setBackupMessage(""); }} className="ml-auto text-emerald-700">
+              <span>{noticeMessage}</span>
+              <button onClick={(e) => { e.stopPropagation(); setNoticeMessage(""); }} className="ml-auto text-emerald-700">
                 <X className="w-5 h-5" />
               </button>
             </motion.div>
@@ -313,6 +336,8 @@ export default function Home() {
                 key={c.id} c={c}
                 onStart={(cat) => setSetup({ cls: c, category: cat })}
                 onDelete={() => removeClass(c)}
+                onDuplicate={() => duplicateClass(c)}
+                onRename={() => setRenameClass(c)}
                 onDeleteGrades={() => handleDeleteGrades(c)}
                 onPhotos={() => setPhotoClass(c)}
                 onGradebook={() => setGradebookClass(c)}
@@ -323,6 +348,11 @@ export default function Home() {
       </main>
 
       <ConfirmModal {...modal} onClose={closeModal} />
+      <ClassNameModal
+        target={renameClass}
+        onClose={() => setRenameClass(null)}
+        onSave={(name) => saveClassName(renameClass, name)}
+      />
       <PhotoManager
         open={!!photoClass}
         classId={photoClass?.id}
@@ -366,8 +396,10 @@ export default function Home() {
   );
 }
 
-function ClassCard({ c, onStart, onDelete, onDeleteGrades, onPhotos, onGradebook }) {
+function ClassCard({ c, onStart, onDelete, onDeleteGrades, onPhotos, onGradebook, onDuplicate, onRename }) {
   const [busy, setBusy] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const menuRef = useRef(null);
   const sessions = c.session_count || 0;
   const sonstige = c.sonstige_count || 0;
   const klausur = c.klausur_count || 0;
@@ -381,14 +413,26 @@ function ClassCard({ c, onStart, onDelete, onDeleteGrades, onPhotos, onGradebook
 
   const disabled = c.student_count === 0 || busy;
 
+  useEffect(() => {
+    if (!menuOpen) return undefined;
+    const close = (event) => { if (!menuRef.current?.contains(event.target)) setMenuOpen(false); };
+    document.addEventListener("pointerdown", close);
+    return () => document.removeEventListener("pointerdown", close);
+  }, [menuOpen]);
+
   return (
     <motion.div
       initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }}
       data-testid={`class-card-${c.id}`}
-      className="rounded-3xl border-2 border-stone-900 bg-white p-6 shadow-brutal-sm flex flex-col"
+      className={`relative rounded-3xl border-2 border-stone-900 bg-white p-6 shadow-brutal-sm flex flex-col ${menuOpen ? "z-20" : "z-0"}`}
     >
       <div className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-3">
-        <h3 className="min-w-0 break-words font-heading text-2xl font-black leading-tight text-stone-900 [overflow-wrap:anywhere]">{c.name}</h3>
+        <button type="button" onClick={onRename} data-testid={`rename-class-${c.id}`} className="group min-w-0 text-left" title="Klassenname ändern">
+          <span className="flex min-w-0 items-start gap-2 break-words font-heading text-2xl font-black leading-tight text-stone-900 [overflow-wrap:anywhere]">
+            <span className="min-w-0">{c.name}</span>
+            <Pencil className="mt-1 h-4 w-4 shrink-0 text-stone-300 transition-colors group-hover:text-stone-700" />
+          </span>
+        </button>
         <div className="flex shrink-0 items-center gap-2 self-start">
           <button
             onClick={onPhotos}
@@ -398,14 +442,29 @@ function ClassCard({ c, onStart, onDelete, onDeleteGrades, onPhotos, onGradebook
           >
             <Camera className="w-5 h-5" />
           </button>
-          <button
-            onClick={onDelete}
-            data-testid={`delete-class-${c.id}`}
-            className="flex h-9 w-9 items-center justify-center rounded-xl border-2 border-stone-200 bg-white text-stone-400 transition-colors hover:border-rose-300 hover:text-rose-600"
-            aria-label="Klasse löschen"
-          >
-            <Trash2 className="w-5 h-5" />
-          </button>
+          <div ref={menuRef} className="relative">
+            <button
+              type="button"
+              onClick={() => setMenuOpen((open) => !open)}
+              className="flex h-9 w-9 items-center justify-center rounded-xl border-2 border-stone-200 bg-white text-stone-500 transition-colors hover:border-stone-900 hover:text-stone-900"
+              aria-label="Klassenmenü"
+              data-testid={`class-menu-${c.id}`}
+              aria-haspopup="menu"
+              aria-expanded={menuOpen}
+            >
+              <MoreVertical className="h-5 w-5" />
+            </button>
+            {menuOpen && (
+              <div role="menu" className="absolute right-0 top-11 z-30 w-48 overflow-hidden rounded-xl border-2 border-stone-900 bg-white p-1.5 shadow-brutal-sm">
+                <button type="button" role="menuitem" data-testid={`duplicate-class-${c.id}`} disabled={busy} onClick={() => { setMenuOpen(false); run(onDuplicate); }} className="flex w-full items-center gap-2 rounded-lg px-3 py-2.5 text-left font-bold text-stone-800 hover:bg-stone-100 disabled:opacity-50">
+                  <Copy className="h-4 w-4" /> Duplizieren
+                </button>
+                <button type="button" role="menuitem" data-testid={`delete-class-${c.id}`} onClick={() => { setMenuOpen(false); onDelete(); }} className="flex w-full items-center gap-2 rounded-lg px-3 py-2.5 text-left font-bold text-rose-700 hover:bg-rose-50">
+                  <Trash2 className="h-4 w-4" /> Klasse löschen
+                </button>
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
@@ -478,8 +537,58 @@ function ClassCard({ c, onStart, onDelete, onDeleteGrades, onPhotos, onGradebook
   );
 }
 
+function ClassNameModal({ target, onClose, onSave }) {
+  const [name, setName] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
 
+  useEffect(() => {
+    setName(target?.name || "");
+    setError("");
+  }, [target]);
 
+  if (!target) return null;
+
+  const submit = async (event) => {
+    event.preventDefault();
+    const nextName = name.trim();
+    if (!nextName) {
+      setError("Bitte einen Klassennamen eingeben.");
+      return;
+    }
+    setSaving(true);
+    setError("");
+    try {
+      await onSave(nextName);
+    } catch (err) {
+      setError(err?.response?.data?.detail || "Klassenname konnte nicht gespeichert werden.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-[140] flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-stone-900/45 backdrop-blur-sm" onClick={saving ? undefined : onClose} />
+      <form onSubmit={submit} className="relative w-full max-w-md rounded-3xl border-2 border-stone-900 bg-white p-6 shadow-brutal">
+        <button type="button" onClick={onClose} disabled={saving} className="absolute right-4 top-4 text-stone-400 hover:text-stone-900 disabled:opacity-40" aria-label="Abbrechen"><X className="h-5 w-5" /></button>
+        <p className="text-xs font-bold uppercase tracking-[0.18em] text-stone-400">Klasse bearbeiten</p>
+        <h2 className="font-heading text-2xl font-black text-stone-900">Klassenname ändern</h2>
+        <label className="mt-5 block">
+          <span className="text-sm font-bold text-stone-700">Neuer Name</span>
+          <input autoFocus maxLength={120} value={name} onChange={(event) => setName(event.target.value)} disabled={saving} className="mt-1 w-full rounded-xl border-2 border-stone-300 px-4 py-3 font-bold text-stone-900 outline-none focus:border-stone-900 disabled:opacity-50" />
+        </label>
+        {error && <p className="mt-3 rounded-xl border-2 border-rose-300 bg-rose-100 px-3 py-2 font-bold text-rose-800">{error}</p>}
+        <div className="mt-6 grid grid-cols-2 gap-2">
+          <button type="button" onClick={onClose} disabled={saving} className="rounded-xl border-2 border-stone-300 bg-white px-4 py-3 font-heading font-extrabold text-stone-700 disabled:opacity-50">Abbrechen</button>
+          <button type="submit" disabled={saving || !name.trim()} className="flex items-center justify-center gap-2 rounded-xl border-2 border-stone-900 bg-stone-900 px-4 py-3 font-heading font-extrabold text-white disabled:opacity-50">
+            {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />} Speichern
+          </button>
+        </div>
+      </form>
+    </div>
+  );
+}
 
 function ImportOptionsModal({ options, scales, onChange, onCancel, onImport }) {
   if (!options) return null;
