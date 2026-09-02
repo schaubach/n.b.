@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { AnimatePresence, motion } from "framer-motion";
-import { AlertTriangle, CheckCircle2, ChevronLeft, ChevronRight, Download, Eye, FileSpreadsheet, Loader2, Mail, Percent, Printer, Send, X } from "lucide-react";
+import { AlertTriangle, CheckCircle2, ChevronLeft, ChevronRight, Download, Eye, FileDown, FileSpreadsheet, Loader2, Mail, Percent, Send, X } from "lucide-react";
 import api from "../lib/api";
 import { gradeColorClasses, gradeTier } from "../lib/grades";
 import { gradeOptions, gradeToNumber, overrideOptions } from "../lib/gradebook";
@@ -51,45 +51,6 @@ const PRINT_COLORS = {
   6: { bg: "#991b1b", fg: "#ffffff", border: "#450a0a" },
 };
 
-function printGrade(value, systemId, detail = "") {
-  if (!value) return '<span class="empty">-</span>';
-  const color = PRINT_COLORS[gradeTier(value, systemId)] || { bg: "#f5f5f4", fg: "#78716c", border: "#d6d3d1" };
-  const sub = detail ? '<span class="grade-detail">' + htmlEscape(detail) + '</span>' : "";
-  return '<span class="grade-pill" style="background:' + color.bg + ';color:' + color.fg + ';border-color:' + color.border + '"><span>' + htmlEscape(value) + '</span>' + sub + '</span>';
-}
-
-function gradebookPrintHtml(data, rows, columns) {
-  const sessions = sortedSessions(data);
-  const title = (data.class_name || "Klasse") + " - Notenstand";
-  const now = new Date().toLocaleDateString("de-DE");
-  const sessionHeaders = sessions.map((session) => {
-    const label = session.category === "klausur" ? examTerms(data.grade_system).long : (slType(session) === "written" ? "SL schriftl." : "SL mündl.");
-    return '<th><div class="kind">' + htmlEscape(label) + '</div><div>' + htmlEscape(session.title) + '</div><small>' + htmlEscape(session.date) + ' · x' + htmlEscape(session.weight ?? 1) + '</small></th>';
-  }).join("");
-  const averageHeaders = columns.map((column) => '<th class="avg"><div>' + htmlEscape(column.label) + '</div><small>' + htmlEscape(column.hint) + '</small></th>').join("");
-  const body = rows.map((row) => {
-    const sessionCells = row.sessionCells.map((cell) => '<td>' + printGrade(cell.value, data.grade_system, formatCalculatedDetail(cell, data.grade_system)) + '</td>').join("");
-    const averageCells = columns.map((column) => {
-      const shown = displayFor(row, column.key, data.grade_system);
-      return '<td>' + printGrade(shown, data.grade_system, exactFor(row, column.key)) + '</td>';
-    }).join("");
-    return '<tr><th class="name">' + htmlEscape(row.student.last_name) + ', ' + htmlEscape(row.student.first_name) + '</th>' + sessionCells + averageCells + '</tr>';
-  }).join("");
-
-  return '<!doctype html><html lang="de"><head><meta charset="utf-8" /><title>' + htmlEscape(title) + '</title><style>'
-    + '@page{size:A4 landscape;margin:10mm}*{box-sizing:border-box}body{font-family:Arial,Helvetica,sans-serif;color:#1c1917;margin:0;padding-top:52px}'
-    + '.print-toolbar{position:fixed;left:0;right:0;top:0;z-index:9999;display:flex;justify-content:space-between;gap:10px;align-items:center;padding:8px 10px;background:#fff;border-bottom:2px solid #1c1917;box-shadow:0 2px 0 #1c1917;font-size:12px;font-weight:800}'
-    + '.print-toolbar-actions{display:flex;gap:8px}.print-toolbar button{appearance:none;border:2px solid #1c1917;border-radius:10px;background:#fff;color:#1c1917;padding:8px 12px;font-weight:900}.print-toolbar button.primary{background:#1c1917;color:#fff}'
-    + 'header{display:flex;justify-content:space-between;gap:16px;align-items:end;margin-bottom:12px}h1{font-size:20px;margin:0}.meta{color:#78716c;font-size:11px;font-weight:700}'
-    + 'table{width:100%;border-collapse:collapse;table-layout:auto;font-size:10px}th,td{border:1px solid #a8a29e;padding:4px;text-align:center;vertical-align:middle;break-inside:avoid}'
-    + 'thead th{background:#292524;color:#fff;font-weight:800}thead th.avg{background:#44403c}th.name{text-align:left;white-space:nowrap;background:#f5f5f4;font-weight:800}'
-    + '.kind{font-size:9px;text-transform:uppercase;letter-spacing:.04em;opacity:.88}small{display:block;font-size:8px;line-height:1.2;opacity:.82;margin-top:2px}'
-    + '.grade-pill{display:inline-flex;min-width:28px;min-height:20px;padding:2px 5px;border:1.5px solid;border-radius:7px;align-items:center;justify-content:center;flex-direction:column;font-weight:900;line-height:1}'
-    + '.grade-detail{font-size:7px;margin-top:2px;opacity:.85;font-weight:800}.empty{color:#a8a29e;font-weight:800}@media print{body{padding-top:0;print-color-adjust:exact;-webkit-print-color-adjust:exact}.print-toolbar{display:none}}'
-    + '</style></head><body><div class="print-toolbar"><div>Notenstand-Druckansicht</div><div class="print-toolbar-actions"><button type="button" onclick="window.print()">Drucken</button><button type="button" class="primary" onclick="window.close();setTimeout(function(){if(!window.closed){history.length>1?history.back():location.replace(\'about:blank\');}},150);">Schließen</button></div></div><header><div><h1>' + htmlEscape(title) + '</h1><div class="meta">' + htmlEscape(rows.length) + ' Lernende · ' + htmlEscape(now) + '</div></div><div class="meta">n.b.</div></header>'
-    + '<table><thead><tr><th>Lernende*r</th>' + sessionHeaders + averageHeaders + '</tr></thead><tbody>' + body + '</tbody></table>'
-    + '<script>window.addEventListener("load",function(){setTimeout(function(){window.print();},150);});</script></body></html>';
-}
 function studentName(student) {
   return String((student?.first_name || "") + " " + (student?.last_name || "")).trim();
 }
@@ -160,9 +121,13 @@ function teacherConfigMissing(config) {
 
 function MailConfirmModal({ request, sending, result, onSend, onClose }) {
   const [index, setIndex] = useState(0);
+  const [copyToSent, setCopyToSent] = useState(false);
   const [backendCheck, setBackendCheck] = useState({ status: "idle", message: "" });
 
-  useEffect(() => { setIndex(0); }, [request]);
+  useEffect(() => {
+    setIndex(0);
+    setCopyToSent(false);
+  }, [request]);
   useEffect(() => {
     if (!request) {
       setBackendCheck({ status: "idle", message: "" });
@@ -207,6 +172,13 @@ function MailConfirmModal({ request, sending, result, onSend, onClose }) {
               <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0" />
               <span>Mailversand funktioniert nur aus dem Schulnetz und mit erreichbarem Mail-Backend.</span>
             </div>
+            <label className="mb-4 flex cursor-pointer items-center justify-between gap-4 rounded-2xl border-2 border-stone-300 bg-stone-50 px-4 py-3">
+              <span className="min-w-0">
+                <span className="block font-bold text-stone-900">Mails in meinem Gesendet-Ordner duplizieren</span>
+                <span className="mt-0.5 block text-xs font-bold text-stone-500">Der passende Ordner wird über IMAP automatisch ermittelt.</span>
+              </span>
+              <input type="checkbox" checked={copyToSent} onChange={(event) => setCopyToSent(event.target.checked)} disabled={sending} className="h-6 w-6 shrink-0 accent-stone-900" />
+            </label>
             {missingConfig && (
               <div className="mb-4 rounded-2xl border-2 border-rose-300 bg-rose-100 px-4 py-3 font-bold text-rose-900">
                 Lehrendenkonfiguration fehlt oder ist unvollständig. Bitte Name, Mailadresse, IServPasswort und IP-Adresse des Mail-Backends eintragen.
@@ -248,7 +220,7 @@ function MailConfirmModal({ request, sending, result, onSend, onClose }) {
 
           <div className="grid shrink-0 gap-2 border-t-2 border-stone-200 p-5 sm:grid-cols-2">
             <button type="button" onClick={onClose} className="rounded-2xl border-2 border-stone-300 bg-white px-5 py-3 font-heading font-extrabold text-stone-700">Abbrechen</button>
-            <button type="button" onClick={() => onSend(messages)} disabled={!canSend} className="flex items-center justify-center gap-2 rounded-2xl border-2 border-stone-900 bg-stone-900 px-5 py-3 font-heading font-extrabold text-white shadow-brutal-sm disabled:opacity-40">
+            <button type="button" onClick={() => onSend(messages, copyToSent)} disabled={!canSend} className="flex items-center justify-center gap-2 rounded-2xl border-2 border-stone-900 bg-stone-900 px-5 py-3 font-heading font-extrabold text-white shadow-brutal-sm disabled:opacity-40">
               {sending ? <Loader2 className="h-5 w-5 animate-spin" /> : <Send className="h-5 w-5" />}
               {messages.length === 1 ? "Mail senden" : "Alle Mails senden"}
             </button>
@@ -462,6 +434,7 @@ export default function GradebookModal({ classId, className, open, onClose }) {
   const [mailSending, setMailSending] = useState(false);
   const [mailResult, setMailResult] = useState(null);
   const [focusedStudentId, setFocusedStudentId] = useState(null);
+  const [pdfBusy, setPdfBusy] = useState(false);
 
   useEffect(() => {
     if (!open) return undefined;
@@ -495,17 +468,18 @@ export default function GradebookModal({ classId, className, open, onClose }) {
     triggerDownload(gradebookCsvFile(data, rows, columns));
   };
 
-  const printGradebook = () => {
+  const downloadPdf = async () => {
     if (!data) return;
-    const popup = window.open("", "_blank");
-    if (!popup) {
-      setError("Druckfenster konnte nicht geöffnet werden.");
-      return;
+    setPdfBusy(true);
+    setError(null);
+    try {
+      const { createGradebookPdfFile } = await import("../lib/gradebookPdf");
+      triggerDownload(await createGradebookPdfFile(data, rows, columns));
+    } catch (err) {
+      setError(err?.message || "PDF konnte nicht erstellt werden.");
+    } finally {
+      setPdfBusy(false);
     }
-    popup.document.open();
-    popup.document.write(gradebookPrintHtml(data, rows, columns));
-    popup.document.close();
-    popup.focus();
   };
 
   const prepareMail = async (targetRows) => {
@@ -528,14 +502,21 @@ export default function GradebookModal({ classId, className, open, onClose }) {
     }
   };
 
-  const sendMails = async (messages) => {
+  const sendMails = async (messages, copyToSent = false) => {
     if (!mailRequest) return;
     setMailSending(true);
     setMailResult(null);
     try {
-      const result = await sendGradebookMailsViaBackend(mailRequest.teacherConfig, messages);
+      const result = await sendGradebookMailsViaBackend({ ...mailRequest.teacherConfig, copy_to_sent: copyToSent }, messages);
       const sent = result.sent ?? messages.length;
-      setMailResult({ ok: true, message: sent === 1 ? "Mail wurde versendet." : sent + " Mails wurden versendet." });
+      const delivered = sent === 1 ? "Mail wurde versendet." : sent + " Mails wurden versendet.";
+      const copied = Number(result.copied_to_sent || 0);
+      const copyComplete = !copyToSent || copied === sent;
+      const copyError = result.results?.find((item) => item.sent_copy === "failed")?.sent_copy_error;
+      const copyText = copyToSent
+        ? (copyComplete ? ` Kopie${sent === 1 ? "" : "n"} wurde${sent === 1 ? "" : "n"} in „${result.sent_mailbox || "Gesendet"}“ abgelegt.` : ` Die Mailzustellung war erfolgreich, aber die Ablage im Gesendet-Ordner war nicht vollständig${copyError ? `: ${copyError}` : "."}`)
+        : "";
+      setMailResult({ ok: copyComplete, message: delivered + copyText });
     } catch (err) {
       setMailResult({ ok: false, message: err?.message || err?.response?.data?.detail || "Mailversand fehlgeschlagen." });
     } finally {
@@ -640,7 +621,7 @@ export default function GradebookModal({ classId, className, open, onClose }) {
             <header className="flex shrink-0 items-center gap-3 border-b-2 border-stone-900 bg-white px-5 py-4">
               <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-stone-900 text-white"><FileSpreadsheet className="h-5 w-5" /></div>
               <div className="min-w-0 flex-1"><p className="text-xs font-bold uppercase tracking-[0.18em] text-stone-400">Notenstand</p><h2 className="truncate font-heading text-xl font-black text-stone-900 sm:text-2xl">{className}</h2></div>
-              <button onClick={printGradebook} disabled={!data || loading} className="hidden rounded-xl border-2 border-stone-900 bg-white px-4 py-2.5 font-heading font-extrabold text-stone-900 shadow-brutal-sm transition-all active:translate-y-0.5 active:shadow-none disabled:opacity-40 sm:flex sm:items-center sm:gap-2"><Printer className="h-4 w-4" /> Drucken</button>
+              <button onClick={downloadPdf} disabled={!data || loading || pdfBusy} className="hidden rounded-xl border-2 border-stone-900 bg-white px-4 py-2.5 font-heading font-extrabold text-stone-900 shadow-brutal-sm transition-all active:translate-y-0.5 active:shadow-none disabled:opacity-40 sm:flex sm:items-center sm:gap-2">{pdfBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileDown className="h-4 w-4" />} PDF</button>
               <button onClick={exportCsv} disabled={!data || loading} className="hidden rounded-xl border-2 border-stone-900 bg-emerald-400 px-4 py-2.5 font-heading font-extrabold text-stone-900 shadow-brutal-sm transition-all active:translate-y-0.5 active:shadow-none disabled:opacity-40 sm:flex sm:items-center sm:gap-2"><Download className="h-4 w-4" /> CSV</button>
               <button onClick={onClose} className="text-stone-400 hover:text-stone-900" aria-label="Schliessen"><X className="h-6 w-6" /></button>
             </header>
@@ -723,7 +704,7 @@ export default function GradebookModal({ classId, className, open, onClose }) {
               ) : null}
             </div>
 
-            <div className="grid shrink-0 grid-cols-2 gap-2 border-t-2 border-stone-200 bg-white p-4 sm:hidden"><button onClick={printGradebook} disabled={!data || loading} className="flex w-full items-center justify-center gap-2 rounded-xl border-2 border-stone-900 bg-white px-4 py-3 font-heading font-extrabold text-stone-900 shadow-brutal-sm disabled:opacity-40"><Printer className="h-4 w-4" /> Drucken</button><button onClick={exportCsv} disabled={!data || loading} className="flex w-full items-center justify-center gap-2 rounded-xl border-2 border-stone-900 bg-emerald-400 px-4 py-3 font-heading font-extrabold text-stone-900 shadow-brutal-sm disabled:opacity-40"><Download className="h-4 w-4" /> CSV</button></div>
+            <div className="grid shrink-0 grid-cols-2 gap-2 border-t-2 border-stone-200 bg-white p-4 sm:hidden"><button onClick={downloadPdf} disabled={!data || loading || pdfBusy} className="flex w-full items-center justify-center gap-2 rounded-xl border-2 border-stone-900 bg-white px-4 py-3 font-heading font-extrabold text-stone-900 shadow-brutal-sm disabled:opacity-40">{pdfBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileDown className="h-4 w-4" />} PDF</button><button onClick={exportCsv} disabled={!data || loading} className="flex w-full items-center justify-center gap-2 rounded-xl border-2 border-stone-900 bg-emerald-400 px-4 py-3 font-heading font-extrabold text-stone-900 shadow-brutal-sm disabled:opacity-40"><Download className="h-4 w-4" /> CSV</button></div>
           </motion.div>
 
           <PickerModal picker={picker} systemId={data?.grade_system} onPick={savePickerValue} onClear={() => savePickerValue("")} onClose={() => setPicker(null)} />

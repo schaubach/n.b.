@@ -8,6 +8,7 @@ const verifiedIdentityCache = new Map();
 const DEFAULT_HEALTH_TIMEOUT_MS = 3500;
 const DEFAULT_IDENTITY_TIMEOUT_MS = 5000;
 const DEFAULT_SEND_TIMEOUT_MS = 12000;
+const SENT_COPY_TIMEOUT_MS = 90000;
 
 function fetchWithTimeout(url, options = {}, timeoutMs = DEFAULT_SEND_TIMEOUT_MS) {
   if (typeof AbortController === "undefined") return fetch(url, options);
@@ -204,7 +205,7 @@ async function sendMessagesViaBackend(teacherConfig, messages, options = {}) {
         "X-NB-Signature": signature,
       },
       body,
-    }, options.sendTimeoutMs || DEFAULT_SEND_TIMEOUT_MS);
+    }, options.sendTimeoutMs || (teacherConfig?.copy_to_sent === true ? SENT_COPY_TIMEOUT_MS : DEFAULT_SEND_TIMEOUT_MS));
   } catch (error) {
     throw new Error("Mail-Backend nicht erreichbar oder Zertifikat nicht vertrauenswürdig.");
   }

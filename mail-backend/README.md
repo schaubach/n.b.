@@ -82,6 +82,10 @@ Pflichtwerte:
 - `SMTP_HOST`: SMTP-Server, hier `rbbk-do.de`.
 - `SMTP_PORT`: SMTP-Port, hier `587`.
 - `SMTP_STARTTLS`: `true` fuer STARTTLS.
+- `IMAP_HOST`: IMAP-Server fuer Kopien im Gesendet-Ordner, hier `rbbk-do.de`.
+- `IMAP_PORT`: IMAP-Port, normalerweise `993`.
+- `IMAP_SSL`: `true` fuer direktes TLS auf Port 993.
+- `IMAP_STARTTLS`: bei direktem TLS `false`; nur fuer einen IMAP-Server mit STARTTLS aktivieren.
 - `ALLOWED_DOMAIN`: erlaubte Maildomain fuer Absender und Empfaenger, hier `rbbk-do.de`.
 
 Empfohlene Werte:
@@ -239,9 +243,15 @@ Die SMTP-Konfiguration liegt serverseitig in `.env`:
 SMTP_HOST=rbbk-do.de
 SMTP_PORT=587
 SMTP_STARTTLS=true
+IMAP_HOST=rbbk-do.de
+IMAP_PORT=993
+IMAP_SSL=true
+IMAP_STARTTLS=false
 ALLOWED_DOMAIN=rbbk-do.de
 # ALLOWED_SENDERS=lehrkraft1@rbbk-do.de,lehrkraft2@rbbk-do.de
 ~~~
+
+Wenn die Option **Mails in meinem Gesendet-Ordner duplizieren** im Versanddialog aktiv ist, meldet sich das Backend zusaetzlich per IMAP an. Es liest die Ordnerliste, bevorzugt den Special-Use-Ordner `\\Sent` und erkennt ersatzweise uebliche Namen wie `Gesendet`, `Sent` oder `Sent Items`. Die bereits per SMTP versandte MIME-Nachricht wird anschliessend mit `IMAP APPEND` als gelesen in diesen Ordner geschrieben. Kann Anmeldung oder Ordnererkennung nicht vorbereitet werden, wird der SMTP-Versand nicht begonnen und die WebApp zeigt die konkrete IMAP-Fehlermeldung. Schlaegt erst das APPEND nach erfolgreichem SMTP-Versand fehl, weist die WebApp ausdruecklich auf die erfolgreiche Zustellung und die fehlende Gesendet-Kopie hin; dadurch soll kein versehentlicher erneuter Versand entstehen.
 
 Die WebApp uebermittelt pro Versand die Lehrenden-Mailadresse und das IServ-Passwort ueber HTTPS an das Backend. Die Lehrenden-Mailadresse bleibt der Absender (`From`). Fuer die SMTP-Anmeldung versucht das Backend zuerst den Accountnamen vor `@`, z. B. `pillekeit`, und danach die vollstaendige Mailadresse. Fehlgeschlagene SMTP-Anmeldungen nennen Host, Port, STARTTLS, die versuchten Logins und die SMTP-Serverantwort, aber nie das Passwort.
 

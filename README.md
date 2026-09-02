@@ -63,13 +63,14 @@ KlasseA;Nachname2;Vorname2;account2
 - Durchschnitte koennen manuell ueberschrieben oder wieder auf automatische Berechnung zurueckgesetzt werden.
 - `SL gesamt` wird aus den angezeigten ganzen Werten von `SL muendl.` und `SL schrftl.` berechnet.
 - Die Endnote wird aus gerundeter SL-Gesamtnote und gerundeter KA/KL-Gesamtnote gebildet.
-- Export als CSV und Druckansicht sind vorhanden.
+- Export als CSV und als farbcodierte PDF-Tabelle im Querformat sind vorhanden.
 
 ### Mailvorbereitung
 
 - Die Lehrendenkonfiguration speichert Name, Mailadresse und Passwort lokal verschluesselt.
 - In der Notenstandansicht koennen Mails fuer einzelne Lernende oder die ganze Klasse vorbereitet werden.
 - Jede Mail enthaelt nur die Noten des jeweiligen Lernenden.
+- Optional legt das Mail-Backend nach dem SMTP-Versand per IMAP eine Kopie derselben Nachricht im automatisch ermittelten Gesendet-Ordner ab.
 - Der echte SMTP-Versand laeuft ueber das optionale lokale Mail-Backend im Schulnetz.
 
 ### Backups
@@ -185,10 +186,14 @@ SERVER_NAME=10.97.0.10
 INSTALL_USER=install
 INSTALL_PASSWORD=
 ALLOWED_DOMAIN=rbbk-do.de
+IMAP_HOST=rbbk-do.de
+IMAP_PORT=993
+IMAP_SSL=true
+IMAP_STARTTLS=false
 # ALLOWED_SENDERS=lehrkraft1@rbbk-do.de,lehrkraft2@rbbk-do.de
 ```
 
-`INSTALL_PASSWORD` und `NB_MAIL_PSK` gehoeren nur in die lokale `.env` und nie ins Repository. `ALLOWED_SENDERS` ist optional empfohlen: Wenn die Liste gesetzt ist, akzeptiert das Backend nur diese Lehrenden-Mailadressen als Absender. Wenn sie leer bleibt, sind alle Absender der erlaubten Domain zugelassen.
+`INSTALL_PASSWORD` und `NB_MAIL_PSK` gehoeren nur in die lokale `.env` und nie ins Repository. `ALLOWED_SENDERS` ist optional empfohlen: Wenn die Liste gesetzt ist, akzeptiert das Backend nur diese Lehrenden-Mailadressen als Absender. Wenn sie leer bleibt, sind alle Absender der erlaubten Domain zugelassen. Die IMAP-Werte werden nur verwendet, wenn im Maildialog die Kopie in den Gesendet-Ordner aktiviert wird.
 
 Konfigurationsdateien im Ueberblick:
 

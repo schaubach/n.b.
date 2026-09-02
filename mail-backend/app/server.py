@@ -2,14 +2,18 @@ import json
 import hmac
 import base64
 import hashlib
+import imaplib
 import logging
 import os
+import re
 import smtplib
 import ssl
 import subprocess
 import time
 from collections import defaultdict, deque
 from email.message import EmailMessage
+from email.policy import SMTP as SMTP_POLICY
+from email.utils import formatdate, make_msgid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
@@ -30,6 +34,10 @@ PSK = os.getenv("NB_MAIL_PSK", "")
 SMTP_HOST = os.getenv("SMTP_HOST", "rbbk-do.de")
 SMTP_PORT = env_int("SMTP_PORT", 587)
 SMTP_STARTTLS = os.getenv("SMTP_STARTTLS", "true").lower() in {"1", "true", "yes", "on"}
+IMAP_HOST = os.getenv("IMAP_HOST", SMTP_HOST)
+IMAP_PORT = env_int("IMAP_PORT", 993)
+IMAP_SSL = os.getenv("IMAP_SSL", "true").lower() in {"1", "true", "yes", "on"}
+IMAP_STARTTLS = os.getenv("IMAP_STARTTLS", "false").lower() in {"1", "true", "yes", "on"}
 ALLOWED_DOMAIN = os.getenv("ALLOWED_DOMAIN", "rbbk-do.de").lower().lstrip("@")
 ALLOWED_SENDERS = {
     address.strip().lower()
@@ -170,6 +178,139 @@ def login_smtp(smtp, sender, password):
     raise RequestError(401, smtp_auth_failure_message(attempts))
 
 
+def safe_protocol_detail(error):
+    detail = " ".join(str(error or "").split()) or "keine Detailantwort"
+    return detail[:257] + "..." if len(detail) > 260 else detail
+
+
+def login_imap(imap, sender, password):
+    attempts = []
+    for label, username in smtp_login_candidates(sender):
+        try:
+            status, _ = imap.login(username, password)
+            if status != "OK":
+                raise imaplib.IMAP4.error(f"Status {status}")
+            if username != sender:
+                logger.info("imap login succeeded sender=%s username=%s", sender, username)
+            return username
+        except imaplib.IMAP4.error as error:
+            detail = safe_protocol_detail(error)
+            attempts.append({"label": label, "username": username, "detail": detail})
+            logger.warning("imap authentication failed sender=%s username=%s detail=%s", sender, username, detail)
+    tried = ", ".join(f"{item['label']}={item['username']}" for item in attempts) or "keine"
+    detail = attempts[-1]["detail"] if attempts else "keine Detailantwort"
+    raise RequestError(
+        401,
+        f"IMAP-Anmeldung fehlgeschlagen. Server={IMAP_HOST}, Port={IMAP_PORT}, "
+        f"SSL={'ja' if IMAP_SSL else 'nein'}, STARTTLS={'ja' if IMAP_STARTTLS else 'nein'}. "
+        f"Versuchte Logins: {tried}. Letzte IMAP-Antwort: {detail}.",
+    )
+
+
+def decode_modified_utf7(value):
+    result = []
+    index = 0
+    while index < len(value):
+        marker = value.find("&", index)
+        if marker < 0:
+            result.append(value[index:])
+            break
+        result.append(value[index:marker])
+        end = value.find("-", marker)
+        if end < 0:
+            result.append(value[marker:])
+            break
+        encoded = value[marker + 1:end]
+        if not encoded:
+            result.append("&")
+        else:
+            padding = "=" * ((4 - len(encoded) % 4) % 4)
+            try:
+                raw = base64.b64decode(encoded.replace(",", "/") + padding)
+                result.append(raw.decode("utf-16-be"))
+            except (ValueError, UnicodeDecodeError):
+                result.append(value[marker:end + 1])
+        index = end + 1
+    return "".join(result)
+
+
+def unquote_imap_value(value):
+    value = value.strip()
+    if value.upper() == b"NIL":
+        return ""
+    if len(value) >= 2 and value[:1] == b'"' and value[-1:] == b'"':
+        value = value[1:-1].replace(b'\\"', b'"').replace(b"\\\\", b"\\")
+    return value.decode("ascii", "replace")
+
+
+def parse_imap_mailbox(item):
+    if not isinstance(item, bytes):
+        return None
+    match = re.match(rb'^\(([^)]*)\)\s+(NIL|"(?:\\.|[^"])*")\s+(.+)$', item.strip())
+    if not match:
+        return None
+    flags = {flag.decode("ascii", "ignore").lower() for flag in match.group(1).split()}
+    delimiter = unquote_imap_value(match.group(2))
+    mailbox = unquote_imap_value(match.group(3))
+    return {
+        "flags": flags,
+        "delimiter": delimiter,
+        "mailbox": mailbox,
+        "display": decode_modified_utf7(mailbox),
+    }
+
+
+def find_sent_mailbox(items):
+    mailboxes = [parsed for parsed in (parse_imap_mailbox(item) for item in (items or [])) if parsed]
+    for mailbox in mailboxes:
+        if "\\sent" in mailbox["flags"]:
+            return mailbox, mailboxes
+
+    expected = {
+        "sent", "sent items", "sent messages", "gesendet", "gesendete elemente",
+        "gesendete objekte", "gesendete nachrichten",
+    }
+    for mailbox in mailboxes:
+        display = mailbox["display"].strip()
+        delimiter = mailbox["delimiter"]
+        leaf = display.split(delimiter)[-1] if delimiter else display
+        normalized = " ".join(leaf.lower().replace("_", " ").replace("-", " ").split())
+        if normalized in expected:
+            return mailbox, mailboxes
+    return None, mailboxes
+
+
+def connect_sent_mailbox(sender, password):
+    context = ssl.create_default_context()
+    try:
+        if IMAP_SSL:
+            imap = imaplib.IMAP4_SSL(IMAP_HOST, IMAP_PORT, ssl_context=context, timeout=30)
+        else:
+            imap = imaplib.IMAP4(IMAP_HOST, IMAP_PORT, timeout=30)
+            if IMAP_STARTTLS:
+                imap.starttls(ssl_context=context)
+    except Exception as error:
+        raise RequestError(502, f"IMAP-Verbindung fehlgeschlagen. Server={IMAP_HOST}, Port={IMAP_PORT}: {safe_protocol_detail(error)}")
+
+    try:
+        login_imap(imap, sender, password)
+        status, items = imap.list()
+        if status != "OK":
+            raise RequestError(502, f"IMAP-Ordnerliste konnte nicht geladen werden: Status {status}.")
+        sent, mailboxes = find_sent_mailbox(items)
+        if not sent:
+            available = ", ".join(mailbox["display"] for mailbox in mailboxes[:20]) or "keine lesbaren Ordner"
+            raise RequestError(502, f"Gesendet-Ordner konnte per IMAP nicht ermittelt werden. Gefundene Ordner: {available}.")
+        logger.info("imap sent mailbox selected sender=%s mailbox=%s", sender, sent["display"])
+        return imap, sent
+    except Exception:
+        try:
+            imap.logout()
+        except Exception:
+            pass
+        raise
+
+
 def canonical_json(value):
     return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
 
@@ -287,35 +428,76 @@ def validate_payload(payload):
         if message_bytes > MAX_MESSAGE_BYTES:
             raise RequestError(400, "Nachricht ist zu groß.")
         cleaned.append({"to": to, "subject": subject, "html": html, "text": text, "attachments": cleaned_attachments})
-    return sender, password, cleaned
+    copy_to_sent = teacher.get("copy_to_sent") is True
+    return sender, password, cleaned, copy_to_sent
 
 
-def send_messages(sender, password, messages):
+def send_messages(sender, password, messages, copy_to_sent=False):
     results = []
+    copied_to_sent = 0
+    imap = None
+    sent_mailbox = None
+    if copy_to_sent:
+        imap, sent_mailbox = connect_sent_mailbox(sender, password)
     context = ssl.create_default_context()
-    with smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=30) as smtp:
-        if SMTP_STARTTLS:
-            smtp.starttls(context=context)
-        login_smtp(smtp, sender, password)
-        for message in messages:
-            email = EmailMessage()
-            email["From"] = sender
-            email["To"] = message["to"]
-            email["Subject"] = message["subject"]
-            email.set_content(message["text"] or "Diese Nachricht enthält einen HTML-Notenstand.")
-            if message["html"]:
-                email.add_alternative(message["html"], subtype="html")
-            for attachment in message.get("attachments", []):
-                maintype, _, subtype = attachment["content_type"].partition("/")
-                email.add_attachment(attachment["data"], maintype=maintype or "application", subtype=subtype or "octet-stream", filename=attachment["filename"])
-            try:
-                smtp.send_message(email)
-                results.append({"to": message["to"], "status": "sent"})
+    try:
+        with smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=30) as smtp:
+            if SMTP_STARTTLS:
+                smtp.starttls(context=context)
+            login_smtp(smtp, sender, password)
+            for message in messages:
+                email = EmailMessage()
+                email["From"] = sender
+                email["To"] = message["to"]
+                email["Subject"] = message["subject"]
+                email["Date"] = formatdate(localtime=True)
+                email["Message-ID"] = make_msgid(domain=sender.split("@", 1)[-1])
+                email.set_content(message["text"] or "Diese Nachricht enthält einen HTML-Notenstand.")
+                if message["html"]:
+                    email.add_alternative(message["html"], subtype="html")
+                for attachment in message.get("attachments", []):
+                    maintype, _, subtype = attachment["content_type"].partition("/")
+                    email.add_attachment(attachment["data"], maintype=maintype or "application", subtype=subtype or "octet-stream", filename=attachment["filename"])
+                try:
+                    smtp.send_message(email)
+                except Exception as error:
+                    results.append({"to": message["to"], "status": "failed", "error": str(error)})
+                    logger.warning("mail failed to=%s subject=%r error=%s", message["to"], message["subject"], error)
+                    continue
+
+                result = {"to": message["to"], "status": "sent"}
+                if copy_to_sent:
+                    try:
+                        status, detail = imap.append(
+                            sent_mailbox["mailbox"],
+                            "(\\Seen)",
+                            imaplib.Time2Internaldate(time.time()),
+                            email.as_bytes(policy=SMTP_POLICY),
+                        )
+                        if status == "OK":
+                            copied_to_sent += 1
+                            result["sent_copy"] = "stored"
+                        else:
+                            result["sent_copy"] = "failed"
+                            result["sent_copy_error"] = safe_protocol_detail(detail)
+                            logger.warning("imap append failed to=%s mailbox=%s detail=%s", message["to"], sent_mailbox["display"], detail)
+                    except Exception as error:
+                        result["sent_copy"] = "failed"
+                        result["sent_copy_error"] = safe_protocol_detail(error)
+                        logger.warning("imap append failed to=%s mailbox=%s error=%s", message["to"], sent_mailbox["display"], error)
+                results.append(result)
                 logger.info("mail sent to=%s subject=%r", message["to"], message["subject"])
-            except Exception as error:
-                results.append({"to": message["to"], "status": "failed", "error": str(error)})
-                logger.warning("mail failed to=%s subject=%r error=%s", message["to"], message["subject"], error)
-    return results
+    finally:
+        if imap is not None:
+            try:
+                imap.logout()
+            except Exception:
+                pass
+    return results, {
+        "copied_to_sent": copied_to_sent,
+        "copy_failed": sum(1 for item in results if item.get("sent_copy") == "failed"),
+        "sent_mailbox": sent_mailbox["display"] if sent_mailbox else "",
+    }
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -358,13 +540,13 @@ class Handler(BaseHTTPRequestHandler):
         try:
             verify_signature(self.headers, body)
             payload = json.loads(body.decode("utf-8"))
-            sender, password, messages = validate_payload(payload)
+            sender, password, messages, copy_to_sent = validate_payload(payload)
             check_rate_limit(client_key(self, sender), int(time.time()))
-            logger.info("accepted mail request sender=%s recipients=%s", sender, len(messages))
-            results = send_messages(sender, password, messages)
+            logger.info("accepted mail request sender=%s recipients=%s copy_to_sent=%s", sender, len(messages), copy_to_sent)
+            results, copy_result = send_messages(sender, password, messages, copy_to_sent)
             failed = [item for item in results if item["status"] != "sent"]
             status = 200 if not failed else 502
-            json_response(self, status, {"ok": not failed, "sent": len(results) - len(failed), "failed": len(failed), "results": results})
+            json_response(self, status, {"ok": not failed, "sent": len(results) - len(failed), "failed": len(failed), "results": results, **copy_result})
         except RequestError as error:
             logger.warning("rejected request status=%s detail=%s", error.status, error.message)
             json_response(self, error.status, {"ok": False, "detail": error.message})
