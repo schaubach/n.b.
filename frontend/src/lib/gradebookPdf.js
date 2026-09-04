@@ -66,6 +66,36 @@ function headerCell(content, tone) {
   };
 }
 
+function compactColumns(data, sessions, columns) {
+  const counters = { exam: 0, oral: 0, written: 0 };
+  const sessionColumns = sessions.map((session) => {
+    const isExam = session.category === "klausur";
+    const type = isExam ? "exam" : (slType(session) === "written" ? "written" : "oral");
+    counters[type] += 1;
+    const prefix = isExam
+      ? examTerms(data.grade_system).short
+      : (type === "written" ? "S" : "M");
+    const reference = `${prefix}${counters[type]}`;
+    const kind = isExam
+      ? examTerms(data.grade_system).long
+      : (type === "written" ? "SL schriftlich" : "SL mündlich");
+    return {
+      reference,
+      tone: isExam ? "ka" : "sl",
+      legend: `${reference} = ${kind}: ${session.title} (${session.date}, x${session.weight ?? 1})`,
+    };
+  });
+  const averageColumns = columns.map((column, index) => {
+    const reference = `Ø${index + 1}`;
+    return {
+      reference,
+      tone: column.tone,
+      legend: `${reference} = ${column.label} (${column.hint})`,
+    };
+  });
+  return { sessionColumns, averageColumns };
+}
+
 export function gradebookPdfFilename(data) {
   const className = String(data?.class_name || "Klasse")
     .trim()
@@ -76,14 +106,11 @@ export function gradebookPdfFilename(data) {
 
 export function buildGradebookPdfTable(data, rows, columns) {
   const sessions = sortedSessions(data);
+  const compact = compactColumns(data, sessions, columns);
   const head = [
     headerCell("Lernende*r", "name"),
-    ...sessions.map((session) => {
-      const isExam = session.category === "klausur";
-      const kind = isExam ? examTerms(data.grade_system).short : (slType(session) === "written" ? "SL schrftl." : "SL mündl.");
-      return headerCell(`${kind}\n${session.title}\n${session.date} · x${session.weight ?? 1}`, isExam ? "ka" : "sl");
-    }),
-    ...columns.map((column) => headerCell(`${column.label}\n${column.hint}`, column.tone)),
+    ...compact.sessionColumns.map((column) => headerCell(column.reference, column.tone)),
+    ...compact.averageColumns.map((column) => headerCell(column.reference, column.tone)),
   ];
   const body = rows.map((row) => [
     {
@@ -97,69 +124,144 @@ export function buildGradebookPdfTable(data, rows, columns) {
       data.grade_system
     )),
   ]);
-  return { head, body };
+  return {
+    head,
+    body,
+    legend: [...compact.sessionColumns, ...compact.averageColumns].map((column) => column.legend),
+  };
+}
+
+export function pdfPageLabel(page, totalPages) {
+  return `Seite ${page}/${totalPages}`;
+}
+
+function drawCell(doc, cell, x, y, width, height, alternate = false) {
+  const styles = cell.styles || {};
+  const fillColor = styles.fillColor || (alternate ? [250, 250, 249] : [255, 255, 255]);
+  const textColor = styles.textColor || [68, 64, 60];
+  const lines = String(cell.content ?? "").split("\n");
+  const isLeft = styles.halign === "left";
+
+  doc.setFillColor(...fillColor);
+  doc.setDrawColor(168, 162, 158);
+  doc.setLineWidth(0.2);
+  doc.rect(x, y, width, height, "FD");
+  doc.setTextColor(...textColor);
+  doc.setFont("helvetica", styles.fontStyle === "bold" ? "bold" : "normal");
+
+  if (isLeft) {
+    doc.setFontSize(6.2);
+    const wrapped = doc.splitTextToSize(lines.join(" "), width - 3).slice(0, 2);
+    const lineHeight = 2.6;
+    const firstY = y + (height - wrapped.length * lineHeight) / 2 + 2;
+    doc.text(wrapped, x + 1.5, firstY);
+    return;
+  }
+
+  const centerX = x + width / 2;
+  if (lines.length > 1) {
+    doc.setFontSize(7);
+    doc.text(lines[0], centerX, y + height / 2 - 0.4, { align: "center" });
+    doc.setFontSize(5.3);
+    doc.text(lines.slice(1).join(" "), centerX, y + height / 2 + 2.5, { align: "center" });
+  } else {
+    doc.setFontSize(7);
+    doc.text(lines[0], centerX, y + height / 2 + 1.1, { align: "center" });
+  }
+}
+
+function drawPageHeading(doc, title, subtitle, legendLines, legendTop, legendHeight, pageWidth) {
+  doc.setTextColor(28, 25, 23);
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(13);
+  doc.text(title, 8, 9);
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(7);
+  doc.setTextColor(120, 113, 108);
+  doc.text(subtitle, 8, 14);
+  doc.text("n.b.", pageWidth - 8, 9, { align: "right" });
+  doc.setFillColor(245, 245, 244);
+  doc.setDrawColor(214, 211, 209);
+  doc.roundedRect(8, legendTop, pageWidth - 16, legendHeight, 1.5, 1.5, "FD");
+  doc.setFontSize(6.5);
+  doc.setTextColor(68, 64, 60);
+  doc.text(legendLines, 10, legendTop + 3.5);
 }
 
 export async function createGradebookPdfFile(data, rows, columns) {
-  const [{ jsPDF }, { autoTable }] = await Promise.all([
-    import("jspdf"),
-    import("jspdf-autotable"),
-  ]);
+  const { jsPDF } = await import("jspdf");
   const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4", compress: true });
   const table = buildGradebookPdfTable(data, rows, columns);
   const title = `${data.class_name || "Klasse"} - Notenstand`;
   const created = new Date().toLocaleDateString("de-DE");
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const pageHeight = doc.internal.pageSize.getHeight();
+  const nameWidth = 38;
+  const gradeWidth = 12.5;
+  const headerHeight = 7;
+  const rowHeight = 9;
+  const maxGradeColumns = Math.max(1, Math.floor((pageWidth - 24 - nameWidth) / gradeWidth));
+  const gradeIndexes = table.head.slice(1).map((_cell, index) => index + 1);
+  const columnGroups = [];
+  for (let index = 0; index < gradeIndexes.length; index += maxGradeColumns) {
+    columnGroups.push(gradeIndexes.slice(index, index + maxGradeColumns));
+  }
+  if (columnGroups.length === 0) columnGroups.push([]);
 
   doc.setProperties({ title, subject: "Notenstand", author: "n.b.", creator: "n.b." });
-  autoTable(doc, {
-    head: [table.head],
-    body: table.body,
-    startY: 20,
-    margin: { top: 20, right: 8, bottom: 12, left: 8 },
-    theme: "grid",
-    showHead: "everyPage",
-    rowPageBreak: "avoid",
-    horizontalPageBreak: true,
-    horizontalPageBreakRepeat: 0,
-    horizontalPageBreakBehaviour: "immediately",
-    styles: {
-      font: "helvetica",
-      fontSize: 6.5,
-      cellPadding: 1.6,
-      lineColor: [168, 162, 158],
-      lineWidth: 0.2,
-      overflow: "linebreak",
-      halign: "center",
-      valign: "middle",
-      minCellWidth: 18,
-    },
-    headStyles: { fontSize: 6, minCellHeight: 14 },
-    bodyStyles: { minCellHeight: 9 },
-    alternateRowStyles: { fillColor: [250, 250, 249] },
-    columnStyles: { 0: { cellWidth: 42, minCellWidth: 42, halign: "left" } },
-    willDrawPage: () => {
-      doc.setTextColor(28, 25, 23);
-      doc.setFont("helvetica", "bold");
-      doc.setFontSize(13);
-      doc.text(title, 8, 9);
-      doc.setFont("helvetica", "normal");
-      doc.setFontSize(7);
-      doc.setTextColor(120, 113, 108);
-      doc.text(`${rows.length} Lernende · ${created}`, 8, 14);
-      doc.text("n.b.", doc.internal.pageSize.getWidth() - 8, 9, { align: "right" });
-    },
-    didDrawPage: () => {
-      doc.setFont("helvetica", "normal");
-      doc.setFontSize(7);
-      doc.setTextColor(120, 113, 108);
-      doc.text(
-        `Seite ${doc.internal.getNumberOfPages()}`,
-        doc.internal.pageSize.getWidth() - 8,
-        doc.internal.pageSize.getHeight() - 5,
-        { align: "right" }
-      );
-    },
+  let pageStarted = false;
+  columnGroups.forEach((group) => {
+    const groupHead = [table.head[0], ...group.map((index) => table.head[index])];
+    const groupBody = table.body.map((row) => [row[0], ...group.map((index) => row[index])]);
+    const groupLegend = group.map((index) => table.legend[index - 1]);
+    const legendText = groupLegend.length > 0 ? `Spalten: ${groupLegend.join("  |  ")}` : "Keine Bewertungen vorhanden";
+
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(6.5);
+    const legendLines = doc.splitTextToSize(legendText, pageWidth - 20);
+    const legendTop = 17;
+    const legendHeight = Math.max(8, legendLines.length * 3 + 4);
+    const tableTop = legendTop + legendHeight + 3;
+    const rowsPerPage = Math.max(1, Math.floor((pageHeight - 13 - tableTop - headerHeight) / rowHeight));
+    const rowGroups = [];
+    for (let index = 0; index < groupBody.length; index += rowsPerPage) {
+      rowGroups.push(groupBody.slice(index, index + rowsPerPage));
+    }
+    if (rowGroups.length === 0) rowGroups.push([]);
+
+    rowGroups.forEach((pageRows, rowGroupIndex) => {
+      if (pageStarted) doc.addPage();
+      pageStarted = true;
+      drawPageHeading(doc, title, `${rows.length} Lernende - ${created}`, legendLines, legendTop, legendHeight, pageWidth);
+
+      let x = 8;
+      groupHead.forEach((cell, index) => {
+        const width = index === 0 ? nameWidth : gradeWidth;
+        drawCell(doc, cell, x, tableTop, width, headerHeight);
+        x += width;
+      });
+
+      pageRows.forEach((row, rowIndex) => {
+        const absoluteRowIndex = rowGroupIndex * rowsPerPage + rowIndex;
+        const y = tableTop + headerHeight + rowIndex * rowHeight;
+        let cellX = 8;
+        row.forEach((cell, index) => {
+          const width = index === 0 ? nameWidth : gradeWidth;
+          drawCell(doc, cell, cellX, y, width, rowHeight, absoluteRowIndex % 2 === 1);
+          cellX += width;
+        });
+      });
+    });
   });
+
+  const totalPages = doc.getNumberOfPages();
+  for (let page = 1; page <= totalPages; page += 1) {
+    doc.setPage(page);
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(7);
+    doc.setTextColor(120, 113, 108);
+    doc.text(pdfPageLabel(page, totalPages), pageWidth - 8, pageHeight - 5, { align: "right" });
+  }
 
   return new File([doc.output("blob")], gradebookPdfFilename(data), { type: "application/pdf" });
 }

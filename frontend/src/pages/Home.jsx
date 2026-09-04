@@ -52,6 +52,11 @@ export default function Home() {
     }
   };
 
+  const refreshClasses = async () => {
+    const res = await api.get("/classes");
+    setClasses(res.data);
+  };
+
   useEffect(() => { load(); }, []);
 
   const doImport = async (arr, gs, gradeScaleId = "MEDA") => {
@@ -364,6 +369,7 @@ export default function Home() {
         open={!!gradebookClass}
         classId={gradebookClass?.id}
         className={gradebookClass?.name}
+        onChanged={refreshClasses}
         onClose={() => setGradebookClass(null)}
       />
       <TeacherConfigModal

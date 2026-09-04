@@ -423,7 +423,7 @@ function HeaderEditor({ editor, onSaveSession, onDeleteSession, onSaveAverageWei
   );
 }
 
-export default function GradebookModal({ classId, className, open, onClose }) {
+export default function GradebookModal({ classId, className, open, onChanged, onClose }) {
   const navigate = useNavigate();
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -593,6 +593,7 @@ export default function GradebookModal({ classId, className, open, onClose }) {
         grades: (current.grades || []).filter((grade) => grade.session_id !== session.id),
       }));
       setHeaderEditor(null);
+      try { await onChanged?.(); } catch (refreshError) { console.warn("Klassenübersicht konnte nicht aktualisiert werden.", refreshError); }
     } catch (err) {
       setError("Spalte konnte nicht gelöscht werden.");
     }

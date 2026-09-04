@@ -1,6 +1,6 @@
 import { buildGradebookRows } from "./gradebookExport";
 import { TextDecoder, TextEncoder } from "util";
-import { buildGradebookPdfTable, createGradebookPdfFile, gradebookPdfFilename } from "./gradebookPdf";
+import { buildGradebookPdfTable, createGradebookPdfFile, gradebookPdfFilename, pdfPageLabel } from "./gradebookPdf";
 
 global.TextEncoder = TextEncoder;
 global.TextDecoder = TextDecoder;
@@ -22,13 +22,18 @@ test("builds a color coded PDF table with sessions and averages", () => {
 
   expect(table.head.map((cell) => cell.content)).toEqual([
     "Lernende*r",
-    "KA\nKA 1\n01.09.2026 · x1",
-    "KA gesamt\ngewichteter Schnitt",
+    "KA1",
+    "Ø1",
+  ]);
+  expect(table.legend).toEqual([
+    "KA1 = Klassenarbeit: KA 1 (01.09.2026, x1)",
+    "Ø1 = KA gesamt (gewichteter Schnitt)",
   ]);
   expect(table.body[0][0].content).toBe("Lovelace, Ada");
   expect(table.body[0][1].content).toBe("2\n1,7");
   expect(table.body[0][1].styles.fillColor).toEqual([163, 230, 53]);
   expect(gradebookPdfFilename(data)).toBe("BK_1_A_Notenstand.pdf");
+  expect(pdfPageLabel(2, 5)).toBe("Seite 2/5");
 });
 
 test("creates a downloadable PDF file", async () => {
