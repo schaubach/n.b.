@@ -234,6 +234,22 @@ sh scripts/sync-webapp.sh
 docker compose up -d --build
 ```
 
+Nach der Erstkonfiguration kann der komplette Neuaufbau aus dem Hauptordner mit einem Befehl ausgefuehrt werden:
+
+```bash
+./rebuild.sh
+```
+
+Das Skript installiert die exakt in `frontend/package-lock.json` festgelegten Abhaengigkeiten, baut das Frontend, fuehrt `setup.sh` und `sync-webapp.sh` aus und startet danach die neu gebauten Container mit `docker compose up -d --build`. Bestehende Werte aus `mail-backend/.env`, Zertifikate und Schluessel bleiben erhalten.
+
+Optional kann beim Aufruf ein neuer Servername beziehungsweise eine neue IP-Adresse gesetzt werden:
+
+```bash
+./rebuild.sh 10.97.12.34
+```
+
+Wenn sich der Servername dadurch aendert, erzeugt `setup.sh` ein passendes neues Zertifikat. Dieses muss anschliessend erneut auf den iPads als vertrauenswuerdig installiert werden.
+
 6. Funktion pruefen:
 
 ```bash
