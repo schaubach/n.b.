@@ -1,4 +1,4 @@
-const OFFLINE_CACHE_NAME = "nb-offline-v6";
+const OFFLINE_CACHE_NAME = "nb-offline-v7";
 
 function offlineShellHtml() {
   const html = document.documentElement.cloneNode(true);
@@ -30,7 +30,7 @@ export async function register() {
   try {
     await primeOfflineShell();
     const swUrl = `${process.env.PUBLIC_URL}/sw.js`;
-    const registration = await navigator.serviceWorker.register(swUrl);
+    const registration = await navigator.serviceWorker.register(swUrl, { scope: "./" });
     const ready = await navigator.serviceWorker.ready;
     const worker = ready.active || registration.active || navigator.serviceWorker.controller;
     worker?.postMessage({ type: "NB_PRIME_OFFLINE", html: offlineShellHtml() });

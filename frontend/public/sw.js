@@ -1,7 +1,11 @@
-const CACHE_NAME = "nb-offline-v6";
+const CACHE_NAME = "nb-offline-v7";
 const CORE_ASSETS = ["./manifest.json", "./logo.jpeg", "./icon.svg", "./asset-manifest.json", "./app-version.json"];
 const GRADE_SCALE_INDEX = "./notenskala/index.json";
 const NAVIGATION_UPDATE_TIMEOUT_MS = 1800;
+
+function scopedUrl(asset) {
+  return new URL(asset, self.registration.scope).href;
+}
 
 function fetchWithTimeout(request, timeoutMs = NAVIGATION_UPDATE_TIMEOUT_MS) {
   const controller = new AbortController();
@@ -38,11 +42,11 @@ function createOfflineShell(manifest) {
   const entrypoints = Array.isArray(manifest.entrypoints) ? manifest.entrypoints : [];
   const styles = entrypoints
     .filter((asset) => typeof asset === "string" && asset.endsWith(".css"))
-    .map((asset) => `<link href="${escapeAttribute(asset)}" rel="stylesheet">`)
+    .map((asset) => `<link href="${escapeAttribute(scopedUrl(asset))}" rel="stylesheet">`)
     .join("");
   const scripts = entrypoints
     .filter((asset) => typeof asset === "string" && asset.endsWith(".js"))
-    .map((asset) => `<script defer src="${escapeAttribute(asset)}"></script>`)
+    .map((asset) => `<script defer src="${escapeAttribute(scopedUrl(asset))}"></script>`)
     .join("");
   return `<!doctype html><html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#fafaf9"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-title" content="n.b."><meta name="apple-mobile-web-app-status-bar-style" content="default"><meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob:; font-src 'self'; connect-src 'self' https://*:8123; worker-src 'self'; manifest-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'; upgrade-insecure-requests"><link rel="manifest" href="./manifest.json" crossorigin="use-credentials"><link rel="icon" href="./logo.jpeg" type="image/jpeg"><link rel="apple-touch-icon" href="./logo.jpeg">${styles}<title>n.b. - Noten blitzschnell vergeben</title></head><body><noscript>JavaScript muss aktiviert sein.</noscript><div id="root"></div>${scripts}</body></html>`;
 }
@@ -55,16 +59,18 @@ async function cacheOfflineHtml(cache, html) {
     },
   });
   await Promise.all([
-    cache.put("./", response.clone()),
-    cache.put("./index.html", response.clone()),
+    cache.put(scopedUrl("./"), response.clone()),
+    cache.put(scopedUrl("./index.html"), response.clone()),
+    cache.put(scopedUrl("./index.html?source=pwa"), response.clone()),
   ]);
 }
 
-async function fetchAndPut(cache, asset) {
-  const response = await fetch(cacheBustedUrl(asset), { cache: "reload", credentials: "same-origin" });
+async function fetchAndPut(cache, asset, reload = false) {
+  const source = reload ? cacheBustedUrl(asset) : scopedUrl(asset);
+  const response = await fetch(source, { cache: reload ? "reload" : "default", credentials: "same-origin" });
   if (!response || !response.ok) throw new Error("Update-Asset konnte nicht geladen werden: " + asset);
-  await cache.put(asset, response.clone());
-  if (asset === "./" || asset === "./index.html") await cache.put("./index.html", response.clone());
+  await cache.put(scopedUrl(asset), response.clone());
+  if (asset === "./" || asset === "./index.html") await cache.put(scopedUrl("./index.html"), response.clone());
 }
 
 async function updateOfflineCache() {
@@ -73,13 +79,13 @@ async function updateOfflineCache() {
   const manifestResponse = await fetch(cacheBustedUrl("./asset-manifest.json"), { cache: "reload", credentials: "same-origin" });
   if (!manifestResponse || !manifestResponse.ok) throw new Error("Asset-Manifest konnte nicht geladen werden.");
   const manifest = await manifestResponse.clone().json();
-  await cache.put("./asset-manifest.json", manifestResponse);
+  await cache.put(scopedUrl("./asset-manifest.json"), manifestResponse);
   await cacheOfflineHtml(cache, createOfflineShell(manifest));
   Object.values(manifest.files || {}).forEach((asset) => {
     if (typeof asset === "string" && !asset.endsWith(".map")) assets.add(asset);
   });
   (await bundledGradeScaleAssets(true)).forEach((asset) => assets.add(asset));
-  await Promise.all(Array.from(assets).map((asset) => fetchAndPut(cache, asset)));
+  await Promise.all(Array.from(assets).map((asset) => fetchAndPut(cache, asset, true)));
 }
 
 function refreshHtmlInBackground(request) {
@@ -95,18 +101,23 @@ function refreshHtmlInBackground(request) {
 
 async function precache() {
   const cache = await caches.open(CACHE_NAME);
-  const assets = new Set(CORE_ASSETS);
   const response = await fetch("./asset-manifest.json", { cache: "reload", credentials: "same-origin" });
   if (!response.ok) throw new Error("Asset-Manifest konnte nicht geladen werden.");
   const manifest = await response.json();
+  const entrypoints = new Set((manifest.entrypoints || []).filter((asset) => typeof asset === "string"));
+  const optionalAssets = new Set(CORE_ASSETS);
   Object.values(manifest.files || {}).forEach((asset) => {
-    if (typeof asset === "string" && !asset.endsWith(".map") && !asset.endsWith("index.html")) assets.add(asset);
+    if (typeof asset === "string" && !asset.endsWith(".map") && !asset.endsWith("index.html") && !entrypoints.has(asset)) optionalAssets.add(asset);
   });
   await cacheOfflineHtml(cache, createOfflineShell(manifest));
   try {
-    (await bundledGradeScaleAssets()).forEach((asset) => assets.add(asset));
+    (await bundledGradeScaleAssets()).forEach((asset) => optionalAssets.add(asset));
   } catch (error) {}
-  await Promise.all(Array.from(assets).map((asset) => fetchAndPut(cache, asset)));
+
+  // A short failure of a PDF chunk or scale must not invalidate the complete
+  // installation. The app shell and its entrypoints remain mandatory.
+  await Promise.all(Array.from(entrypoints).map((asset) => fetchAndPut(cache, asset)));
+  await Promise.allSettled(Array.from(optionalAssets).map((asset) => fetchAndPut(cache, asset)));
 }
 
 self.addEventListener("install", (event) => {
@@ -116,7 +127,7 @@ self.addEventListener("install", (event) => {
 self.addEventListener("activate", (event) => {
   event.waitUntil(
     caches.keys()
-      .then((names) => Promise.all(names.filter((name) => name !== CACHE_NAME).map((name) => caches.delete(name))))
+      .then((names) => Promise.all(names.filter((name) => name.startsWith("nb-offline-") && name !== CACHE_NAME).map((name) => caches.delete(name))))
       .then(() => self.clients.claim())
   );
 });
@@ -170,7 +181,7 @@ self.addEventListener("fetch", (event) => {
           refreshHtmlInBackground(request);
           return cached;
         }
-        return caches.match("./index.html").then((index) => {
+        return caches.match(scopedUrl("./index.html")).then((index) => {
           if (index) {
             refreshHtmlInBackground(request);
             return index;
