@@ -43,7 +43,8 @@ function assessmentBorder(student) {
 }
 
 export default function SeatPlanGrade() {
-  const { sessionId } = useParams();
+  const { sessionId, classId } = useParams();
+  const setupOnly = !!classId;
   const navigate = useNavigate();
   const fileRef = useRef(null);
   const [session, setSession] = useState(null);
@@ -58,15 +59,21 @@ export default function SeatPlanGrade() {
   const [saving, setSaving] = useState(false);
   const [editing, setEditing] = useState(false);
   const [picker, setPicker] = useState(null);
+  const [infoEditor, setInfoEditor] = useState(null);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
 
   useEffect(() => {
     (async () => {
       try {
-        const sessionRes = await api.get(`/sessions/${sessionId}`);
-        const nextSession = sessionRes.data;
-        const planRes = await api.get(`/classes/${nextSession.class_id}/seating-plan`);
+        const sessionRes = setupOnly ? null : await api.get(`/sessions/${sessionId}`);
+        const planRes = await api.get(`/classes/${setupOnly ? classId : sessionRes.data.class_id}/seating-plan`);
+        const nextSession = setupOnly ? {
+          class_id: classId,
+          class_name: planRes.data.class_name,
+          title: "Sitzplan verwalten",
+          grade_system: planRes.data.grade_system,
+        } : sessionRes.data;
         let nextPlan = planRes.data.plan;
         if (!planRes.data.saved) {
           const savedPlan = await api.put(`/classes/${nextSession.class_id}/seating-plan`, nextPlan);
@@ -86,7 +93,7 @@ export default function SeatPlanGrade() {
         setLoading(false);
       }
     })();
-  }, [sessionId]);
+  }, [classId, sessionId, setupOnly]);
 
   const studentsById = useMemo(() => new Map(students.map((student) => [student.id, student])), [students]);
   const activeStudents = useMemo(() => students.filter((student) => !student.inactive), [students]);
@@ -206,6 +213,26 @@ export default function SeatPlanGrade() {
     }
   };
 
+  const saveAdditionalInfo = async (student, value) => {
+    setSaving(true);
+    setError("");
+    try {
+      const response = await api.put(`/students/${student.id}/additional-info`, { additional_info: value });
+      setStudents((current) => current.map((item) => item.id === student.id ? { ...item, ...response.data.student } : item));
+      setInfoEditor(null);
+    } catch (err) {
+      setError(err?.response?.data?.detail || "Zusatzinfo konnte nicht gespeichert werden.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const openStudent = (student) => {
+    if (!student) return;
+    if (setupOnly) setInfoEditor(student);
+    else setPicker(student);
+  };
+
   if (loading) {
     return <div className="flex h-screen items-center justify-center bg-stone-50"><Loader2 className="h-8 w-8 animate-spin text-stone-400" /></div>;
   }
@@ -223,9 +250,9 @@ export default function SeatPlanGrade() {
           </button>
           <div className="min-w-0 flex-1 text-center">
             <p className="truncate font-heading text-lg font-black text-stone-900">{session.class_name}</p>
-            <p className="truncate text-xs font-bold uppercase tracking-[0.14em] text-stone-500">{session.title} · Sitzplan · {gradedCount}/{students.length}</p>
+            <p className="truncate text-xs font-bold uppercase tracking-[0.14em] text-stone-500">{setupOnly ? "Sitzplan und Zusatzinfos" : `${session.title} · Sitzplan · ${gradedCount}/${students.length}`}</p>
           </div>
-          <button onClick={() => navigate(`/summary/${sessionId}`)} className="flex items-center gap-2 rounded-xl border-2 border-stone-900 bg-stone-900 px-4 py-2.5 font-heading font-extrabold text-white shadow-brutal-sm">
+          <button onClick={() => navigate(setupOnly ? "/" : `/summary/${sessionId}`)} className="flex items-center gap-2 rounded-xl border-2 border-stone-900 bg-stone-900 px-4 py-2.5 font-heading font-extrabold text-white shadow-brutal-sm">
             <Check className="h-5 w-5" /> Fertig
           </button>
         </div>
@@ -261,7 +288,7 @@ export default function SeatPlanGrade() {
               return editing ? (
                 <SeatEditor key={index} student={student} students={activeStudents} onChange={(value) => assignSeat(index, value)} />
               ) : (
-                <SeatCard key={index} student={student} systemId={session.grade_system} onClick={() => student && setPicker(student)} />
+                <SeatCard key={index} student={student} systemId={session.grade_system} onClick={() => openStudent(student)} showGrade={!setupOnly} />
               );
             })}
           </div>
@@ -275,7 +302,7 @@ export default function SeatPlanGrade() {
                 <h3 className="mb-2 text-sm font-black uppercase text-stone-600">Nur in der IServ-Gruppenliste</h3>
                 <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-6">
                   {csvOnlyStudents.map((student) => (
-                    <SeatCard key={student.id} student={student} systemId={session.grade_system} onClick={() => setPicker(student)} />
+                    <SeatCard key={student.id} student={student} systemId={session.grade_system} onClick={() => openStudent(student)} showGrade={!setupOnly} />
                   ))}
                 </div>
               </div>
@@ -305,14 +332,15 @@ export default function SeatPlanGrade() {
             </div>
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-6">
               {inactiveStudents.map((student) => (
-                <SeatCard key={student.id} student={student} systemId={session.grade_system} onClick={() => setPicker(student)} />
+                <SeatCard key={student.id} student={student} systemId={session.grade_system} onClick={() => openStudent(student)} showGrade={!setupOnly} />
               ))}
             </div>
           </section>
         )}
       </main>
 
-      <GradePicker student={picker} systemId={session.grade_system} onPick={(value) => setGrade(picker, value)} onRemove={() => setGrade(picker, null)} onClose={() => setPicker(null)} />
+      {!setupOnly && <GradePicker student={picker} systemId={session.grade_system} onPick={(value) => setGrade(picker, value)} onRemove={() => setGrade(picker, null)} onClose={() => setPicker(null)} />}
+      {setupOnly && <AdditionalInfoEditor student={infoEditor} saving={saving} onSave={(value) => saveAdditionalInfo(infoEditor, value)} onClose={() => setInfoEditor(null)} />}
     </div>
   );
 }
@@ -336,17 +364,47 @@ function SeatEditor({ student, students, onChange }) {
   );
 }
 
-function SeatCard({ student, systemId, onClick }) {
+function SeatCard({ student, systemId, onClick, showGrade = true }) {
   if (!student) return <div className="min-h-32 rounded-xl border-2 border-dashed border-stone-400 bg-stone-100" aria-label="Freier Platz" />;
   return (
     <button type="button" onClick={onClick} className={`relative flex min-h-32 min-w-0 flex-col items-center justify-center overflow-hidden rounded-xl bg-white p-3 text-center shadow-sm transition-transform active:scale-[0.98] ${assessmentBorder(student)} ${student.inactive ? "opacity-60 grayscale" : ""}`}>
-      {student.grade && <span className={`absolute right-2 top-2 rounded-lg border-2 px-2 py-1 font-mono text-lg font-black ${gradeColorClasses(student.grade, systemId)}`}>{student.grade}</span>}
+      {showGrade && student.grade && <span className={`absolute right-2 top-2 rounded-lg border-2 px-2 py-1 font-mono text-lg font-black ${gradeColorClasses(student.grade, systemId)}`}>{student.grade}</span>}
       <div className="h-14 w-14 overflow-hidden rounded-xl border-2 border-stone-900 bg-stone-200">
         {student.photo ? <img src={student.photo} alt="" className="h-full w-full object-cover" /> : <span className="flex h-full w-full items-center justify-center font-heading text-xl font-black text-stone-500">{initials(student.first_name, student.last_name)}</span>}
       </div>
       <span className="mt-2 max-w-full truncate text-xs font-bold text-stone-500">{student.first_name}</span>
       <span className="max-w-full truncate font-heading text-base font-black text-stone-900">{student.last_name}</span>
+      {student.additional_info && <span className="mt-1 max-h-10 max-w-full overflow-hidden text-xs font-bold leading-tight text-amber-800">{student.additional_info}</span>}
     </button>
+  );
+}
+
+function AdditionalInfoEditor({ student, saving, onSave, onClose }) {
+  const [value, setValue] = useState("");
+
+  useEffect(() => {
+    setValue(student?.additional_info || "");
+  }, [student]);
+
+  return (
+    <AnimatePresence>
+      {student && (
+        <motion.div className="fixed inset-0 z-[100] flex items-center justify-center p-4" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+          <div className="absolute inset-0 bg-stone-900/45 backdrop-blur-sm" onClick={onClose} />
+          <motion.form onSubmit={(event) => { event.preventDefault(); onSave(value); }} initial={{ scale: 0.92, y: 16 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.95, opacity: 0 }} className="relative w-full max-w-md rounded-3xl border-2 border-stone-900 bg-white p-6 shadow-brutal">
+            <button type="button" onClick={onClose} className="absolute right-4 top-4 text-stone-500" aria-label="Schließen"><X className="h-5 w-5" /></button>
+            <p className="text-xs font-bold uppercase tracking-[0.18em] text-stone-400">Zusatzinfo</p>
+            <h2 className="pr-8 font-heading text-2xl font-black text-stone-900">{student.first_name} {student.last_name}</h2>
+            <textarea autoFocus maxLength={255} rows={5} value={value} onChange={(event) => setValue(event.target.value)} className="mt-5 w-full resize-none rounded-xl border-2 border-stone-300 px-4 py-3 font-medium text-stone-900 outline-none focus:border-stone-900" />
+            <div className="mt-1 text-right font-mono text-xs font-bold text-stone-400">{value.length}/255</div>
+            <div className="mt-4 grid grid-cols-2 gap-2">
+              <button type="button" onClick={onClose} disabled={saving} className="rounded-xl border-2 border-stone-300 bg-white px-4 py-3 font-bold text-stone-600">Abbrechen</button>
+              <button type="submit" disabled={saving} className="flex items-center justify-center gap-2 rounded-xl border-2 border-stone-900 bg-emerald-400 px-4 py-3 font-heading font-extrabold text-stone-900 shadow-brutal-sm disabled:opacity-50">{saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />} Speichern</button>
+            </div>
+          </motion.form>
+        </motion.div>
+      )}
+    </AnimatePresence>
   );
 }
 
@@ -361,6 +419,7 @@ function GradePicker({ student, systemId, onPick, onRemove, onClose }) {
             <button onClick={onClose} className="absolute right-4 top-4 text-stone-500" aria-label="Schließen"><X className="h-5 w-5" /></button>
             <p className="text-xs font-bold uppercase tracking-[0.18em] text-stone-400">Mündliche Note</p>
             <h2 className="pr-8 font-heading text-2xl font-black text-stone-900">{student.first_name} {student.last_name}</h2>
+            {student.additional_info && <p className="mt-2 rounded-xl border-2 border-amber-300 bg-amber-50 px-3 py-2 text-sm font-bold text-amber-900">{student.additional_info}</p>}
             <div className="mt-5 grid grid-cols-4 gap-2">
               {options.map((value) => <button key={value} onClick={() => onPick(value)} className={`flex min-h-16 flex-col items-center justify-center rounded-xl border-2 font-mono font-black active:scale-95 ${student.grade === value ? "ring-4 ring-stone-900 " : ""}${gradeColorClasses(value, systemId)}`}><span className="text-xl">{value}</span>{systemId === "points_0_15" && <span className="text-[10px] opacity-70">{pointGradeLabel(value)}</span>}</button>)}
             </div>

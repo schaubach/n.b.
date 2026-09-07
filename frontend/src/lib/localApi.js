@@ -184,6 +184,7 @@ function studentOut(student) {
     last_name: student.last_name || "",
     order: student.order || 0,
     email: student.email || "",
+    additional_info: String(student.additional_info || "").slice(0, 255),
     photo: student.photo || null,
     inactive: !!student.inactive,
     inactive_at: student.inactive_at || null,
@@ -433,11 +434,19 @@ function classCsvBlob(state, classId) {
   return new Blob(["\ufeff", lines.join("\n")], { type: "text/csv;charset=utf-8" });
 }
 
-function importParsedCsv(state, parsed, gradeSystem, gradeScaleId = "MEDA") {
+export function importParsedCsv(state, parsed, gradeSystem, gradeScaleId = "MEDA", targetClassId = "") {
   const results = [];
-  for (const incomingClass of parsed.classes) {
+  const targetClass = targetClassId ? findClass(state, targetClassId) : null;
+  if (targetClass && (parsed.classes || []).length !== 1) {
+    httpError("Die ausgewählte IServ-Datei muss genau eine Gruppe enthalten.");
+  }
+  const incomingClasses = targetClass ? [{
+    name: targetClass.name,
+    students: parsed.classes[0].students || [],
+  }] : (parsed.classes || []);
+  for (const incomingClass of incomingClasses) {
     const sourceId = sourceIdForClassName(incomingClass.name);
-    let cls = state.classes.find((item) => (item.source_id || sourceIdForClassName(item.name)) === sourceId);
+    let cls = targetClass || state.classes.find((item) => (item.source_id || sourceIdForClassName(item.name)) === sourceId);
     const isNew = !cls;
     if (!cls) {
       cls = {
@@ -449,10 +458,11 @@ function importParsedCsv(state, parsed, gradeSystem, gradeScaleId = "MEDA") {
         created_at: nowIso(),
       };
       state.classes.push(cls);
-    } else {
+    } else if (!targetClass) {
       cls.name = incomingClass.name;
       cls.source_id = sourceId;
     }
+    cls.updated_at = nowIso();
 
     let added = 0;
     let updated = 0;
@@ -466,7 +476,7 @@ function importParsedCsv(state, parsed, gradeSystem, gradeScaleId = "MEDA") {
       const candidateKeys = new Set([sourceKey, legacySourceKey].filter(Boolean));
       let student = state.students.find((item) => item.class_id === cls.id && !importedStudentIds.has(item.id) && candidateKeys.has(item.source_key || item.csv_key));
       if (!student && incoming.email) {
-        student = state.students.find((item) => item.class_id === cls.id && !importedStudentIds.has(item.id) && !item.inactive && item.email && item.email.toLowerCase() === incoming.email.toLowerCase());
+        student = state.students.find((item) => item.class_id === cls.id && !importedStudentIds.has(item.id) && item.email && item.email.toLowerCase() === incoming.email.toLowerCase());
       }
       if (!student) {
         student = {
@@ -477,6 +487,7 @@ function importParsedCsv(state, parsed, gradeSystem, gradeScaleId = "MEDA") {
           last_name: incoming.last_name,
           order: incoming.order,
           email: incoming.email || "",
+          additional_info: "",
           photo: null,
           inactive: false,
           inactive_at: null,
@@ -528,6 +539,31 @@ function importParsedCsv(state, parsed, gradeSystem, gradeScaleId = "MEDA") {
     });
   }
   return results;
+}
+
+export function updateStudentAdditionalInfoInState(state, studentId, value) {
+  const student = findStudent(state, studentId);
+  student.additional_info = String(value || "").trim().slice(0, 255);
+  student.updated_at = nowIso();
+  return studentOut(student);
+}
+
+export function deleteInactiveStudentInState(state, studentId) {
+  const student = findStudent(state, studentId);
+  if (!student.inactive) httpError("Nur nicht mehr aktive Lernende können manuell gelöscht werden.", 400);
+  state.students = state.students.filter((item) => item.id !== student.id);
+  state.grades = (state.grades || []).filter((grade) => grade.student_id !== student.id);
+  state.gradebook_overrides = (state.gradebook_overrides || []).filter((override) => override.student_id !== student.id);
+  state.point_sessions = (state.point_sessions || []).map((record) => ({
+    ...record,
+    entries: (record.entries || []).filter((entry) => entry.student_id !== student.id),
+  }));
+  state.seating_plans = (state.seating_plans || []).map((plan) => plan.class_id === student.class_id ? {
+    ...plan,
+    seats: (plan.seats || []).filter((seat) => seat.student_id !== student.id),
+    updated_at: nowIso(),
+  } : plan);
+  return { ok: true, student_id: student.id, class_id: student.class_id };
 }
 
 async function get(url) {
@@ -810,6 +846,29 @@ async function post(url, body) {
     });
   }
 
+  const classImport = path.match(/^\/classes\/([^/]+)\/import\/csv$/);
+  if (classImport) {
+    const parsed = await parseCsvForm(body);
+    return mutateState((state) => {
+      const results = importParsedCsv(state, parsed, "grades_1_6", "MEDA", classImport[1]);
+      const result = results[0];
+      return {
+        data: {
+          class_id: result.class_id,
+          class_name: result.class_name,
+          new_class: false,
+          class_count: 1,
+          results,
+          added_students: result.added_students,
+          updated_students: result.updated_students,
+          reactivated_students: result.reactivated_students || 0,
+          inactive_students: result.inactive_students || 0,
+          total_students: result.total_students,
+        },
+      };
+    });
+  }
+
   if (path === "/sessions") {
     return mutateState((state) => {
       const cls = findClass(state, body.class_id);
@@ -1024,6 +1083,15 @@ async function put(url, body) {
       return { data: { ok: true, value } };
     });
   }
+  const studentAdditionalInfo = path.match(/^\/students\/([^/]+)\/additional-info$/);
+  if (studentAdditionalInfo) {
+    return mutateState((state) => ({
+      data: {
+        ok: true,
+        student: updateStudentAdditionalInfoInState(state, studentAdditionalInfo[1], body.additional_info),
+      },
+    }));
+  }
   const studentPhoto = path.match(/^\/students\/([^/]+)\/photo$/);
   if (studentPhoto) {
     return mutateState((state) => {
@@ -1039,6 +1107,13 @@ async function put(url, body) {
 
 async function del(url) {
   const path = normalizePath(url);
+
+  const studentOne = path.match(/^\/students\/([^/]+)$/);
+  if (studentOne) {
+    return mutateState((state) => ({
+      data: deleteInactiveStudentInState(state, studentOne[1]),
+    }));
+  }
 
   const studentPhoto = path.match(/^\/students\/([^/]+)\/photo$/);
   if (studentPhoto) {

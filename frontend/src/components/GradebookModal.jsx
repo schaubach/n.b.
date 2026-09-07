@@ -1,8 +1,9 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { AnimatePresence, motion } from "framer-motion";
-import { AlertTriangle, CheckCircle2, ChevronLeft, ChevronRight, Download, Eye, FileDown, FileSpreadsheet, Loader2, Mail, Percent, Send, X } from "lucide-react";
+import { AlertTriangle, CheckCircle2, ChevronLeft, ChevronRight, Download, Eye, FileDown, FileSpreadsheet, Loader2, Mail, MessageSquareText, Percent, Send, Trash2, X } from "lucide-react";
 import api from "../lib/api";
+import ConfirmModal from "./ConfirmModal";
 import { gradeColorClasses, gradeTier } from "../lib/grades";
 import { gradeOptions, gradeToNumber, overrideOptions } from "../lib/gradebook";
 import {
@@ -434,6 +435,8 @@ export default function GradebookModal({ classId, className, open, onChanged, on
   const [mailSending, setMailSending] = useState(false);
   const [mailResult, setMailResult] = useState(null);
   const [focusedStudentId, setFocusedStudentId] = useState(null);
+  const [showAdditionalInfo, setShowAdditionalInfo] = useState(false);
+  const [deleteStudentTarget, setDeleteStudentTarget] = useState(null);
   const [pdfBusy, setPdfBusy] = useState(false);
 
   useEffect(() => {
@@ -452,6 +455,8 @@ export default function GradebookModal({ classId, className, open, onChanged, on
     setMailRequest(null);
     setMailResult(null);
     setFocusedStudentId(null);
+    setShowAdditionalInfo(false);
+    setDeleteStudentTarget(null);
     api.get(`/classes/${classId}/gradebook`)
       .then((res) => setData(res.data))
       .catch(() => setError("Notenstand konnte nicht geladen werden."))
@@ -462,6 +467,7 @@ export default function GradebookModal({ classId, className, open, onChanged, on
   const rows = useMemo(() => (data ? buildGradebookRows(data) : []), [data]);
   const sessions = useMemo(() => (data ? sortedSessions(data) : []), [data]);
   const columns = useMemo(() => averageColumns(sessions, weights, data?.grade_system), [sessions, weights, data?.grade_system]);
+  const hasAdditionalInfo = useMemo(() => rows.some((row) => !!row.student.additional_info), [rows]);
 
   const exportCsv = () => {
     if (!data) return;
@@ -599,6 +605,25 @@ export default function GradebookModal({ classId, className, open, onChanged, on
     }
   };
 
+  const deleteInactiveStudent = async (student) => {
+    setError(null);
+    try {
+      await api.delete(`/students/${student.id}`);
+      setData((current) => ({
+        ...current,
+        students: current.students.filter((item) => item.id !== student.id),
+        grades: (current.grades || []).filter((grade) => grade.student_id !== student.id),
+        average_overrides: (current.average_overrides || []).filter((override) => override.student_id !== student.id),
+      }));
+      setFocusedStudentId((current) => current === student.id ? null : current);
+      setDeleteStudentTarget(null);
+      try { await onChanged?.(); } catch (refreshError) { console.warn("Klassenübersicht konnte nicht aktualisiert werden.", refreshError); }
+    } catch (err) {
+      setError(err?.response?.data?.detail || "Lernende Person konnte nicht gelöscht werden.");
+      setDeleteStudentTarget(null);
+    }
+  };
+
   const saveAverageWeight = async (column, weight) => {
     setError(null);
     try {
@@ -622,6 +647,7 @@ export default function GradebookModal({ classId, className, open, onChanged, on
             <header className="flex shrink-0 items-center gap-3 border-b-2 border-stone-900 bg-white px-5 py-4">
               <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-stone-900 text-white"><FileSpreadsheet className="h-5 w-5" /></div>
               <div className="min-w-0 flex-1"><p className="text-xs font-bold uppercase tracking-[0.18em] text-stone-400">Notenstand</p><h2 className="truncate font-heading text-xl font-black text-stone-900 sm:text-2xl">{className}</h2></div>
+              {hasAdditionalInfo && <button type="button" onClick={() => setShowAdditionalInfo((value) => !value)} aria-pressed={showAdditionalInfo} className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border-2 border-stone-900 shadow-brutal-sm ${showAdditionalInfo ? "bg-amber-300 text-stone-900" : "bg-white text-stone-700"}`} title={showAdditionalInfo ? "Zusatzinfos ausblenden" : "Zusatzinfos einblenden"} aria-label={showAdditionalInfo ? "Zusatzinfos ausblenden" : "Zusatzinfos einblenden"}><MessageSquareText className="h-5 w-5" /></button>}
               <button onClick={downloadPdf} disabled={!data || loading || pdfBusy} className="hidden rounded-xl border-2 border-stone-900 bg-white px-4 py-2.5 font-heading font-extrabold text-stone-900 shadow-brutal-sm transition-all active:translate-y-0.5 active:shadow-none disabled:opacity-40 sm:flex sm:items-center sm:gap-2">{pdfBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileDown className="h-4 w-4" />} PDF</button>
               <button onClick={exportCsv} disabled={!data || loading} className="hidden rounded-xl border-2 border-stone-900 bg-emerald-400 px-4 py-2.5 font-heading font-extrabold text-stone-900 shadow-brutal-sm transition-all active:translate-y-0.5 active:shadow-none disabled:opacity-40 sm:flex sm:items-center sm:gap-2"><Download className="h-4 w-4" /> CSV</button>
               <button onClick={onClose} className="text-stone-400 hover:text-stone-900" aria-label="Schliessen"><X className="h-6 w-6" /></button>
@@ -687,10 +713,14 @@ export default function GradebookModal({ classId, className, open, onChanged, on
                                   <button type="button" onClick={() => setFocusedStudentId(isFocused ? null : row.student.id)} className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-xl border-2 transition-colors ${isFocused ? "border-stone-900 bg-amber-300 text-stone-900" : "border-stone-200 bg-white text-stone-500 hover:border-stone-900 hover:text-stone-900"}`} title={isFocused ? "Alle Zeilen anzeigen" : "Nur diese Zeile lesbar anzeigen"} aria-label={isFocused ? "Alle Zeilen anzeigen" : "Nur diese Zeile lesbar anzeigen"}>
                                     <Eye className="h-4 w-4" />
                                   </button>
-                                  <button type="button" onClick={() => prepareMail([row])} disabled={!row.student.email} className="flex min-w-0 flex-1 items-center gap-2 rounded-xl px-2 py-1.5 text-left hover:bg-stone-100 disabled:cursor-not-allowed disabled:opacity-35" title={row.student.email ? "Notenstandsmail vorbereiten" : "Keine Mailadresse importiert"}>
+                                  <button type="button" onClick={() => prepareMail([row])} disabled={!row.student.email} className="flex min-w-0 flex-1 items-start gap-2 rounded-xl px-2 py-1.5 text-left hover:bg-stone-100 disabled:cursor-not-allowed disabled:opacity-35" title={row.student.email ? "Notenstandsmail vorbereiten" : "Keine Mailadresse importiert"}>
                                     <Mail className="h-4 w-4 shrink-0 text-stone-500" />
-                                    <span className="truncate">{row.student.first_name} <span className="font-black">{row.student.last_name}</span>{row.student.inactive ? <span className="ml-2 rounded-full bg-stone-200 px-2 py-0.5 text-[10px] font-black uppercase text-stone-600">nicht im Import</span> : null}</span>
+                                    <span className="min-w-0 flex-1">
+                                      <span className="block truncate">{row.student.first_name} <span className="font-black">{row.student.last_name}</span>{row.student.inactive ? <span className="ml-2 rounded-full bg-stone-200 px-2 py-0.5 text-[10px] font-black uppercase text-stone-600">nicht im Import</span> : null}</span>
+                                      {showAdditionalInfo && row.student.additional_info && <span className="mt-1 block whitespace-normal text-xs font-bold leading-tight text-amber-800">{row.student.additional_info}</span>}
+                                    </span>
                                   </button>
+                                  {row.student.inactive && <button type="button" onClick={() => setDeleteStudentTarget(row.student)} className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border-2 border-rose-200 bg-white text-rose-700 hover:border-rose-500" title="Inaktive lernende Person löschen" aria-label={`${row.student.first_name} ${row.student.last_name} löschen`}><Trash2 className="h-4 w-4" /></button>}
                                 </div>
                               </td>
                               {row.sessionCells.map((cell) => <SessionGradeCell key={cell.session.id} row={row} cell={cell} systemId={data.grade_system} onEdit={editGrade} veiled={isVeiled} />)}
@@ -711,6 +741,16 @@ export default function GradebookModal({ classId, className, open, onChanged, on
           <PickerModal picker={picker} systemId={data?.grade_system} onPick={savePickerValue} onClear={() => savePickerValue("")} onClose={() => setPicker(null)} />
           <HeaderEditor editor={headerEditor} onSaveSession={saveSessionHeader} onDeleteSession={deleteSessionColumn} onSaveAverageWeight={saveAverageWeight} onClose={() => setHeaderEditor(null)} />
           <MailConfirmModal request={mailRequest} sending={mailSending} result={mailResult} onSend={sendMails} onClose={() => { setMailRequest(null); setMailResult(null); }} />
+          <ConfirmModal
+            open={!!deleteStudentTarget}
+            title="Lernende Person löschen?"
+            description={deleteStudentTarget ? `${deleteStudentTarget.first_name} ${deleteStudentTarget.last_name} wird mit Foto, Zusatzinfo, allen Noten und Punkten unwiderruflich gelöscht.` : ""}
+            onClose={() => setDeleteStudentTarget(null)}
+            actions={deleteStudentTarget ? [
+              { key: "delete", variant: "danger", label: "Endgültig löschen", onClick: () => deleteInactiveStudent(deleteStudentTarget) },
+              { key: "cancel", variant: "ghost", label: "Abbrechen", onClick: () => setDeleteStudentTarget(null) },
+            ] : []}
+          />
         </motion.div>
       )}
     </AnimatePresence>

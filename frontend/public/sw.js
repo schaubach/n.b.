@@ -1,5 +1,5 @@
-const CACHE_NAME = "nb-offline-v5";
-const CORE_ASSETS = ["./", "./index.html", "./manifest.json", "./logo.jpeg", "./icon.svg", "./asset-manifest.json", "./app-version.json"];
+const CACHE_NAME = "nb-offline-v6";
+const CORE_ASSETS = ["./manifest.json", "./logo.jpeg", "./icon.svg", "./asset-manifest.json", "./app-version.json"];
 const GRADE_SCALE_INDEX = "./notenskala/index.json";
 const NAVIGATION_UPDATE_TIMEOUT_MS = 1800;
 
@@ -30,6 +30,36 @@ async function bundledGradeScaleAssets(reload = false) {
   return [GRADE_SCALE_INDEX, ...(Array.isArray(files) ? files.filter(validGradeScaleFilename).map((name) => `./notenskala/${encodeURIComponent(name)}`) : [])];
 }
 
+function escapeAttribute(value) {
+  return String(value).replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+function createOfflineShell(manifest) {
+  const entrypoints = Array.isArray(manifest.entrypoints) ? manifest.entrypoints : [];
+  const styles = entrypoints
+    .filter((asset) => typeof asset === "string" && asset.endsWith(".css"))
+    .map((asset) => `<link href="${escapeAttribute(asset)}" rel="stylesheet">`)
+    .join("");
+  const scripts = entrypoints
+    .filter((asset) => typeof asset === "string" && asset.endsWith(".js"))
+    .map((asset) => `<script defer src="${escapeAttribute(asset)}"></script>`)
+    .join("");
+  return `<!doctype html><html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#fafaf9"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-title" content="n.b."><meta name="apple-mobile-web-app-status-bar-style" content="default"><meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob:; font-src 'self'; connect-src 'self' https://*:8123; worker-src 'self'; manifest-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'; upgrade-insecure-requests"><link rel="manifest" href="./manifest.json" crossorigin="use-credentials"><link rel="icon" href="./logo.jpeg" type="image/jpeg"><link rel="apple-touch-icon" href="./logo.jpeg">${styles}<title>n.b. - Noten blitzschnell vergeben</title></head><body><noscript>JavaScript muss aktiviert sein.</noscript><div id="root"></div>${scripts}</body></html>`;
+}
+
+async function cacheOfflineHtml(cache, html) {
+  const response = new Response(html, {
+    headers: {
+      "Content-Type": "text/html; charset=utf-8",
+      "Cache-Control": "no-store",
+    },
+  });
+  await Promise.all([
+    cache.put("./", response.clone()),
+    cache.put("./index.html", response.clone()),
+  ]);
+}
+
 async function fetchAndPut(cache, asset) {
   const response = await fetch(cacheBustedUrl(asset), { cache: "reload", credentials: "same-origin" });
   if (!response || !response.ok) throw new Error("Update-Asset konnte nicht geladen werden: " + asset);
@@ -44,6 +74,7 @@ async function updateOfflineCache() {
   if (!manifestResponse || !manifestResponse.ok) throw new Error("Asset-Manifest konnte nicht geladen werden.");
   const manifest = await manifestResponse.clone().json();
   await cache.put("./asset-manifest.json", manifestResponse);
+  await cacheOfflineHtml(cache, createOfflineShell(manifest));
   Object.values(manifest.files || {}).forEach((asset) => {
     if (typeof asset === "string" && !asset.endsWith(".map")) assets.add(asset);
   });
@@ -65,17 +96,17 @@ function refreshHtmlInBackground(request) {
 async function precache() {
   const cache = await caches.open(CACHE_NAME);
   const assets = new Set(CORE_ASSETS);
-  try {
-    const response = await fetch("./asset-manifest.json", { cache: "reload" });
-    const manifest = await response.json();
-    Object.values(manifest.files || {}).forEach((asset) => {
-      if (typeof asset === "string" && !asset.endsWith(".map")) assets.add(asset);
-    });
-  } catch (error) {}
+  const response = await fetch("./asset-manifest.json", { cache: "reload", credentials: "same-origin" });
+  if (!response.ok) throw new Error("Asset-Manifest konnte nicht geladen werden.");
+  const manifest = await response.json();
+  Object.values(manifest.files || {}).forEach((asset) => {
+    if (typeof asset === "string" && !asset.endsWith(".map") && !asset.endsWith("index.html")) assets.add(asset);
+  });
+  await cacheOfflineHtml(cache, createOfflineShell(manifest));
   try {
     (await bundledGradeScaleAssets()).forEach((asset) => assets.add(asset));
   } catch (error) {}
-  await cache.addAll(Array.from(assets));
+  await Promise.all(Array.from(assets).map((asset) => fetchAndPut(cache, asset)));
 }
 
 self.addEventListener("install", (event) => {
@@ -108,6 +139,12 @@ self.addEventListener("message", (event) => {
           if (port) port.postMessage({ ok: false, message: error && error.message ? error.message : "Update fehlgeschlagen." });
         })
     );
+    return;
+  }
+  if (type === "NB_PRIME_OFFLINE") {
+    const html = typeof event.data.html === "string" ? event.data.html : "";
+    if (!html) return;
+    event.waitUntil(caches.open(CACHE_NAME).then((cache) => cacheOfflineHtml(cache, html)));
   }
 });
 

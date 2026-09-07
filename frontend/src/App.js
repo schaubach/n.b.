@@ -17,6 +17,7 @@ export default function App() {
           <Route path="/" element={<Home />} />
           <Route path="/grade/:sessionId" element={<Grade />} />
           <Route path="/seat-plan/:sessionId" element={<SeatPlanGrade />} />
+          <Route path="/classes/:classId/seat-plan" element={<SeatPlanGrade />} />
           <Route path="/summary/:sessionId" element={<Summary />} />
           <Route path="/points/:sessionId" element={<PointsGrade />} />
           <Route path="/gradebook/:classId" element={<GradebookPage />} />

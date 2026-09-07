@@ -4,7 +4,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import {
   Users, Trash2, CheckCircle2,
   Loader2, FileUp, X, Plus, Camera, Table2, Mail, UserRound, Percent, Download,
-  Copy, MoreVertical,
+  Copy, LayoutGrid, MoreVertical, RefreshCw,
 } from "lucide-react";
 import api from "../lib/api";
 import { GRADE_SYSTEMS } from "../lib/grades";
@@ -37,19 +37,27 @@ export default function Home() {
   const [importOptions, setImportOptions] = useState(null);
   const [renameClass, setRenameClass] = useState(null);
   const fileRef = useRef(null);
+  const classUpdateFileRef = useRef(null);
+  const [classUpdateTarget, setClassUpdateTarget] = useState(null);
 
   const closeModal = () => setModal({ open: false });
 
   const load = async () => {
     setLoading(true);
     try {
-      try { await syncBundledGradeScales(); } catch (syncError) { console.warn("Standardnotenskalen konnten nicht synchronisiert werden.", syncError); }
       const [res, scaleRes] = await Promise.all([api.get("/classes"), api.get("/grade-scales")]);
       setClasses(res.data);
       setGradeScales(scaleRes.data);
     } finally {
       setLoading(false);
     }
+    syncBundledGradeScales().then(async (syncResult) => {
+      if (!syncResult?.changed) return;
+      const scaleRes = await api.get("/grade-scales");
+      setGradeScales(scaleRes.data);
+    }).catch((syncError) => {
+      console.warn("Standardnotenskalen konnten nicht synchronisiert werden.", syncError);
+    });
   };
 
   const refreshClasses = async () => {
@@ -104,6 +112,31 @@ export default function Home() {
       setError(e?.response?.data?.detail || "Datei konnte nicht gelesen werden.");
     } finally {
       if (fileRef.current) fileRef.current.value = "";
+    }
+  };
+
+  const chooseClassUpdate = (cls) => {
+    setClassUpdateTarget(cls);
+    window.setTimeout(() => classUpdateFileRef.current?.click(), 0);
+  };
+
+  const updateClassFromFile = async (file) => {
+    if (!file || !classUpdateTarget) return;
+    setImporting(true);
+    setError(null);
+    setResult(null);
+    try {
+      const form = new FormData();
+      form.append("file", file);
+      const response = await api.post(`/classes/${classUpdateTarget.id}/import/csv`, form);
+      setResult(response.data);
+      await load();
+    } catch (err) {
+      setError(err?.response?.data?.detail || "Klassenbestand konnte nicht aktualisiert werden.");
+    } finally {
+      setImporting(false);
+      setClassUpdateTarget(null);
+      if (classUpdateFileRef.current) classUpdateFileRef.current.value = "";
     }
   };
 
@@ -342,6 +375,8 @@ export default function Home() {
                 onStart={(cat) => setSetup({ cls: c, category: cat })}
                 onDelete={() => removeClass(c)}
                 onDuplicate={() => duplicateClass(c)}
+                onSeatPlan={() => navigate(`/classes/${c.id}/seat-plan`)}
+                onUpdateList={() => chooseClassUpdate(c)}
                 onRename={() => setRenameClass(c)}
                 onDeleteGrades={() => handleDeleteGrades(c)}
                 onPhotos={() => setPhotoClass(c)}
@@ -352,6 +387,7 @@ export default function Home() {
         )}
       </main>
 
+      <input ref={classUpdateFileRef} type="file" accept=".csv,text/csv" className="hidden" onChange={(event) => updateClassFromFile(event.target.files?.[0])} />
       <ConfirmModal {...modal} onClose={closeModal} />
       <ClassNameModal
         target={renameClass}
@@ -402,7 +438,7 @@ export default function Home() {
   );
 }
 
-function ClassCard({ c, onStart, onDelete, onDeleteGrades, onPhotos, onGradebook, onDuplicate, onRename }) {
+function ClassCard({ c, onStart, onDelete, onDeleteGrades, onPhotos, onGradebook, onDuplicate, onRename, onSeatPlan, onUpdateList }) {
   const [busy, setBusy] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef(null);
@@ -460,7 +496,13 @@ function ClassCard({ c, onStart, onDelete, onDeleteGrades, onPhotos, onGradebook
               <MoreVertical className="h-5 w-5" />
             </button>
             {menuOpen && (
-              <div role="menu" className="absolute right-0 top-11 z-30 w-52 overflow-hidden rounded-xl border-2 border-stone-900 bg-white p-1.5 shadow-brutal-sm">
+              <div role="menu" className="absolute right-0 top-11 z-30 w-64 overflow-hidden rounded-xl border-2 border-stone-900 bg-white p-1.5 shadow-brutal-sm">
+                <button type="button" role="menuitem" data-testid={`seat-plan-class-${c.id}`} disabled={disabled} onClick={() => { setMenuOpen(false); onSeatPlan(); }} className="flex w-full items-center gap-2 rounded-lg px-3 py-2.5 text-left font-bold text-stone-800 hover:bg-stone-100 disabled:opacity-50">
+                  <LayoutGrid className="h-4 w-4" /> Sitzplan verwalten
+                </button>
+                <button type="button" role="menuitem" data-testid={`update-class-list-${c.id}`} disabled={busy} onClick={() => { setMenuOpen(false); onUpdateList(); }} className="flex w-full items-center gap-2 rounded-lg px-3 py-2.5 text-left font-bold text-stone-800 hover:bg-stone-100 disabled:opacity-50">
+                  <RefreshCw className="h-4 w-4" /> IServ-Liste aktualisieren
+                </button>
                 <button type="button" role="menuitem" data-testid={`duplicate-class-${c.id}`} disabled={busy} onClick={() => { setMenuOpen(false); run(onDuplicate); }} className="flex w-full items-center gap-2 rounded-lg px-3 py-2.5 text-left font-bold text-stone-800 hover:bg-stone-100 disabled:opacity-50">
                   <Copy className="h-4 w-4" /> Duplizieren
                 </button>

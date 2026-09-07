@@ -5,7 +5,7 @@ global.TextDecoder = TextDecoder;
 global.crypto = { randomUUID: () => "grade-1", getRandomValues: (bytes) => bytes.fill(1) };
 
 const localApi = require("./localApi");
-const { applyBundledGradeScales, duplicateClassInState, recalculatePointGrades, oralGradeStatsForClass, normalizeSeatingPlan } = localApi;
+const { applyBundledGradeScales, deleteInactiveStudentInState, duplicateClassInState, importParsedCsv, recalculatePointGrades, oralGradeStatsForClass, normalizeSeatingPlan, updateStudentAdditionalInfoInState } = localApi;
 const { normalizePointScale } = require("./gradeScales");
 
 function baseState() {
@@ -165,7 +165,7 @@ test("duplicates class data, photos and seating plan without assessments", () =>
   const state = {
     classes: [{ id: "class-1", source_id: "csv:bk-a", name: "BK A", grade_system: "grades_1_6", grade_scale_id: "MEDA", created_at: "old" }],
     students: [
-      { id: "student-1", class_id: "class-1", first_name: "Ada", last_name: "Alpha", photo: "data:image/jpeg;base64,PHOTO", inactive: false },
+      { id: "student-1", class_id: "class-1", first_name: "Ada", last_name: "Alpha", additional_info: "Sitzt vorne", photo: "data:image/jpeg;base64,PHOTO", inactive: false },
       { id: "student-2", class_id: "class-1", first_name: "Berta", last_name: "Beta", photo: null, inactive: true },
     ],
     seating_plans: [{ class_id: "class-1", rows: 1, columns: 2, seats: [{ row: 0, column: 0, student_id: "student-1" }], pdf_only_entries: [{ name: "Nur PDF", row: 0, column: 1 }] }],
@@ -184,7 +184,7 @@ test("duplicates class data, photos and seating plan without assessments", () =>
   expect(result).toMatchObject({ id: "class-copy", name: "BK A (Kopie)", student_count: 2, photo_count: 1, session_count: 0 });
   const copiedStudents = state.students.filter((student) => student.class_id === "class-copy");
   expect(copiedStudents).toHaveLength(2);
-  expect(copiedStudents[0]).toMatchObject({ id: "student-copy-1", photo: "data:image/jpeg;base64,PHOTO", inactive: false });
+  expect(copiedStudents[0]).toMatchObject({ id: "student-copy-1", additional_info: "Sitzt vorne", photo: "data:image/jpeg;base64,PHOTO", inactive: false });
   expect(copiedStudents[1]).toMatchObject({ id: "student-copy-2", inactive: true });
   expect(state.seating_plans.find((plan) => plan.class_id === "class-copy")).toMatchObject({
     seats: [{ row: 0, column: 0, student_id: "student-copy-1" }],
@@ -194,6 +194,71 @@ test("duplicates class data, photos and seating plan without assessments", () =>
   expect(state.grades).toHaveLength(1);
   expect(state.gradebook_overrides.filter((item) => item.class_id === "class-copy")).toEqual([]);
   expect(state.gradebook_weights.filter((item) => item.class_id === "class-copy")).toEqual([]);
+});
+
+test("updates learner info with trimming and a 255 character limit", () => {
+  const state = { students: [{ id: "student-1", class_id: "class-1" }] };
+
+  const updated = updateStudentAdditionalInfoInState(state, "student-1", `  ${"a".repeat(300)}  `);
+
+  expect(updated.additional_info).toHaveLength(255);
+  expect(state.students[0].additional_info).toBe("a".repeat(255));
+});
+
+test("updates an explicitly selected renamed class from an IServ list", () => {
+  const state = {
+    classes: [{ id: "class-1", source_id: "csv:alte-gruppe", name: "Eigener Klassenname", grade_system: "grades_1_6", grade_scale_id: "MEDA" }],
+    students: [
+      { id: "student-1", class_id: "class-1", source_key: "alte-gruppe::account::ada", first_name: "Ada", last_name: "Alt", email: "ada@rbbk-do.de", additional_info: "Info bleibt", inactive: false },
+      { id: "student-2", class_id: "class-1", source_key: "alte-gruppe::account::berta", first_name: "Berta", last_name: "Beta", email: "berta@rbbk-do.de", inactive: false },
+    ],
+    seating_plans: [],
+    sessions: [],
+    grades: [],
+    grade_scales: [],
+    hidden_grade_scales: [],
+  };
+  const parsed = { classes: [{ name: "Alte Gruppe", students: [
+    { source_key: "alte-gruppe::account::ada", first_name: "Ada", last_name: "Aktuell", email: "ada@rbbk-do.de", order: 0 },
+    { source_key: "alte-gruppe::account::clara", first_name: "Clara", last_name: "Gamma", email: "clara@rbbk-do.de", order: 1 },
+  ] }] };
+
+  const [result] = importParsedCsv(state, parsed, "grades_1_6", "MEDA", "class-1");
+
+  expect(state.classes[0].name).toBe("Eigener Klassenname");
+  expect(state.students.find((student) => student.id === "student-1")).toMatchObject({ last_name: "Aktuell", additional_info: "Info bleibt", inactive: false });
+  expect(state.students.find((student) => student.id === "student-2").inactive).toBe(true);
+  expect(state.students.find((student) => student.email === "clara@rbbk-do.de")).toMatchObject({ inactive: false, additional_info: "" });
+  expect(result).toMatchObject({ new_class: false, added_students: 1, updated_students: 1, inactive_students: 1, total_students: 3 });
+});
+
+test("rejects a multi-group file for an explicitly selected class", () => {
+  const state = { classes: [{ id: "class-1", name: "Test" }], students: [] };
+  const parsed = { classes: [{ name: "A", students: [] }, { name: "B", students: [] }] };
+  expect(() => importParsedCsv(state, parsed, "grades_1_6", "MEDA", "class-1")).toThrow("genau eine Gruppe");
+});
+
+test("deleting an inactive learner removes every dependent record", () => {
+  const state = {
+    students: [{ id: "student-1", class_id: "class-1", inactive: true, photo: "data:image/jpeg;base64,PHOTO", additional_info: "Info" }],
+    grades: [{ session_id: "session-1", student_id: "student-1", value: "2" }],
+    gradebook_overrides: [{ class_id: "class-1", student_id: "student-1", column: "final", value: "2" }],
+    point_sessions: [{ session_id: "session-1", columns: [], entries: [{ student_id: "student-1", column_id: "task-1", points: 3 }] }],
+    seating_plans: [{ class_id: "class-1", rows: 1, columns: 2, seats: [{ row: 0, column: 0, student_id: "student-1" }] }],
+  };
+
+  deleteInactiveStudentInState(state, "student-1");
+
+  expect(state.students).toEqual([]);
+  expect(state.grades).toEqual([]);
+  expect(state.gradebook_overrides).toEqual([]);
+  expect(state.point_sessions[0].entries).toEqual([]);
+  expect(state.seating_plans[0].seats).toEqual([]);
+});
+
+test("an active learner cannot be deleted manually", () => {
+  const state = { students: [{ id: "student-1", class_id: "class-1", inactive: false }] };
+  expect(() => deleteInactiveStudentInState(state, "student-1")).toThrow("Nur nicht mehr aktive Lernende");
 });
 
 test("bundled grade scales replace same-name local scales and keep custom scales", () => {
