@@ -1,4 +1,4 @@
-const OFFLINE_CACHE_NAME = "nb-offline-v7";
+const OFFLINE_CACHE_NAME = "nb-offline-v9";
 
 function offlineShellHtml() {
   const html = document.documentElement.cloneNode(true);

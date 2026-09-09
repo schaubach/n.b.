@@ -15,7 +15,7 @@ import PhotoManager from "../components/PhotoManager";
 import GradebookModal from "../components/GradebookModal";
 import TeacherConfigModal from "../components/TeacherConfigModal";
 import GradeScaleManager from "../components/GradeScaleManager";
-import { sendBackupToTeacher } from "../lib/backup";
+import { saveBackupLocally } from "../lib/backup";
 import { syncBundledGradeScales } from "../lib/bundledGradeScales";
 
 export default function Home() {
@@ -145,8 +145,8 @@ export default function Home() {
     setError("");
     setNoticeMessage("");
     try {
-      await sendBackupToTeacher({ download: true });
-      setNoticeMessage("Backup wurde erstellt, heruntergeladen und an die Lehrendenadresse gesendet.");
+      await saveBackupLocally();
+      setNoticeMessage("Backup wurde lokal gespeichert.");
     } catch (err) {
       setError(err?.message || err?.response?.data?.detail || "Backup konnte nicht erstellt werden.");
     } finally {

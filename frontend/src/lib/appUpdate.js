@@ -30,7 +30,7 @@ async function readJson(response) {
 }
 
 export async function localAppVersion() {
-  if (APP_VERSION?.buildId) return { ...APP_VERSION, source: "bundle" };
+  if (APP_VERSION?.buildId || APP_VERSION?.version) return { ...APP_VERSION, source: "bundle" };
   if ("caches" in window) {
     const cached = await caches.match(VERSION_FILE) || await caches.match("./app-version.json");
     const parsed = await readJson(cached);

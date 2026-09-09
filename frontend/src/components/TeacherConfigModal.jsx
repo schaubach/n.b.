@@ -2,8 +2,8 @@ import React, { useEffect, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { AlertTriangle, CheckCircle2, Download, KeyRound, Loader2, Mail, RefreshCw, Save, Upload, UserRound, X } from "lucide-react";
 import api from "../lib/api";
-import { checkMailBackendHealth } from "../lib/mailBackend";
-import { importEncryptedBackup, sendBackupToTeacher } from "../lib/backup";
+import { checkMailBackendConnection, loadInstallPackageMailBackendConfig } from "../lib/mailBackend";
+import { importEncryptedBackup, saveBackupLocally, sendBackupToTeacher } from "../lib/backup";
 import { checkAppUpdate, forceAppUpdate, formatVersion } from "../lib/appUpdate";
 
 export default function TeacherConfigModal({ open, onClose }) {
@@ -99,7 +99,7 @@ export default function TeacherConfigModal({ open, onClose }) {
     let cancelled = false;
     setBackendCheck({ status: "checking", message: "Mail-Backend wird geprüft..." });
     const timer = window.setTimeout(() => {
-      checkMailBackendHealth(host).then((result) => {
+      checkMailBackendConnection(host).then((result) => {
         if (!cancelled) setBackendCheck({ status: result.ok ? "ok" : "error", message: result.message });
       });
     }, 350);
@@ -107,7 +107,7 @@ export default function TeacherConfigModal({ open, onClose }) {
       cancelled = true;
       window.clearTimeout(timer);
     };
-  }, [open, loading, mailBackendHost]);
+  }, [open, loading, mailBackendHost, mailBackendPreSharedKey, backendIdentityPublicKey]);
 
 
   const runAppUpdate = async () => {
@@ -130,10 +130,25 @@ export default function TeacherConfigModal({ open, onClose }) {
     setError("");
     try {
       await api.post("/teacher-config", teacherConfigPayload());
-      await sendBackupToTeacher({ download: true });
-      setMessage("Backup wurde erstellt, heruntergeladen und an die Lehrendenadresse gesendet.");
+      await saveBackupLocally();
+      setMessage("Backup wurde lokal gespeichert. Dafuer ist keine Verbindung zum Mail-Backend erforderlich.");
     } catch (err) {
       setError(errorText(err, "Backup konnte nicht erstellt werden."));
+    } finally {
+      setBackupBusy(false);
+    }
+  };
+
+  const runBackupMail = async () => {
+    setBackupBusy(true);
+    setMessage("");
+    setError("");
+    try {
+      await api.post("/teacher-config", teacherConfigPayload());
+      await sendBackupToTeacher();
+      setMessage("Backup wurde an die Lehrendenadresse gesendet.");
+    } catch (err) {
+      setError(errorText(err, "Backup konnte nicht versendet werden."));
     } finally {
       setBackupBusy(false);
     }
@@ -197,6 +212,51 @@ export default function TeacherConfigModal({ open, onClose }) {
       setMessage("Credentials wurden geladen und gespeichert.");
     } catch (err) {
       setError(errorText(err, "Credentials konnten nicht geladen werden."));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const exportCredentials = async () => {
+    if (!window.confirm("Die Credential-Datei enthaelt das IServ-Passwort und die Backend-Schluessel unverschluesselt. Datei trotzdem speichern?")) return;
+    setSaving(true);
+    setMessage("");
+    setError("");
+    try {
+      const payload = teacherConfigPayload();
+      try {
+        const backendConfig = await loadInstallPackageMailBackendConfig();
+        payload.mail_backend_pre_shared_key = backendConfig.preSharedKey;
+        payload.backend_identity_public_key = backendConfig.backendIdentityPublicKey;
+      } catch (configError) {
+        if (!payload.mail_backend_pre_shared_key || !payload.backend_identity_public_key) throw configError;
+      }
+      const exported = {
+        app: "n.b.",
+        type: "teacher-credentials",
+        version: 1,
+        exported_at: new Date().toISOString(),
+        teacher: {
+          name: payload.name,
+          email: payload.email,
+          password: payload.password,
+          mail_backend_host: payload.mail_backend_host,
+          backup_interval_days: payload.backup_interval_days,
+        },
+        preSharedKey: payload.mail_backend_pre_shared_key,
+        backendIdentityPublicKey: payload.backend_identity_public_key,
+      };
+      const url = URL.createObjectURL(new Blob([JSON.stringify(exported, null, 2) + "\n"], { type: "application/json" }));
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = "n-b-credentials-" + new Date().toISOString().slice(0, 10) + ".json";
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+      setMessage("Credential-Datei wurde gespeichert.");
+    } catch (err) {
+      setError(errorText(err, "Credentials konnten nicht gespeichert werden."));
     } finally {
       setSaving(false);
     }
@@ -273,7 +333,7 @@ export default function TeacherConfigModal({ open, onClose }) {
                 {backendCheck.status !== "idle" && (
                   <div className={"mt-5 flex items-start gap-3 rounded-2xl border-2 px-4 py-3 text-sm font-bold " + (backendCheck.status === "ok" ? "border-emerald-300 bg-emerald-100 text-emerald-900" : backendCheck.status === "checking" ? "border-stone-300 bg-stone-100 text-stone-700" : "border-rose-300 bg-rose-100 text-rose-900")}>
                     {backendCheck.status === "checking" ? <Loader2 className="mt-0.5 h-5 w-5 shrink-0 animate-spin" /> : backendCheck.status === "ok" ? <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0" /> : <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0" />}
-                    <span>{backendCheck.message}</span>
+                    <span className="whitespace-pre-wrap break-words">{backendCheck.message}</span>
                   </div>
                 )}
 
@@ -297,21 +357,30 @@ export default function TeacherConfigModal({ open, onClose }) {
                   </div>
                 </div>
 
-                <div className="mt-5">
+                <div className="mt-5 grid gap-2 sm:grid-cols-2">
                   <label className={(saving || backupBusy ? "pointer-events-none opacity-50" : "cursor-pointer") + " flex items-center justify-center gap-2 rounded-2xl border-2 border-stone-900 bg-white px-5 py-3 font-heading font-extrabold text-stone-900 shadow-brutal-sm"}>
                     <KeyRound className="h-5 w-5" />
                     Credentials laden
                     <input type="file" accept=".json,application/json" onChange={importCredentials} disabled={saving || backupBusy} className="hidden" />
                   </label>
-                  {(mailBackendPreSharedKey && backendIdentityPublicKey) && <p className="mt-2 text-xs font-bold text-emerald-700">Backend-Credentials lokal geladen.</p>}
+                  <button type="button" onClick={exportCredentials} disabled={saving || backupBusy} className="flex items-center justify-center gap-2 rounded-2xl border-2 border-stone-900 bg-white px-5 py-3 font-heading font-extrabold text-stone-900 shadow-brutal-sm disabled:opacity-50">
+                    <Download className="h-5 w-5" />
+                    Credentials speichern
+                  </button>
+                  {(mailBackendPreSharedKey && backendIdentityPublicKey) && <p className="text-xs font-bold text-emerald-700 sm:col-span-2">Backend-Credentials lokal geladen.</p>}
+                  <p className="text-xs font-bold text-rose-700 sm:col-span-2">Die gespeicherte JSON-Datei enthaelt IServ-Passwort und Backend-Schluessel unverschluesselt. Nach dem Import sicher verwahren oder loeschen.</p>
                 </div>
 
                 <div className="mt-5 grid gap-2 sm:grid-cols-2">
                   <button type="button" onClick={runBackup} disabled={backupBusy || saving} className="flex items-center justify-center gap-2 rounded-2xl border-2 border-stone-900 bg-white px-5 py-3 font-heading font-extrabold text-stone-900 shadow-brutal-sm disabled:opacity-50">
                     {backupBusy ? <Loader2 className="h-5 w-5 animate-spin" /> : <Download className="h-5 w-5" />}
-                    Backup
+                    Backup speichern
                   </button>
-                  <label className={"flex items-center justify-center gap-2 rounded-2xl border-2 border-stone-900 bg-white px-5 py-3 font-heading font-extrabold text-stone-900 shadow-brutal-sm " + (backupBusy ? "pointer-events-none opacity-50" : "cursor-pointer")}>
+                  <button type="button" onClick={runBackupMail} disabled={backupBusy || saving} className="flex items-center justify-center gap-2 rounded-2xl border-2 border-stone-900 bg-white px-5 py-3 font-heading font-extrabold text-stone-900 shadow-brutal-sm disabled:opacity-50">
+                    {backupBusy ? <Loader2 className="h-5 w-5 animate-spin" /> : <Mail className="h-5 w-5" />}
+                    Backup mailen
+                  </button>
+                  <label className={"flex items-center justify-center gap-2 rounded-2xl border-2 border-stone-900 bg-white px-5 py-3 font-heading font-extrabold text-stone-900 shadow-brutal-sm sm:col-span-2 " + (backupBusy ? "pointer-events-none opacity-50" : "cursor-pointer")}>
                     <Upload className="h-5 w-5" />
                     Import Backup
                     <input type="file" onChange={importBackup} disabled={backupBusy} className="hidden" />

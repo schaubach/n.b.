@@ -1,4 +1,4 @@
-const CACHE_NAME = "nb-offline-v7";
+const CACHE_NAME = "nb-offline-v9";
 const CORE_ASSETS = ["./manifest.json", "./logo.jpeg", "./icon.svg", "./asset-manifest.json", "./app-version.json"];
 const GRADE_SCALE_INDEX = "./notenskala/index.json";
 const NAVIGATION_UPDATE_TIMEOUT_MS = 1800;
@@ -73,6 +73,28 @@ async function fetchAndPut(cache, asset, reload = false) {
   if (asset === "./" || asset === "./index.html") await cache.put(scopedUrl("./index.html"), response.clone());
 }
 
+async function fetchAndPutWithRetry(cache, asset, reload = false, attempts = 3) {
+  let lastError;
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    try {
+      await fetchAndPut(cache, asset, reload);
+      return;
+    } catch (error) {
+      lastError = error;
+      if (attempt < attempts) await new Promise((resolve) => setTimeout(resolve, attempt * 300));
+    }
+  }
+  throw lastError;
+}
+
+async function assertAssetsCached(cache, assets) {
+  const missing = [];
+  for (const asset of assets) {
+    if (!await cache.match(scopedUrl(asset))) missing.push(asset);
+  }
+  if (missing.length) throw new Error("Offline-Cache unvollstaendig: " + missing.join(", "));
+}
+
 async function updateOfflineCache() {
   const cache = await caches.open(CACHE_NAME);
   const assets = new Set(CORE_ASSETS);
@@ -85,7 +107,8 @@ async function updateOfflineCache() {
     if (typeof asset === "string" && !asset.endsWith(".map")) assets.add(asset);
   });
   (await bundledGradeScaleAssets(true)).forEach((asset) => assets.add(asset));
-  await Promise.all(Array.from(assets).map((asset) => fetchAndPut(cache, asset, true)));
+  await Promise.all(Array.from(assets).map((asset) => fetchAndPutWithRetry(cache, asset, true)));
+  await assertAssetsCached(cache, assets);
 }
 
 function refreshHtmlInBackground(request) {
@@ -104,20 +127,17 @@ async function precache() {
   const response = await fetch("./asset-manifest.json", { cache: "reload", credentials: "same-origin" });
   if (!response.ok) throw new Error("Asset-Manifest konnte nicht geladen werden.");
   const manifest = await response.json();
-  const entrypoints = new Set((manifest.entrypoints || []).filter((asset) => typeof asset === "string"));
-  const optionalAssets = new Set(CORE_ASSETS);
+  const assets = new Set(CORE_ASSETS);
   Object.values(manifest.files || {}).forEach((asset) => {
-    if (typeof asset === "string" && !asset.endsWith(".map") && !asset.endsWith("index.html") && !entrypoints.has(asset)) optionalAssets.add(asset);
+    if (typeof asset === "string" && !asset.endsWith(".map") && !asset.endsWith("index.html")) assets.add(asset);
   });
   await cacheOfflineHtml(cache, createOfflineShell(manifest));
-  try {
-    (await bundledGradeScaleAssets()).forEach((asset) => optionalAssets.add(asset));
-  } catch (error) {}
+  (await bundledGradeScaleAssets()).forEach((asset) => assets.add(asset));
 
-  // A short failure of a PDF chunk or scale must not invalidate the complete
-  // installation. The app shell and its entrypoints remain mandatory.
-  await Promise.all(Array.from(entrypoints).map((asset) => fetchAndPut(cache, asset)));
-  await Promise.allSettled(Array.from(optionalAssets).map((asset) => fetchAndPut(cache, asset)));
+  // A worker becomes active only after every application chunk is available.
+  // Otherwise an apparently installed app would still lose PDF features offline.
+  await Promise.all(Array.from(assets).map((asset) => fetchAndPutWithRetry(cache, asset)));
+  await assertAssetsCached(cache, assets);
 }
 
 self.addEventListener("install", (event) => {
@@ -164,11 +184,12 @@ self.addEventListener("fetch", (event) => {
   if (request.method !== "GET") return;
   const url = new URL(request.url);
   if (url.origin !== self.location.origin) {
-    event.respondWith(Response.error());
+    // Cross-origin calls, such as a separately addressed mail backend, must
+    // remain in Safari's network stack. CORS and TLS still apply there.
     return;
   }
 
-  if (url.pathname.endsWith("/mail-backend-config.json")) {
+  if (url.pathname === "/health" || url.pathname.startsWith("/api/") || url.pathname.endsWith("/mail-backend-config.json")) {
     event.respondWith(fetch(request));
     return;
   }

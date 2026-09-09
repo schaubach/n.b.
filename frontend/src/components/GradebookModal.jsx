@@ -18,7 +18,7 @@ import {
   sortedSessions,
 } from "../lib/gradebookExport";
 import { normalizeExamGradeValue, shouldUseWholeExamGrades } from "../lib/gradeScales";
-import { checkMailBackendHealth, sendGradebookMailsViaBackend } from "../lib/mailBackend";
+import { checkMailBackendConnection, sendGradebookMailsViaBackend } from "../lib/mailBackend";
 import { triggerDownload } from "../lib/exportClass";
 
 function deToIso(date) {
@@ -140,7 +140,7 @@ function MailConfirmModal({ request, sending, result, onSend, onClose }) {
     }
     let cancelled = false;
     setBackendCheck({ status: "checking", message: "Mail-Backend wird geprüft..." });
-    checkMailBackendHealth(request.teacherConfig.mail_backend_host).then((check) => {
+    checkMailBackendConnection(request.teacherConfig.mail_backend_host).then((check) => {
       if (!cancelled) setBackendCheck({ status: check.ok ? "ok" : "error", message: check.message });
     });
     return () => { cancelled = true; };
@@ -188,7 +188,7 @@ function MailConfirmModal({ request, sending, result, onSend, onClose }) {
             {!missingConfig && backendCheck.status !== "idle" && (
               <div className={"mb-4 flex items-start gap-3 rounded-2xl border-2 px-4 py-3 font-bold " + (backendCheck.status === "ok" ? "border-emerald-300 bg-emerald-100 text-emerald-900" : backendCheck.status === "checking" ? "border-stone-300 bg-stone-100 text-stone-700" : "border-rose-300 bg-rose-100 text-rose-900")}>
                 {backendCheck.status === "checking" ? <Loader2 className="mt-0.5 h-5 w-5 shrink-0 animate-spin" /> : backendCheck.status === "ok" ? <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0" /> : <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0" />}
-                <span>{backendCheck.message}</span>
+                <span className="whitespace-pre-wrap break-words">{backendCheck.message}</span>
               </div>
             )}
             {messages.length === 0 ? (
@@ -214,7 +214,7 @@ function MailConfirmModal({ request, sending, result, onSend, onClose }) {
             {result && (
               <div className={"mt-4 flex items-start gap-3 rounded-2xl border-2 px-4 py-3 font-bold " + (result.ok ? "border-emerald-300 bg-emerald-100 text-emerald-900" : "border-rose-300 bg-rose-100 text-rose-900")}>
                 {result.ok ? <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0" /> : <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0" />}
-                <span>{result.message}</span>
+                <span className="whitespace-pre-wrap break-words">{result.message}</span>
               </div>
             )}
           </div>

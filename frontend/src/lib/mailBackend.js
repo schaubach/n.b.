@@ -10,6 +10,49 @@ const DEFAULT_IDENTITY_TIMEOUT_MS = 5000;
 const DEFAULT_SEND_TIMEOUT_MS = 12000;
 const SENT_COPY_TIMEOUT_MS = 90000;
 
+function displayMode() {
+  if (typeof window === "undefined") return "unbekannt";
+  if (window.matchMedia?.("(display-mode: standalone)").matches || window.navigator?.standalone === true) return "Home-Screen-App";
+  return "Safari-Tab";
+}
+
+function runtimeDetails(url) {
+  const target = new URL(url, typeof window !== "undefined" ? window.location.href : undefined);
+  const appOrigin = typeof window !== "undefined" ? window.location.origin : "unbekannt";
+  const secure = typeof window !== "undefined" ? window.isSecureContext : false;
+  const online = typeof navigator !== "undefined" ? navigator.onLine : false;
+  const worker = typeof navigator !== "undefined" ? navigator.serviceWorker?.controller?.scriptURL : "";
+  return [
+    "Ziel: " + target.href,
+    "App-Modus: " + displayMode(),
+    "App-Origin: " + appOrigin,
+    "Backend-Origin: " + target.origin,
+    "Gleiche Origin: " + (appOrigin === target.origin ? "ja" : "nein"),
+    "Sicherer Kontext: " + (secure ? "ja" : "nein"),
+    "Browser meldet online: " + (online ? "ja" : "nein"),
+    "Service Worker: " + (worker || "kein Controller"),
+  ];
+}
+
+function requestFailure(stage, url, error, response) {
+  const details = runtimeDetails(url);
+  if (response) details.push("HTTP: " + response.status + " " + (response.statusText || ""));
+  if (error) details.push("Browserfehler: " + (error.name || "Fehler") + (error.message ? " - " + error.message : ""));
+  if (error?.name === "AbortError") details.push("Einordnung: Zeitueberschreitung; Zielhost oder Route antwortet nicht rechtzeitig.");
+  else if (error instanceof TypeError) details.push("Einordnung: Safari hat die Netzwerkanfrage abgewiesen. Moeglich sind TLS-Vertrauen, CORS, DNS/Route oder ein nicht erreichbarer Host.");
+  if (details.some((item) => item === "Gleiche Origin: nein")) details.push("Hinweis: Bei verschiedenen Origins muss die App-Origin in ALLOWED_ORIGINS des Mail-Backends stehen.");
+  details.push("Safari stellt JavaScript keine weitergehenden Zertifikatsdetails bereit.");
+  return stage + " fehlgeschlagen.\n" + details.join("\n");
+}
+
+function canonicalPublicKeyPem(value) {
+  return String(value || "").trim().replace(/\r\n/g, "\n") + "\n";
+}
+
+async function publicKeyFingerprint(value) {
+  return sha256Hex(canonicalPublicKeyPem(value));
+}
+
 function fetchWithTimeout(url, options = {}, timeoutMs = DEFAULT_SEND_TIMEOUT_MS) {
   if (typeof AbortController === "undefined") return fetch(url, options);
   const controller = new AbortController();
@@ -68,6 +111,33 @@ function stableStringify(value) {
   return JSON.stringify(value);
 }
 
+export async function loadInstallPackageMailBackendConfig() {
+  const configUrl = new URL(CONFIG_FILE, window.location.href).href;
+  let response;
+  try {
+    response = await fetchWithTimeout(configUrl, { cache: "no-store", credentials: "same-origin" }, DEFAULT_IDENTITY_TIMEOUT_MS);
+  } catch (error) {
+    throw new Error(requestFailure("Laden der Backend-Credentials", configUrl, error));
+  }
+  if (!response.ok) {
+    const authHint = response.status === 401
+      ? " Die Home-Screen-App hat wahrscheinlich keine Basic-Auth-Sitzung des Safari-Tabs. Bitte die Credentials-Datei in der Lehrendenkonfiguration laden."
+      : "";
+    throw new Error("mail-backend-config.json fehlt oder ist nicht lesbar." + authHint + "\n" + requestFailure("Laden der Backend-Credentials", configUrl, null, response));
+  }
+  const config = await response.json().catch(() => null);
+  if (!config) throw new Error("mail-backend-config.json ist kein gueltiges JSON.\n" + runtimeDetails(configUrl).join("\n"));
+  const preSharedKey = String(config.preSharedKey || "").trim();
+  const backendIdentityPublicKey = String(config.backendIdentityPublicKey || "").trim();
+  if (!preSharedKey || preSharedKey.includes("NICHT_INS_REPOSITORY")) {
+    throw new Error("Pre-Shared-Key fuer das Mail-Backend fehlt.");
+  }
+  if (!backendIdentityPublicKey || backendIdentityPublicKey.includes("-----BEGIN PUBLIC KEY-----\\n...")) {
+    throw new Error("Public Key fuer die Backend-Identitaet fehlt.");
+  }
+  return { preSharedKey, backendIdentityPublicKey, source: "install-package" };
+}
+
 export async function loadMailBackendConfig() {
   try {
     const configRes = await api.get("/teacher-config");
@@ -79,20 +149,7 @@ export async function loadMailBackendConfig() {
     }
   } catch (error) {}
 
-  const response = await fetch(CONFIG_FILE, { cache: "no-store" });
-  if (!response.ok) {
-    throw new Error("mail-backend-config.json fehlt oder ist nicht lesbar.");
-  }
-  const config = await response.json();
-  const preSharedKey = String(config.preSharedKey || "").trim();
-  const backendIdentityPublicKey = String(config.backendIdentityPublicKey || "").trim();
-  if (!preSharedKey || preSharedKey.includes("NICHT_INS_REPOSITORY")) {
-    throw new Error("Pre-Shared-Key fuer das Mail-Backend fehlt.");
-  }
-  if (!backendIdentityPublicKey || backendIdentityPublicKey.includes("-----BEGIN PUBLIC KEY-----\\n...")) {
-    throw new Error("Public Key fuer die Backend-Identitaet fehlt.");
-  }
-  return { preSharedKey, backendIdentityPublicKey };
+  return loadInstallPackageMailBackendConfig();
 }
 
 export function normalizeMailBackendHost(value) {
@@ -117,20 +174,21 @@ function identityDetails(host, payload, localFingerprint, preSharedKey) {
 }
 
 async function verifyBackendIdentity(host, publicKeyPem, preSharedKey) {
-  const fingerprint = await sha256Hex(publicKeyPem);
+  const fingerprint = await publicKeyFingerprint(publicKeyPem);
   const cacheKey = host + "|" + fingerprint;
-  if (verifiedIdentityCache.has(cacheKey)) return;
+  if (verifiedIdentityCache.has(cacheKey)) return verifiedIdentityCache.get(cacheKey);
 
   const challenge = crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) + "-" + Math.random().toString(16).slice(2);
   let response;
+  const identityUrl = "https://" + host + ":" + MAIL_BACKEND_PORT + "/api/identity?challenge=" + encodeURIComponent(challenge);
   try {
-    response = await fetchWithTimeout("https://" + host + ":" + MAIL_BACKEND_PORT + "/api/identity?challenge=" + encodeURIComponent(challenge), { cache: "no-store" }, DEFAULT_IDENTITY_TIMEOUT_MS);
+    response = await fetchWithTimeout(identityUrl, { cache: "no-store" }, DEFAULT_IDENTITY_TIMEOUT_MS);
   } catch (error) {
-    throw new Error("Mail-Backend nicht erreichbar oder Zertifikat nicht vertrauenswürdig.");
+    throw new Error(requestFailure("Identitaetsabfrage", identityUrl, error));
   }
   const identity = await response.json().catch(() => ({}));
   if (!response.ok || !identity.payload || !identity.signature) {
-    throw new Error(identity.detail || "Backend-Identitaet konnte nicht gelesen werden.");
+    throw new Error((identity.detail || "Backend-Identitaet konnte nicht gelesen werden.") + "\n" + requestFailure("Identitaetsabfrage", identityUrl, null, response));
   }
   const payload = identity.payload;
   if (payload.app !== "n.b." || payload.challenge !== challenge) {
@@ -157,7 +215,9 @@ async function verifyBackendIdentity(host, publicKeyPem, preSharedKey) {
   if (!valid) {
     throw new Error("Backend-Identitaet konnte nicht verifiziert werden. Die Signatur passt nicht zum lokalen Public Key. " + identityDetails(host, payload, fingerprint, preSharedKey));
   }
-  verifiedIdentityCache.set(cacheKey, true);
+  const verified = { payload, fingerprint };
+  verifiedIdentityCache.set(cacheKey, verified);
+  return verified;
 }
 
 export async function checkMailBackendHealth(value, options = {}) {
@@ -165,18 +225,40 @@ export async function checkMailBackendHealth(value, options = {}) {
   if (!host) {
     return { ok: false, message: "IP-Adresse des Mail-Backends fehlt." };
   }
+  const healthUrl = "https://" + host + ":" + MAIL_BACKEND_PORT + "/health";
   try {
-    const response = await fetchWithTimeout("https://" + host + ":" + MAIL_BACKEND_PORT + "/health", { cache: "no-store" }, options.timeoutMs || DEFAULT_HEALTH_TIMEOUT_MS);
+    const response = await fetchWithTimeout(healthUrl, { cache: "no-store" }, options.timeoutMs || DEFAULT_HEALTH_TIMEOUT_MS);
     if (!response.ok) {
-      return { ok: false, message: "Mail-Backend nicht erreichbar oder Zertifikat nicht vertrauenswürdig." };
+      return { ok: false, message: requestFailure("Healthcheck", healthUrl, null, response) };
     }
     const result = await response.json().catch(() => ({}));
     if (result.ok !== true) {
-      return { ok: false, message: "Mail-Backend nicht erreichbar oder Zertifikat nicht vertrauenswürdig." };
+      return { ok: false, message: "Healthcheck lieferte keine positive Antwort.\n" + runtimeDetails(healthUrl).join("\n") };
     }
     return { ok: true, message: "Mail-Backend erreichbar." };
   } catch (error) {
-    return { ok: false, message: "Mail-Backend nicht erreichbar oder Zertifikat nicht vertrauenswürdig." };
+    return { ok: false, message: requestFailure("Healthcheck", healthUrl, error) };
+  }
+}
+
+export async function checkMailBackendConnection(value, options = {}) {
+  const host = normalizeMailBackendHost(value);
+  const health = await checkMailBackendHealth(host, options);
+  if (!health.ok) return health;
+  try {
+    const config = await loadMailBackendConfig();
+    const verified = await verifyBackendIdentity(host, config.backendIdentityPublicKey, config.preSharedKey);
+    return {
+      ok: true,
+      message: [
+        "Mail-Backend erreichbar und Identitaet bestaetigt.",
+        "Credential-Quelle: " + (config.source === "teacher-config" ? "lokal verschluesselte Lehrendenkonfiguration" : "Installationspaket"),
+        "Lokaler Public-Key-SHA256: " + verified.fingerprint,
+        "Backend Public-Key-SHA256: " + (verified.payload?.publicKeySha256 || "fehlt"),
+      ].join("\n"),
+    };
+  } catch (error) {
+    return { ok: false, message: error?.message || "Backend-Verbindung konnte nicht geprueft werden." };
   }
 }
 
@@ -207,7 +289,7 @@ async function sendMessagesViaBackend(teacherConfig, messages, options = {}) {
       body,
     }, options.sendTimeoutMs || (teacherConfig?.copy_to_sent === true ? SENT_COPY_TIMEOUT_MS : DEFAULT_SEND_TIMEOUT_MS));
   } catch (error) {
-    throw new Error("Mail-Backend nicht erreichbar oder Zertifikat nicht vertrauenswürdig.");
+    throw new Error(requestFailure("Mailversand", url, error));
   }
 
   const result = await response.json().catch(() => ({}));

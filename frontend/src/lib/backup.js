@@ -353,6 +353,12 @@ export async function createEncryptedBackup(backupPassword = "") {
   return { bytes: zip, filename: backupFilename(), size: zip.length };
 }
 
+export async function saveBackupLocally() {
+  const backup = await createEncryptedBackup();
+  triggerDownload(backup.bytes, backup.filename);
+  return backup;
+}
+
 export async function sendBackupToTeacher({ download = false, healthTimeoutMs } = {}) {
   const configRes = await api.get("/teacher-config");
   const teacherConfig = configRes.data || {};
