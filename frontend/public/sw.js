@@ -1,16 +1,22 @@
-const CACHE_NAME = "nb-offline-v9";
-const CORE_ASSETS = ["./manifest.json", "./logo.jpeg", "./icon.svg", "./asset-manifest.json", "./app-version.json"];
+const WORKER_BUILD = "__NB_WORKER_BUILD__";
+const CACHE_PREFIX = "nb-offline-v10-" + encodeURIComponent(self.registration.scope) + "-";
+const META_CACHE = CACHE_PREFIX + "metadata";
+const CORE_ASSETS = ["./manifest.json", "./logo.jpeg", "./icon.svg"];
 const GRADE_SCALE_INDEX = "./notenskala/index.json";
-const NAVIGATION_UPDATE_TIMEOUT_MS = 1800;
+const REQUEST_TIMEOUT_MS = 8000;
+const ACTIVE_KEY = scopedUrl("./__offline_active__");
+const COMPLETE_KEY = scopedUrl("./__offline_complete__");
+const PENDING_KEY = scopedUrl("./__offline_pending__/" + encodeURIComponent(WORKER_BUILD));
+let updateInFlight;
 
 function scopedUrl(asset) {
   return new URL(asset, self.registration.scope).href;
 }
 
-function fetchWithTimeout(request, timeoutMs = NAVIGATION_UPDATE_TIMEOUT_MS) {
+function fetchWithTimeout(request, options = {}, timeoutMs = REQUEST_TIMEOUT_MS) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
-  return fetch(request, { signal: controller.signal }).finally(() => clearTimeout(timer));
+  return fetch(request, { ...options, signal: controller.signal }).finally(() => clearTimeout(timer));
 }
 
 
@@ -22,16 +28,6 @@ function cacheBustedUrl(asset) {
 
 function validGradeScaleFilename(name) {
   return typeof name === "string" && /\.csv$/i.test(name) && !name.includes("/") && !name.includes("\\");
-}
-
-async function bundledGradeScaleAssets(reload = false) {
-  const response = await fetch(reload ? cacheBustedUrl(GRADE_SCALE_INDEX) : GRADE_SCALE_INDEX, {
-    cache: reload ? "reload" : "default",
-    credentials: "same-origin",
-  });
-  if (!response || !response.ok) throw new Error("Notenskalen-Index konnte nicht geladen werden.");
-  const files = await response.json();
-  return [GRADE_SCALE_INDEX, ...(Array.isArray(files) ? files.filter(validGradeScaleFilename).map((name) => `./notenskala/${encodeURIComponent(name)}`) : [])];
 }
 
 function escapeAttribute(value) {
@@ -65,20 +61,20 @@ async function cacheOfflineHtml(cache, html) {
   ]);
 }
 
-async function fetchAndPut(cache, asset, reload = false) {
-  const source = reload ? cacheBustedUrl(asset) : scopedUrl(asset);
-  const response = await fetch(source, { cache: reload ? "reload" : "default", credentials: "same-origin" });
-  if (!response || !response.ok) throw new Error("Update-Asset konnte nicht geladen werden: " + asset);
-  await cache.put(scopedUrl(asset), response.clone());
-  if (asset === "./" || asset === "./index.html") await cache.put(scopedUrl("./index.html"), response.clone());
-}
-
-async function fetchAndPutWithRetry(cache, asset, reload = false, attempts = 3) {
+async function fetchAsset(asset, attempts = 3) {
+  const url = new URL(asset, self.registration.scope);
+  if (url.origin !== self.location.origin || !url.href.startsWith(self.registration.scope)) {
+    throw new Error("Asset ausserhalb der App: " + asset);
+  }
   let lastError;
   for (let attempt = 1; attempt <= attempts; attempt += 1) {
     try {
-      await fetchAndPut(cache, asset, reload);
-      return;
+      const response = await fetchWithTimeout(cacheBustedUrl(asset), { cache: "no-store", credentials: "same-origin" });
+      if (!response.ok) throw new Error("Offline-Datei nicht geladen (HTTP " + response.status + "): " + asset);
+      if ((response.headers.get("Content-Type") || "").includes("text/html")) {
+        throw new Error("Statt der Offline-Datei wurde HTML geliefert: " + asset);
+      }
+      return response;
     } catch (error) {
       lastError = error;
       if (attempt < attempts) await new Promise((resolve) => setTimeout(resolve, attempt * 300));
@@ -87,71 +83,99 @@ async function fetchAndPutWithRetry(cache, asset, reload = false, attempts = 3) 
   throw lastError;
 }
 
-async function assertAssetsCached(cache, assets) {
+async function missingAssets(cache, assets) {
   const missing = [];
   for (const asset of assets) {
     if (!await cache.match(scopedUrl(asset))) missing.push(asset);
   }
-  if (missing.length) throw new Error("Offline-Cache unvollstaendig: " + missing.join(", "));
+  return missing;
 }
 
-async function updateOfflineCache() {
-  const cache = await caches.open(CACHE_NAME);
-  const assets = new Set(CORE_ASSETS);
-  const manifestResponse = await fetch(cacheBustedUrl("./asset-manifest.json"), { cache: "reload", credentials: "same-origin" });
-  if (!manifestResponse || !manifestResponse.ok) throw new Error("Asset-Manifest konnte nicht geladen werden.");
-  const manifest = await manifestResponse.clone().json();
-  await cache.put(scopedUrl("./asset-manifest.json"), manifestResponse);
-  await cacheOfflineHtml(cache, createOfflineShell(manifest));
-  Object.values(manifest.files || {}).forEach((asset) => {
-    if (typeof asset === "string" && !asset.endsWith(".map")) assets.add(asset);
-  });
-  (await bundledGradeScaleAssets(true)).forEach((asset) => assets.add(asset));
-  await Promise.all(Array.from(assets).map((asset) => fetchAndPutWithRetry(cache, asset, true)));
-  await assertAssetsCached(cache, assets);
+function jsonResponse(value) {
+  return new Response(JSON.stringify(value), { headers: { "Content-Type": "application/json" } });
 }
 
-function refreshHtmlInBackground(request) {
-  fetchWithTimeout(request).then((response) => {
-    if (!response || !response.ok) return;
-    const copy = response.clone();
-    caches.open(CACHE_NAME).then((cache) => {
-      cache.put(request, copy.clone());
-      cache.put("./index.html", copy);
-    });
-  }).catch(() => {});
+async function activeSnapshot() {
+  const meta = await caches.open(META_CACHE);
+  const response = await meta.match(ACTIVE_KEY);
+  return response ? response.json() : null;
 }
 
-async function precache() {
-  const cache = await caches.open(CACHE_NAME);
-  const response = await fetch("./asset-manifest.json", { cache: "reload", credentials: "same-origin" });
-  if (!response.ok) throw new Error("Asset-Manifest konnte nicht geladen werden.");
-  const manifest = await response.json();
-  const assets = new Set(CORE_ASSETS);
-  Object.values(manifest.files || {}).forEach((asset) => {
-    if (typeof asset === "string" && !asset.endsWith(".map") && !asset.endsWith("index.html")) assets.add(asset);
-  });
-  await cacheOfflineHtml(cache, createOfflineShell(manifest));
-  (await bundledGradeScaleAssets()).forEach((asset) => assets.add(asset));
-
-  // A worker becomes active only after every application chunk is available.
-  // Otherwise an apparently installed app would still lose PDF features offline.
-  await Promise.all(Array.from(assets).map((asset) => fetchAndPutWithRetry(cache, asset)));
-  await assertAssetsCached(cache, assets);
+async function prepareSnapshot() {
+  const name = CACHE_PREFIX + crypto.randomUUID();
+  const cache = await caches.open(name);
+  try {
+    const versionResponse = await fetchAsset("./app-version.json");
+    const version = await versionResponse.clone().json();
+    if (!version.buildId) throw new Error("Die Build-Version fehlt.");
+    const manifestResponse = await fetchAsset("./asset-manifest.json");
+    const manifest = await manifestResponse.clone().json();
+    if (!Array.isArray(manifest.entrypoints) || !manifest.entrypoints.some((asset) => asset.endsWith(".js"))) {
+      throw new Error("Das Asset-Manifest enthaelt keinen App-Startpunkt.");
+    }
+    const indexResponse = await fetchAsset(GRADE_SCALE_INDEX);
+    const scales = await indexResponse.clone().json();
+    if (!Array.isArray(scales) || scales.some((name) => !validGradeScaleFilename(name))) {
+      throw new Error("Der Notenskalen-Index ist ungueltig.");
+    }
+    const assets = new Set([
+      ...CORE_ASSETS,
+      ...manifest.entrypoints,
+      ...Object.values(manifest.files || {}).filter((asset) => typeof asset === "string" && !asset.endsWith(".map") && !asset.endsWith("index.html")),
+      ...scales.map((name) => "./notenskala/" + encodeURIComponent(name)),
+    ].map(scopedUrl));
+    // Wait for every write to settle before deleting a failed staging cache.
+    const downloads = await Promise.allSettled(Array.from(assets, async (asset) => {
+      await cache.put(asset, await fetchAsset(asset));
+    }));
+    const failed = downloads.find((result) => result.status === "rejected");
+    if (failed) throw failed.reason;
+    const finalVersion = await (await fetchAsset("./app-version.json")).json();
+    const finalManifest = await (await fetchAsset("./asset-manifest.json")).json();
+    if (finalVersion.buildId !== version.buildId || JSON.stringify(finalManifest) !== JSON.stringify(manifest)) {
+      throw new Error("Die Serverversion wurde waehrend des Downloads geaendert. Bitte Update wiederholen.");
+    }
+    await cache.put(scopedUrl("./app-version.json"), versionResponse);
+    await cache.put(scopedUrl("./asset-manifest.json"), manifestResponse);
+    await cache.put(scopedUrl(GRADE_SCALE_INDEX), indexResponse);
+    await cacheOfflineHtml(cache, createOfflineShell(manifest));
+    ["./app-version.json", "./asset-manifest.json", GRADE_SCALE_INDEX, "./", "./index.html", "./index.html?source=pwa"].forEach((asset) => assets.add(scopedUrl(asset)));
+    const missing = await missingAssets(cache, assets);
+    if (missing.length) throw new Error("Offline-Cache unvollstaendig: " + missing.join(", "));
+    const snapshot = { name, version, assets: Array.from(assets) };
+    await cache.put(COMPLETE_KEY, jsonResponse(snapshot));
+    return snapshot;
+  } catch (error) {
+    await caches.delete(name);
+    throw error;
+  }
 }
 
-self.addEventListener("install", (event) => {
-  event.waitUntil(precache().then(() => self.skipWaiting()));
-});
+async function commitSnapshot(snapshot) {
+  const current = await activeSnapshot();
+  if (current && Date.parse(current.version.builtAt) > Date.parse(snapshot.version.builtAt)) return;
+  const meta = await caches.open(META_CACHE);
+  // A single Cache.put is the commit point. Nothing touches the old package.
+  await meta.put(ACTIVE_KEY, jsonResponse(snapshot));
+  // Keep earlier assets available for open tabs whose code still imports them.
+}
 
-self.addEventListener("activate", (event) => {
-  event.waitUntil(
-    caches.keys()
-      .then((names) => Promise.all(names.filter((name) => name.startsWith("nb-offline-") && name !== CACHE_NAME).map((name) => caches.delete(name))))
-      .then(() => self.clients.claim())
-  );
-});
+self.addEventListener("install", (event) => event.waitUntil((async () => {
+  const snapshot = await prepareSnapshot();
+  const meta = await caches.open(META_CACHE);
+  await meta.put(PENDING_KEY, jsonResponse(snapshot));
+  await self.skipWaiting();
+})()));
 
+self.addEventListener("activate", (event) => event.waitUntil((async () => {
+  const meta = await caches.open(META_CACHE);
+  const pending = await meta.match(PENDING_KEY);
+  if (pending) {
+    await commitSnapshot(await pending.json());
+    await meta.delete(PENDING_KEY);
+  }
+  await self.clients.claim();
+})()));
 
 self.addEventListener("message", (event) => {
   const type = event.data && event.data.type;
@@ -162,7 +186,7 @@ self.addEventListener("message", (event) => {
   if (type === "NB_FORCE_UPDATE") {
     const port = event.ports && event.ports[0];
     event.waitUntil(
-      updateOfflineCache()
+      (updateInFlight || (updateInFlight = prepareSnapshot().then(commitSnapshot).finally(() => { updateInFlight = null; })))
         .then(() => {
           if (port) port.postMessage({ ok: true });
         })
@@ -172,12 +196,40 @@ self.addEventListener("message", (event) => {
     );
     return;
   }
-  if (type === "NB_PRIME_OFFLINE") {
-    const html = typeof event.data.html === "string" ? event.data.html : "";
-    if (!html) return;
-    event.waitUntil(caches.open(CACHE_NAME).then((cache) => cacheOfflineHtml(cache, html)));
+  if (type === "NB_OFFLINE_STATUS") {
+    const port = event.ports && event.ports[0];
+    event.waitUntil((async () => {
+      try {
+        const snapshot = await activeSnapshot();
+        const missing = snapshot ? await missingAssets(await caches.open(snapshot.name), snapshot.assets) : ["App-Paket"];
+        if (port) port.postMessage({ ok: missing.length === 0, missing, version: snapshot?.version });
+      } catch (error) {
+        if (port) port.postMessage({ ok: false, message: error.message });
+      }
+    })());
   }
 });
+
+async function cachedResponse(request, navigation) {
+  const snapshot = await activeSnapshot();
+  if (snapshot) {
+    const cache = await caches.open(snapshot.name);
+    const response = await cache.match(navigation ? scopedUrl("./index.html") : request);
+    if (response) return response;
+  }
+  // Only content-hashed assets may fall back to previous releases, never HTML.
+  if (!navigation && new URL(request.url).pathname.includes("/static/")) {
+    const names = await caches.keys();
+    for (const name of names.reverse()) {
+      if (!name.startsWith(CACHE_PREFIX) && !/^nb-offline-v[0-9]+$/.test(name)) continue;
+      const cache = await caches.open(name);
+      if (name.startsWith(CACHE_PREFIX) && !await cache.match(COMPLETE_KEY)) continue;
+      const response = await cache.match(request);
+      if (response) return response;
+    }
+  }
+  return null;
+}
 
 self.addEventListener("fetch", (event) => {
   const request = event.request;
@@ -189,39 +241,16 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
-  if (url.pathname === "/health" || url.pathname.startsWith("/api/") || url.pathname.endsWith("/mail-backend-config.json")) {
-    event.respondWith(fetch(request));
+  if (url.pathname === "/health" || url.pathname.startsWith("/api/") || url.pathname.endsWith("/mail-backend-config.json") || url.searchParams.has("__nb_update")) {
+    event.respondWith(fetchWithTimeout(request));
     return;
   }
 
   const wantsHtml = request.mode === "navigate" || (request.headers.get("accept") || "").includes("text/html");
-  if (wantsHtml) {
-    event.respondWith(
-      caches.match(request).then((cached) => {
-        if (cached) {
-          refreshHtmlInBackground(request);
-          return cached;
-        }
-        return caches.match(scopedUrl("./index.html")).then((index) => {
-          if (index) {
-            refreshHtmlInBackground(request);
-            return index;
-          }
-          return fetchWithTimeout(request, 3000);
-        });
-      })
-    );
-    return;
-  }
-
   event.respondWith(
-    caches.match(request).then((cached) => {
+    cachedResponse(request, wantsHtml).then((cached) => {
       if (cached) return cached;
-      return fetch(request).then((response) => {
-        const copy = response.clone();
-        caches.open(CACHE_NAME).then((cache) => cache.put(request, copy));
-        return response;
-      }).catch(() => caches.match("./index.html"));
+      return fetchWithTimeout(request);
     })
   );
 });

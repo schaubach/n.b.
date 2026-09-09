@@ -128,13 +128,30 @@ Das kann ein interner Schulserver, ein lokaler Server mit vertrauenswuerdigem Ze
 
 3. Auf dem iPad Safari oeffnen und die Webadresse der App aufrufen.
 
-4. Einmal warten, bis die App vollstaendig geladen ist.
+4. Warten, bis auf der Entsperrseite die gruene Meldung `Offline bereit` erscheint. Sie bestaetigt, dass auch die Dateien fuer PDF-Import und PDF-Export gespeichert sind.
 
 5. In Safari `Teilen` -> `Zum Home-Bildschirm` auswaehlen.
 
-6. Die App ueber das neue Home-Screen-Symbol starten.
+6. Die App ueber das neue Home-Screen-Symbol im Schulnetz starten und auch dort auf `Offline bereit` warten. Safari-Tab und Home-Screen-App koennen getrennten lokalen Speicher verwenden.
+
+7. Flugmodus einschalten, die App vollstaendig schliessen und ueber das Home-Screen-Symbol neu starten. Der Tresor muss sich ohne Server entsperren lassen. Anschliessend Flugmodus wieder ausschalten, falls benoetigt.
 
 Nach dem ersten erfolgreichen Start liegen App-Dateien und Daten lokal auf dem iPad. Danach kann die App ohne Internetverbindung genutzt werden. Neue App-Versionen muessen wieder ueber die Webadresse geladen werden. Beim Laden einer neuen Version werden nur App-Dateien und Offline-Cache aktualisiert; die verschluesselten Noten-, Punkte-, Foto- und Konfigurationsdaten in IndexedDB bleiben erhalten, solange die App unter derselben Adresse wie https://SERVER_IP:8123/installwebapp/ genutzt wird.
+
+`npm run build` versieht den Service Worker automatisch mit der Build-Kennung, damit neue Builds erkannt werden. Ein Update wird erst aktiviert, wenn das gesamte App-Paket geladen und geprueft wurde. Bei einem fehlgeschlagenen Download bleibt das bisherige Offline-Paket erhalten. Bereits offene Tabs koennen weiterhin Dateien ihrer vorherigen Version verwenden.
+
+Der Backup-Button auf der Startseite und `Backup speichern` in der Lehrendenkonfiguration laden ein mit dem IServ-Passwort geschuetztes ZIP lokal herunter. Auch PDF-Funktionen und `Import Backup` funktionieren offline. Mailversand und das Laden neuer Serverversionen brauchen eine Verbindung zum Schulnetz.
+
+Die App beantragt dauerhaften Browserspeicher. iPadOS entscheidet, ob dieser gewaehrt wird; geloeschte Website-Daten oder eine entfernte App kann sie nicht selbst wiederherstellen. Deshalb lokale Backups aufbewahren und die Offline-Funktion auf jedem iPad einmal wie oben testen.
+
+### Offline-Regressionstests
+
+```bash
+cd frontend
+npm run test:offline
+```
+
+Der Test prueft fehlende PDF-Dateien, Offline-Neustarts und fehlgeschlagene sowie erfolgreiche Updates. Zusaetzlich kann nach `npm run build` mit einer vorhandenen Playwright-Installation und Chromium `node scripts/offline-browser.cjs` ausgefuehrt werden. Bei einer extern installierten Playwright-Kopie deren Modulpfad ueber `PLAYWRIGHT_MODULE` setzen. Dieser Test verwendet ein separates temporaeres Browserprofil und synthetische Daten; er stoppt den Testserver und prueft anschliessend Neustart, PDF-Import/-Export, Backup mit Fotos, Credentials-Export und Wiederherstellung. Fuer die ZIP-Pruefung wird `unzip` benoetigt.
 
 ### Warum nicht einfach per Datei kopieren?
 

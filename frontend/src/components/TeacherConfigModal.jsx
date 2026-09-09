@@ -4,7 +4,8 @@ import { AlertTriangle, CheckCircle2, Download, KeyRound, Loader2, Mail, Refresh
 import api from "../lib/api";
 import { checkMailBackendConnection, loadInstallPackageMailBackendConfig } from "../lib/mailBackend";
 import { importEncryptedBackup, saveBackupLocally, sendBackupToTeacher } from "../lib/backup";
-import { checkAppUpdate, forceAppUpdate, formatVersion } from "../lib/appUpdate";
+import { checkAppUpdate, forceAppUpdate, formatVersion, localAppVersion } from "../lib/appUpdate";
+import OfflineStatus from "./OfflineStatus";
 
 export default function TeacherConfigModal({ open, onClose }) {
   const [name, setName] = useState("");
@@ -71,6 +72,8 @@ export default function TeacherConfigModal({ open, onClose }) {
   const checkForUpdate = async () => {
     setUpdateCheck((current) => ({ ...current, status: "checking", message: "Version wird geprüft..." }));
     try {
+      const local = await localAppVersion();
+      setUpdateCheck((current) => ({ ...current, local }));
       const result = await checkAppUpdate();
       setUpdateCheck({
         status: result.available ? "available" : "current",
@@ -253,7 +256,7 @@ export default function TeacherConfigModal({ open, onClose }) {
       document.body.appendChild(link);
       link.click();
       link.remove();
-      URL.revokeObjectURL(url);
+      window.setTimeout(() => URL.revokeObjectURL(url), 4000);
       setMessage("Credential-Datei wurde gespeichert.");
     } catch (err) {
       setError(errorText(err, "Credentials konnten nicht gespeichert werden."));
@@ -357,6 +360,7 @@ export default function TeacherConfigModal({ open, onClose }) {
                   </div>
                 </div>
 
+                <OfflineStatus />
                 <div className="mt-5 grid gap-2 sm:grid-cols-2">
                   <label className={(saving || backupBusy ? "pointer-events-none opacity-50" : "cursor-pointer") + " flex items-center justify-center gap-2 rounded-2xl border-2 border-stone-900 bg-white px-5 py-3 font-heading font-extrabold text-stone-900 shadow-brutal-sm"}>
                     <KeyRound className="h-5 w-5" />

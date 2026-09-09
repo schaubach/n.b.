@@ -16,6 +16,8 @@
     "start": "react-scripts start",
     "prebuild": "node scripts/write-app-version.js",
     "build": "INLINE_RUNTIME_CHUNK=false GENERATE_SOURCEMAP=false react-scripts build",
+    "postbuild": "node scripts/stamp-service-worker.js",
+    "test:offline": "node --test scripts/offline-worker.test.cjs",
     "pretest": "node scripts/write-app-version.js",
     "test": "react-scripts test",
     "eject": "react-scripts eject"

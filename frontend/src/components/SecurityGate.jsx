@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import { KeyRound, Loader2, ShieldCheck } from "lucide-react";
 import { createVault, hasVault, unlockVault } from "../lib/cryptoStore";
 import { maybeSendAutomaticBackup } from "../lib/backup";
+import OfflineStatus from "./OfflineStatus";
 
 export default function SecurityGate({ children }) {
   const [checking, setChecking] = useState(true);
@@ -72,6 +73,7 @@ export default function SecurityGate({ children }) {
           </p>
         </div>
 
+        <OfflineStatus />
         <form onSubmit={submit} className="mt-6 space-y-4">
           <label className="block">
             <span className="text-sm font-bold text-stone-700">Passwort</span>
