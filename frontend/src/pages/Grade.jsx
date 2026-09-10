@@ -295,7 +295,7 @@ export default function Grade() {
                 whileDrag={{ scale: 1.05, boxShadow: "16px 16px 0px 0px #1c1917" }}
                 transition={{ type: "spring", stiffness: 320, damping: 26 }}
               >
-                <div className="flex-1 w-full bg-stone-200 border-b-2 border-stone-900 overflow-hidden">
+                <div className="flex-1 min-h-0 w-full bg-stone-200 border-b-2 border-stone-900 overflow-hidden">
                   {student.photo ? (
                     <img src={student.photo} alt="" draggable={false} className="w-full h-full object-cover" />
                   ) : (
@@ -306,13 +306,25 @@ export default function Grade() {
                     </div>
                   )}
                 </div>
-                <div className="px-3 py-2 flex flex-col justify-center items-center text-center">
+                <div className="shrink-0 min-w-0 px-3 py-2 flex flex-col justify-center items-center text-center">
                   <span className="text-xs font-bold text-stone-500 uppercase tracking-wider truncate max-w-full">
                     {student.first_name}
                   </span>
                   <span className="font-heading text-lg sm:text-2xl font-black text-stone-900 leading-none truncate max-w-full">
                     {student.last_name}
                   </span>
+                  {student.additional_info?.trim() && (
+                    <p
+                      data-testid="student-additional-info"
+                      tabIndex={0}
+                      className="mt-1 max-h-14 w-full overflow-y-auto overscroll-contain whitespace-pre-wrap [overflow-wrap:anywhere] text-xs font-bold leading-tight text-amber-800"
+                      style={{ touchAction: "pan-y" }}
+                      onPointerDownCapture={(event) => event.stopPropagation()}
+                      onClick={(event) => event.stopPropagation()}
+                    >
+                      {student.additional_info}
+                    </p>
+                  )}
                   <span className="mt-1.5 inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-stone-200 text-stone-600 font-bold text-[11px] uppercase tracking-wide border-2 border-stone-900/10">
                     {student.inactive ? "Nicht mehr im IServ-Import" : "Tippen = überspringen"}
                   </span>
