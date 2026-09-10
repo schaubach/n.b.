@@ -62,10 +62,11 @@ rate_events = defaultdict(deque)
 
 
 class RequestError(Exception):
-    def __init__(self, status, message):
+    def __init__(self, status, message, code=None):
         super().__init__(message)
         self.status = status
         self.message = message
+        self.code = code
 
 
 def json_response(handler, status, payload):
@@ -373,7 +374,7 @@ def verify_signature(headers, body):
     signed = timestamp.encode("utf-8") + b"." + nonce.encode("utf-8") + b"." + body
     expected = hmac.new(PSK.encode("utf-8"), signed, hashlib.sha256).hexdigest()
     if not hmac.compare_digest(expected, signature):
-        raise RequestError(401, "HMAC-Signatur ist ungültig.")
+        raise RequestError(401, "HMAC-Signatur ist ungültig.", "HMAC_INVALID")
     used_nonces[nonce] = now
 
 
@@ -507,7 +508,7 @@ class Handler(BaseHTTPRequestHandler):
         logger.info("%s - %s", self.client_address[0], fmt % args)
 
     def do_OPTIONS(self):
-        if urlparse(self.path).path != "/send-gradebook":
+        if urlparse(self.path).path not in {"/send-gradebook", "/auth-check"}:
             self.send_error(404)
             return
         self.send_response(204)
@@ -529,7 +530,8 @@ class Handler(BaseHTTPRequestHandler):
         self.send_error(404)
 
     def do_POST(self):
-        if urlparse(self.path).path != "/send-gradebook":
+        path = urlparse(self.path).path
+        if path not in {"/send-gradebook", "/auth-check"}:
             self.send_error(404)
             return
         length = int(self.headers.get("Content-Length", "0") or "0")
@@ -539,6 +541,9 @@ class Handler(BaseHTTPRequestHandler):
         body = self.rfile.read(length)
         try:
             verify_signature(self.headers, body)
+            if path == "/auth-check":
+                json_response(self, 200, {"ok": True, "authenticated": True})
+                return
             payload = json.loads(body.decode("utf-8"))
             sender, password, messages, copy_to_sent = validate_payload(payload)
             check_rate_limit(client_key(self, sender), int(time.time()))
@@ -549,7 +554,7 @@ class Handler(BaseHTTPRequestHandler):
             json_response(self, status, {"ok": not failed, "sent": len(results) - len(failed), "failed": len(failed), "results": results, **copy_result})
         except RequestError as error:
             logger.warning("rejected request status=%s detail=%s", error.status, error.message)
-            json_response(self, error.status, {"ok": False, "detail": error.message})
+            json_response(self, error.status, {"ok": False, "detail": error.message, "code": error.code})
         except json.JSONDecodeError:
             logger.warning("rejected request invalid json")
             json_response(self, 400, {"ok": False, "detail": "JSON ist ungültig."})

@@ -5,7 +5,7 @@ global.TextDecoder = TextDecoder;
 
 jest.mock("./api", () => ({
   __esModule: true,
-  default: { get: jest.fn() },
+  default: { get: jest.fn(), post: jest.fn() },
 }));
 
 const api = require("./api").default;

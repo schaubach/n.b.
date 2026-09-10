@@ -96,16 +96,7 @@ if [ ! -f identity/private.pem ] || [ ! -f identity/public.pem ]; then
   chmod 600 identity/private.pem
 fi
 
-PSK="$(get_env NB_MAIL_PSK)"
-PUBLIC_KEY_JSON="$(awk 'BEGIN { printf "\""} { gsub(/\\/, "\\\\"); gsub(/"/, "\\\""); printf "%s\\n", $0 } END { printf "\""}' identity/public.pem)"
-cat > webapp/mail-backend-config.json <<EOF
-{
-  "preSharedKey": "$PSK",
-  "backendIdentityPublicKey": $PUBLIC_KEY_JSON
-}
-EOF
-# This config is intentionally shipped with the WebApp and must be readable by nginx.
-chmod 644 webapp/mail-backend-config.json
+python3 scripts/write-mail-config.py
 
 cat <<EOF
 Setup fertig.

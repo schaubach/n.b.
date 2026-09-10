@@ -102,8 +102,17 @@ export default function TeacherConfigModal({ open, onClose }) {
     let cancelled = false;
     setBackendCheck({ status: "checking", message: "Mail-Backend wird geprüft..." });
     const timer = window.setTimeout(() => {
-      checkMailBackendConnection(host).then((result) => {
+      checkMailBackendConnection(host).then(async (result) => {
         if (!cancelled) setBackendCheck({ status: result.ok ? "ok" : "error", message: result.message });
+        if (result.ok && !cancelled) {
+          const saved = await api.get("/teacher-config");
+          if (!cancelled) {
+            setMailBackendPreSharedKey(saved.data.mail_backend_pre_shared_key || "");
+            setBackendIdentityPublicKey(saved.data.backend_identity_public_key || "");
+          }
+        }
+      }).catch((error) => {
+        if (!cancelled) setBackendCheck({ status: "error", message: error.message });
       });
     }, 350);
     return () => {
@@ -336,7 +345,7 @@ export default function TeacherConfigModal({ open, onClose }) {
                 {backendCheck.status !== "idle" && (
                   <div className={"mt-5 flex items-start gap-3 rounded-2xl border-2 px-4 py-3 text-sm font-bold " + (backendCheck.status === "ok" ? "border-emerald-300 bg-emerald-100 text-emerald-900" : backendCheck.status === "checking" ? "border-stone-300 bg-stone-100 text-stone-700" : "border-rose-300 bg-rose-100 text-rose-900")}>
                     {backendCheck.status === "checking" ? <Loader2 className="mt-0.5 h-5 w-5 shrink-0 animate-spin" /> : backendCheck.status === "ok" ? <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0" /> : <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0" />}
-                    <span className="whitespace-pre-wrap break-words">{backendCheck.message}</span>
+                    <span className="min-w-0 flex-1 whitespace-pre-wrap [overflow-wrap:anywhere]">{backendCheck.message}</span>
                   </div>
                 )}
 
@@ -392,7 +401,7 @@ export default function TeacherConfigModal({ open, onClose }) {
                 </div>
 
                 {message && <p className="mt-4 rounded-xl border-2 border-emerald-300 bg-emerald-100 px-4 py-3 font-bold text-emerald-900">{message}</p>}
-                {error && <p className="mt-4 rounded-xl border-2 border-rose-300 bg-rose-100 px-4 py-3 font-bold text-rose-900">{error}</p>}
+                {error && <p className="mt-4 whitespace-pre-wrap [overflow-wrap:anywhere] rounded-xl border-2 border-rose-300 bg-rose-100 px-4 py-3 font-bold text-rose-900">{error}</p>}
 
                 <button type="submit" disabled={saving} className="mt-6 flex w-full items-center justify-center gap-2 rounded-2xl border-2 border-stone-900 bg-stone-900 px-5 py-4 font-heading font-extrabold text-white shadow-brutal-sm active:translate-y-0.5 active:shadow-none disabled:opacity-50">
                   {saving ? <Loader2 className="h-5 w-5 animate-spin" /> : <Save className="h-5 w-5" />}

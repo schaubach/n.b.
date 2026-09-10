@@ -246,12 +246,12 @@ export async function checkMailBackendConnection(value, options = {}) {
   const health = await checkMailBackendHealth(host, options);
   if (!health.ok) return health;
   try {
-    const config = await loadMailBackendConfig();
+    const config = await authenticatedBackendConfig(host);
     const verified = await verifyBackendIdentity(host, config.backendIdentityPublicKey, config.preSharedKey);
     return {
       ok: true,
       message: [
-        "Mail-Backend erreichbar und Identitaet bestaetigt.",
+        "Mail-Backend erreichbar. Identitaet und HMAC-Schluessel bestaetigt.",
         "Credential-Quelle: " + (config.source === "teacher-config" ? "lokal verschluesselte Lehrendenkonfiguration" : "Installationspaket"),
         "Lokaler Public-Key-SHA256: " + verified.fingerprint,
         "Backend Public-Key-SHA256: " + (verified.payload?.publicKeySha256 || "fehlt"),
@@ -262,20 +262,11 @@ export async function checkMailBackendConnection(value, options = {}) {
   }
 }
 
-async function sendMessagesViaBackend(teacherConfig, messages, options = {}) {
-  const host = normalizeMailBackendHost(teacherConfig?.mail_backend_host);
-  if (!host) throw new Error("IP-Adresse des Mail-Backends fehlt.");
-  const health = await checkMailBackendHealth(host, { timeoutMs: options.healthTimeoutMs });
-  if (!health.ok) throw new Error(health.message);
-  const { preSharedKey, backendIdentityPublicKey } = await loadMailBackendConfig();
-  await verifyBackendIdentity(host, backendIdentityPublicKey, preSharedKey);
-  const payload = { teacher: teacherConfig, messages };
-  const body = JSON.stringify(payload);
+async function signedRequest(host, endpoint, body, config, timeoutMs) {
   const timestamp = String(Math.floor(Date.now() / 1000));
   const nonce = crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) + "-" + Math.random().toString(16).slice(2);
-  const signature = await hmacSha256Hex(preSharedKey, timestamp + "." + nonce + "." + body);
-  const url = "https://" + host + ":" + MAIL_BACKEND_PORT + "/api/send-gradebook";
-
+  const signature = await hmacSha256Hex(config.preSharedKey, timestamp + "." + nonce + "." + body);
+  const url = "https://" + host + ":" + MAIL_BACKEND_PORT + "/api/" + endpoint;
   let response;
   try {
     response = await fetchWithTimeout(url, {
@@ -287,16 +278,69 @@ async function sendMessagesViaBackend(teacherConfig, messages, options = {}) {
         "X-NB-Signature": signature,
       },
       body,
-    }, options.sendTimeoutMs || (teacherConfig?.copy_to_sent === true ? SENT_COPY_TIMEOUT_MS : DEFAULT_SEND_TIMEOUT_MS));
+    }, timeoutMs);
   } catch (error) {
-    throw new Error(requestFailure("Mailversand", url, error));
+    throw new Error(requestFailure(endpoint === "auth-check" ? "HMAC-Pruefung" : "Mailversand", url, error));
   }
-
   const result = await response.json().catch(() => ({}));
   if (!response.ok || result.ok === false) {
-    throw new Error(result.detail || "Mailversand fehlgeschlagen.");
+    const error = new Error(result.detail || (response.status === 404 && endpoint === "auth-check"
+      ? "Das Mail-Backend unterstuetzt die HMAC-Pruefung noch nicht. Bitte das Mail-Backend auf Version 1.6.9 aktualisieren."
+      : "Mail-Backend-Anfrage fehlgeschlagen."));
+    error.code = result.code;
+    throw error;
   }
   return result;
+}
+
+async function authenticatedBackendConfig(host) {
+  const config = await loadMailBackendConfig();
+  await verifyBackendIdentity(host, config.backendIdentityPublicKey, config.preSharedKey);
+  const probe = async (candidate) => {
+    const result = await signedRequest(host, "auth-check", "{}", candidate, DEFAULT_IDENTITY_TIMEOUT_MS);
+    if (result.authenticated !== true) throw new Error("HMAC-Pruefung wurde vom Mail-Backend nicht bestaetigt.");
+  };
+  try {
+    await probe(config);
+    return config;
+  } catch (error) {
+    if (error.code !== "HMAC_INVALID") throw error;
+    try {
+      const fresh = await loadInstallPackageMailBackendConfig();
+      // Automatic PSK rotation must never replace the already trusted identity.
+      const trustedKey = new Uint8Array(publicKeyPemToArrayBuffer(config.backendIdentityPublicKey));
+      const freshKey = new Uint8Array(publicKeyPemToArrayBuffer(fresh.backendIdentityPublicKey));
+      if (bytesToHex(trustedKey) !== bytesToHex(freshKey)) {
+        throw new Error("Die Identitaet im Installationspaket hat sich geaendert. Credentials nach Pruefung neu laden.");
+      }
+      await probe(fresh);
+      const local = await api.get("/teacher-config");
+      await api.post("/teacher-config", {
+        ...local.data,
+        mail_backend_pre_shared_key: fresh.preSharedKey,
+        backend_identity_public_key: config.backendIdentityPublicKey,
+      });
+      return { ...fresh, source: "teacher-config" };
+    } catch (refreshError) {
+      throw new Error("HMAC-Schluessel der WebApp und des Mail-Backends stimmen nicht ueberein. " +
+        "Bitte aktuelle Credentials aus der funktionierenden Installation laden. Auf dem Server muessen NB_MAIL_PSK, " +
+        "preSharedKey in mail-backend-config.json und der laufende Container denselben Schluessel verwenden; " +
+        "nach Aenderungen setup, sync und docker compose up -d --build ausfuehren. " +
+        "Der Public-Key-Fingerabdruck ist nicht der Pre-Shared-Key.\n" + refreshError.message);
+    }
+  }
+}
+
+async function sendMessagesViaBackend(teacherConfig, messages, options = {}) {
+  const host = normalizeMailBackendHost(teacherConfig?.mail_backend_host);
+  if (!host) throw new Error("IP-Adresse des Mail-Backends fehlt.");
+  const health = await checkMailBackendHealth(host, { timeoutMs: options.healthTimeoutMs });
+  if (!health.ok) throw new Error(health.message);
+  const config = await authenticatedBackendConfig(host);
+  const payload = { teacher: teacherConfig, messages };
+  const body = JSON.stringify(payload);
+  return signedRequest(host, "send-gradebook", body, config,
+    options.sendTimeoutMs || (teacherConfig?.copy_to_sent === true ? SENT_COPY_TIMEOUT_MS : DEFAULT_SEND_TIMEOUT_MS));
 }
 
 

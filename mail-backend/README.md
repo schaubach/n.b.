@@ -126,6 +126,8 @@ sh scripts/sync-webapp.sh
 
 Diese Datei wird automatisch von `scripts/setup.sh` erzeugt und enthaelt:
 
+Ab Version 1.6.9 liest das Setup den durch Docker Compose ausgewerteten Schluessel. Dadurch werden Anfuehrungszeichen, Sonderzeichen und Umgebungsvariablen genauso behandelt wie beim Containerstart. Hierfuer werden Python 3 und Docker Compose benoetigt. Nach einem Schluesselwechsel `setup.sh`, `sync-webapp.sh` und `docker compose up -d --build` mit derselben Umgebung ausfuehren.
+
 ~~~json
 {
   "preSharedKey": "automatisch erzeugter HMAC-Schluessel",
@@ -136,6 +138,10 @@ Diese Datei wird automatisch von `scripts/setup.sh` erzeugt und enthaelt:
 Sie muss zusammen mit dem WebApp-Build unter `/installwebapp/` ausgeliefert werden, wird aber nicht committed. Nicht per Hand bearbeiten; stattdessen `.env` bzw. `identity/` korrigieren und `scripts/setup.sh` erneut ausfuehren.
 
 Fuer lokale Frontend-Entwicklung kann diese Datei nach `frontend/public/mail-backend-config.json` kopiert werden. Diese Entwicklungsdatei ist ebenfalls gitignored.
+
+Die WebApp prueft vor dem Mailversand sowohl die Backend-Identitaet als auch den gemeinsamen Schluessel ueber `/api/auth-check`, ohne dabei eine Mail zu senden. Ein veralteter lokaler Schluessel wird aus dem Installationspaket aktualisiert, sofern dieses erreichbar ist und dieselbe bereits vertraute Backend-Identitaet enthaelt. Ist die Datei in der Home-Screen-App nicht erreichbar, aktuelle Credentials ueber die Lehrendenkonfiguration importieren. Der Public-Key-Fingerabdruck ist nicht der HMAC-Schluessel.
+
+Beim Update auf 1.6.9 auch das Mail-Backend neu bauen: Aeltere Backend-Versionen haben den neuen Pruefendpunkt noch nicht.
 
 ### `mail-backend/identity/private.pem` und `public.pem`
 
