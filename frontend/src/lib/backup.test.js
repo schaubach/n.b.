@@ -59,3 +59,17 @@ test("includes class seating plans in the encrypted state CSV", () => {
   expect(stateCsv.data).toContain("student-1");
   expect(stateCsv.data).toContain("class-1");
 });
+
+test("keeps per-grade comments in password-protected backup data", () => {
+  const comment = 'Begründung; "gut"\nweiter so';
+  const files = __backupTest.buildFilesFromState({
+    classes: [], students: [], sessions: [],
+    grades: [{ session_id: "session", student_id: "student", value: "2", comment }],
+  });
+  const zip = __backupTest.makeZip(files, "test-password");
+  const unpacked = __backupTest.unzipStored(zip, "test-password");
+  const original = files.find((file) => file.name === "data/state.csv").data;
+  expect(Array.from(unpacked.get("data/state.csv"))).toEqual(Array.from(new TextEncoder().encode(original)));
+  expect(original).toContain("Begründung");
+  expect(original).toContain("comment");
+});

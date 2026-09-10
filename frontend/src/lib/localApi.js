@@ -638,7 +638,7 @@ async function get(url) {
     const sessionIds = new Set(sessions.map((session) => session.id));
     const grades = state.grades
       .filter((grade) => sessionIds.has(grade.session_id))
-      .map((grade) => ({ session_id: grade.session_id, student_id: grade.student_id, value: grade.value, calculated_value: grade.calculated_value || "", manual_override: !!grade.manual_override }));
+      .map((grade) => ({ session_id: grade.session_id, student_id: grade.student_id, value: grade.value, comment: grade.comment || "", calculated_value: grade.calculated_value || "", manual_override: !!grade.manual_override }));
     const average_overrides = (state.gradebook_overrides || [])
       .filter((override) => override.class_id === cls.id)
       .map((override) => ({ student_id: override.student_id, column: override.column, value: override.value }));
@@ -699,6 +699,7 @@ async function get(url) {
         return {
           ...studentOut(student),
           grade: grade?.value || null,
+          grade_comment: grade?.comment || "",
           oral_grade_count: oralStats.counts.get(student.id) || 0,
           oral_grade_average: oralStats.average,
         };
@@ -906,12 +907,16 @@ async function post(url, body) {
       const cls = findClass(state, session.class_id);
       const value = normalizeExamGradeValue(body.value, session, cls.grade_system);
       const calculatedValue = normalizeExamGradeValue(body.calculated_value || "", session, cls.grade_system);
+      if (body.comment !== undefined && (typeof body.comment !== "string" || body.comment.length > 150)) {
+        httpError("Die Zusatzinfo zur Note darf maximal 150 Zeichen enthalten.");
+      }
       let grade = state.grades.find((item) => item.session_id === session.id && item.student_id === student.id);
       if (!grade) {
-        grade = { id: id(), session_id: session.id, student_id: student.id, value, calculated_value: calculatedValue, manual_override: !!body.manual_override, updated_at: nowIso() };
+        grade = { id: id(), session_id: session.id, student_id: student.id, value, comment: body.comment?.trim() || "", calculated_value: calculatedValue, manual_override: !!body.manual_override, updated_at: nowIso() };
         state.grades.push(grade);
       } else {
         grade.value = value;
+        if (body.comment !== undefined) grade.comment = body.comment.trim();
         if (body.calculated_value !== undefined) grade.calculated_value = calculatedValue;
         if (body.manual_override !== undefined) grade.manual_override = !!body.manual_override;
         grade.updated_at = nowIso();

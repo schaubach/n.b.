@@ -81,7 +81,7 @@ export function buildGradebookRows(data) {
       const grade = gradeMap.get(`${session.id}:${student.id}`);
       const value = grade?.value || "";
       const numeric = gradeToNumber(value, data.grade_system);
-      return { session, value, numeric, calculated_value: grade?.calculated_value || "", manual_override: !!grade?.manual_override };
+      return { session, value, numeric, comment: grade?.comment || "", calculated_value: grade?.calculated_value || "", manual_override: !!grade?.manual_override };
     });
     const slOralAverage = weightedAverage(sessionCells
       .filter((cell) => cell.session.category !== "klausur" && slType(cell.session) === "oral")

@@ -5,6 +5,7 @@ import {
   ArrowLeft, Check, FileUp, LayoutGrid, Loader2, Minus, Pencil, Plus, Trash2, X,
 } from "lucide-react";
 import api from "../lib/api";
+import GradeCommentField from "../components/GradeCommentField";
 import { gradeColorClasses, initials } from "../lib/grades";
 import { gradeOptions, pointGradeLabel } from "../lib/gradebook";
 import { parseSeatPlanPdf } from "../lib/seatPlanPdf";
@@ -195,14 +196,18 @@ export default function SeatPlanGrade() {
     persist(rows, nextColumns, next);
   };
 
-  const setGrade = async (student, value) => {
+  const setGrade = async (student, value, comment = "") => {
+    if (saving) return;
+    setSaving(true);
+    setError("");
     const hadGrade = !!student.grade;
     try {
-      if (value) await api.post(`/sessions/${sessionId}/grades`, { student_id: student.id, value });
+      if (value) await api.post(`/sessions/${sessionId}/grades`, { student_id: student.id, value, comment });
       else await api.delete(`/sessions/${sessionId}/grades/${student.id}`);
       setStudents((current) => withOralAverage(current.map((item) => item.id === student.id ? {
         ...item,
         grade: value || null,
+        grade_comment: value ? comment.trim() : "",
         oral_grade_count: hadGrade === !!value
           ? item.oral_grade_count
           : Math.max(0, (Number(item.oral_grade_count) || 0) + (value ? 1 : -1)),
@@ -210,6 +215,8 @@ export default function SeatPlanGrade() {
       setPicker(null);
     } catch (err) {
       setError(err?.response?.data?.detail || "Note konnte nicht gespeichert werden.");
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -339,7 +346,7 @@ export default function SeatPlanGrade() {
         )}
       </main>
 
-      {!setupOnly && <GradePicker student={picker} systemId={session.grade_system} onPick={(value) => setGrade(picker, value)} onRemove={() => setGrade(picker, null)} onClose={() => setPicker(null)} />}
+      {!setupOnly && <GradePicker student={picker} systemId={session.grade_system} saving={saving} error={error} onPick={(value, comment) => setGrade(picker, value, comment)} onRemove={() => setGrade(picker, null)} onClose={() => { if (!saving) setPicker(null); }} />}
       {setupOnly && <AdditionalInfoEditor student={infoEditor} saving={saving} onSave={(value) => saveAdditionalInfo(infoEditor, value)} onClose={() => setInfoEditor(null)} />}
     </div>
   );
@@ -408,8 +415,12 @@ function AdditionalInfoEditor({ student, saving, onSave, onClose }) {
   );
 }
 
-function GradePicker({ student, systemId, onPick, onRemove, onClose }) {
+function GradePicker({ student, systemId, saving, error, onPick, onRemove, onClose }) {
   const options = gradeOptions(systemId);
+  const [comment, setComment] = useState("");
+  useEffect(() => {
+    setComment(student?.grade_comment || "");
+  }, [student]);
   return (
     <AnimatePresence>
       {student && (
@@ -421,9 +432,11 @@ function GradePicker({ student, systemId, onPick, onRemove, onClose }) {
             <h2 className="pr-8 font-heading text-2xl font-black text-stone-900">{student.first_name} {student.last_name}</h2>
             {student.additional_info && <p className="mt-2 rounded-xl border-2 border-amber-300 bg-amber-50 px-3 py-2 text-sm font-bold text-amber-900">{student.additional_info}</p>}
             <div className="mt-5 grid grid-cols-4 gap-2">
-              {options.map((value) => <button key={value} onClick={() => onPick(value)} className={`flex min-h-16 flex-col items-center justify-center rounded-xl border-2 font-mono font-black active:scale-95 ${student.grade === value ? "ring-4 ring-stone-900 " : ""}${gradeColorClasses(value, systemId)}`}><span className="text-xl">{value}</span>{systemId === "points_0_15" && <span className="text-[10px] opacity-70">{pointGradeLabel(value)}</span>}</button>)}
+              {options.map((option) => <button key={option} disabled={saving} onClick={() => onPick(option, comment)} aria-pressed={student.grade === option} aria-label={`Note ${option}`} className={`flex min-h-16 flex-col items-center justify-center rounded-xl border-2 font-mono font-black active:scale-95 ${student.grade === option ? "ring-4 ring-stone-900 " : ""}${gradeColorClasses(option, systemId)}`}><span className="text-xl">{option}</span>{systemId === "points_0_15" && <span className="text-[10px] opacity-70">{pointGradeLabel(option)}</span>}</button>)}
             </div>
-            {student.grade && <button onClick={onRemove} className="mt-4 flex w-full items-center justify-center gap-2 rounded-xl border-2 border-rose-300 bg-white px-4 py-3 font-bold text-rose-700"><Trash2 className="h-4 w-4" /> Note entfernen</button>}
+            <div className="mt-5"><GradeCommentField value={comment} onChange={setComment} disabled={saving} /></div>
+            {error && <p role="alert" className="mt-2 text-sm font-bold text-rose-700">{error}</p>}
+            {student.grade && <button disabled={saving} onClick={onRemove} className="mt-4 flex w-full items-center justify-center gap-2 rounded-xl border-2 border-rose-300 bg-white px-4 py-3 font-bold text-rose-700"><Trash2 className="h-4 w-4" /> Note entfernen</button>}
           </motion.div>
         </motion.div>
       )}

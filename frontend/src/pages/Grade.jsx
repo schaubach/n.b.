@@ -3,6 +3,7 @@ import { useParams, useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { ArrowLeft, Undo2, Loader2 } from "lucide-react";
 import api from "../lib/api";
+import GradeCommentField from "../components/GradeCommentField";
 import { buildCells, gradeColorClasses, gradeAccent, initials } from "../lib/grades";
 import { normalizeExamGradeValue } from "../lib/gradeScales";
 
@@ -47,6 +48,9 @@ export default function Grade() {
   const [history, setHistory] = useState([]);
   const [loading, setLoading] = useState(true);
   const [flash, setFlash] = useState(null);
+  const [comments, setComments] = useState({});
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
 
   const cellRefs = useRef([]);
   const centersRef = useRef([]);
@@ -84,7 +88,11 @@ export default function Grade() {
   useLayoutEffect(() => {
     measure();
     window.addEventListener("resize", measure);
-    return () => window.removeEventListener("resize", measure);
+    window.addEventListener("scroll", measure, true);
+    return () => {
+      window.removeEventListener("resize", measure);
+      window.removeEventListener("scroll", measure, true);
+    };
   }, [measure, cells, index]);
 
   const nearestCell = (point) => {
@@ -97,33 +105,45 @@ export default function Grade() {
     return best;
   };
 
-  const assign = useCallback((value, exitVec, color) => {
+  const assign = useCallback(async (value, exitVec, color) => {
     const student = students[index];
     if (!student || assigningRef.current) return;
     const finalValue = normalizeExamGradeValue(value, session, session.grade_system);
     const isOralSession = session.category !== "klausur" && (session.sl_type || "oral") === "oral";
     const incrementsOralCount = isOralSession && !student.grade;
     assigningRef.current = true;
+    setSaving(true);
+    setError("");
+    const comment = comments[student.id] ?? student.grade_comment ?? "";
+    try {
+      await api.post(`/sessions/${sessionId}/grades`, { student_id: student.id, value: finalValue, comment });
+    } catch (err) {
+      setError(err?.response?.data?.detail || "Note konnte nicht gespeichert werden.");
+      setSaving(false);
+      assigningRef.current = false;
+      return;
+    }
     setFlash({ value: finalValue, color: gradeAccent(finalValue, session.grade_system) || color });
     setActive(null);
     vibrate(30);
-    api.post(`/sessions/${sessionId}/grades`, { student_id: student.id, value: finalValue }).catch(() => {});
     setStudents((current) => refreshOralAverage(current.map((item) => {
       if (item.id !== student.id) return item;
       return {
         ...item,
         grade: finalValue,
+        grade_comment: comment.trim(),
         oral_grade_count: incrementsOralCount ? (Number(item.oral_grade_count) || 0) + 1 : item.oral_grade_count,
       };
     })));
     setTimeout(() => {
       setExitDir(exitVec || { x: 0, y: 0 });
-      setHistory((h) => [...h, { studentId: student.id, index, incrementsOralCount }]);
+      setHistory((h) => [...h, { studentId: student.id, index, incrementsOralCount, previous: student, assigned: true }]);
       setIndex((i) => i + 1);
       setFlash(null);
       assigningRef.current = false;
+      setSaving(false);
     }, 240);
-  }, [students, index, session, sessionId]);
+  }, [students, index, session, sessionId, comments]);
 
   const exitVecFor = (i) => {
     const c = centersRef.current[i];
@@ -173,21 +193,40 @@ export default function Grade() {
   };
 
   const undo = async () => {
-    if (history.length === 0) return;
+    if (history.length === 0 || assigningRef.current) return;
     const last = history[history.length - 1];
+    assigningRef.current = true;
+    setSaving(true);
+    setError("");
+    try {
+      if (last.assigned) {
+        if (last.previous.grade) {
+          await api.post(`/sessions/${sessionId}/grades`, { student_id: last.studentId, value: last.previous.grade, comment: last.previous.grade_comment || "" });
+        } else {
+          await api.delete(`/sessions/${sessionId}/grades/${last.studentId}`);
+        }
+      }
+    } catch (err) {
+      setError(err?.response?.data?.detail || "Die letzte Bewertung konnte nicht zurückgenommen werden.");
+      setSaving(false);
+      assigningRef.current = false;
+      return;
+    }
     setHistory((h) => h.slice(0, -1));
     setStudents((current) => refreshOralAverage(current.map((item) => {
-      if (item.id !== last.studentId) return item;
+      if (item.id !== last.studentId || !last.assigned) return item;
       return {
         ...item,
-        grade: null,
+        grade: last.previous.grade || null,
+        grade_comment: last.previous.grade_comment || "",
         oral_grade_count: last.incrementsOralCount ? Math.max(0, (Number(item.oral_grade_count) || 0) - 1) : item.oral_grade_count,
       };
     })));
     setExitDir({ x: 0, y: 0 });
     setIndex(last.index);
     vibrate(12);
-    try { await api.delete(`/sessions/${sessionId}/grades/${last.studentId}`); } catch (e) {}
+    setSaving(false);
+    assigningRef.current = false;
   };
 
   if (loading) {
@@ -207,17 +246,18 @@ export default function Grade() {
   const flankRight = cells.find((c) => c.zone === "flankRight");
 
   return (
-    <div className="h-screen w-screen overflow-hidden bg-stone-50 no-scroll flex flex-col select-none">
+    <div className="h-screen w-screen overflow-x-hidden overflow-y-auto bg-stone-50 flex flex-col select-none" style={{ height: "100dvh" }}>
       {/* Header */}
       <header className="h-14 sm:h-16 px-3 sm:px-6 flex items-center justify-between shrink-0 z-50">
         <button
           onClick={() => navigate("/")}
+          disabled={saving}
           data-testid="grade-back-button"
           className="flex items-center gap-2 px-3 py-2 bg-white border-2 border-stone-900 rounded-full font-bold text-stone-900 shadow-brutal-sm active:translate-y-0.5 active:shadow-none transition-all"
         >
           <ArrowLeft className="w-5 h-5" /> <span className="hidden sm:inline">Klassen</span>
         </button>
-        <div className="text-center">
+        <div className="min-w-0 flex-1 px-2 text-center">
           <p className="font-heading font-extrabold text-stone-900 leading-none text-base sm:text-lg">
             {session?.class_name}
           </p>
@@ -228,13 +268,13 @@ export default function Grade() {
         <div className="flex items-center gap-2">
           <span
             data-testid="grade-progress"
-            className="px-3 py-1.5 bg-white border-2 border-stone-900 rounded-full font-mono font-bold text-stone-900 shadow-brutal-sm text-sm"
+            className="shrink-0 whitespace-nowrap px-3 py-1.5 bg-white border-2 border-stone-900 rounded-full font-mono font-bold text-stone-900 shadow-brutal-sm text-sm"
           >
             {Math.min(index, total)} / {total}
           </span>
           <button
             onClick={undo}
-            disabled={history.length === 0}
+            disabled={history.length === 0 || saving}
             data-testid="undo-grade-button"
             className="flex items-center px-3 py-2 bg-white border-2 border-stone-900 rounded-full font-bold text-stone-900 shadow-brutal-sm active:translate-y-0.5 active:shadow-none transition-all disabled:opacity-30"
           >
@@ -244,7 +284,7 @@ export default function Grade() {
       </header>
 
       {/* Grading area */}
-      <div className="flex-1 relative w-full">
+      <div className="flex-1 min-h-[560px] relative w-full">
         {/* Top zone (1er) */}
         <div className="absolute top-0 left-0 right-0 h-[30%] grid grid-cols-3 gap-1.5 p-1.5 z-10">
           {byZone("top").map((c) => <ZoneCell key={c.index} c={c} active={active} cellRefs={cellRefs} onTap={tapCell} systemId={session.grade_system} />)}
@@ -279,6 +319,7 @@ export default function Grade() {
                 data-testid="student-swipe-card"
                 className={`pointer-events-auto relative z-40 w-[168px] h-[224px] sm:w-[210px] sm:h-[280px] bg-white rounded-3xl shadow-brutal flex flex-col overflow-hidden cursor-grab active:cursor-grabbing ${cardTone.card} ${student.inactive ? "opacity-60 grayscale" : ""}`}
                 title={cardTone.title}
+                style={{ maxHeight: "calc(100% - 16px)" }}
                 drag
                 dragSnapToOrigin
                 dragElastic={0.7}
@@ -353,6 +394,16 @@ export default function Grade() {
           </AnimatePresence>
         </div>
       </div>
+      {!done && student && (
+        <footer className="z-40 shrink-0 border-t border-stone-200 bg-stone-50 px-3 py-2">
+          <GradeCommentField
+            value={comments[student.id] ?? student.grade_comment ?? ""}
+            onChange={(value) => setComments((current) => ({ ...current, [student.id]: value }))}
+            disabled={saving}
+          />
+          {error && <p role="alert" className="mx-auto mt-1 max-w-md text-sm font-bold text-rose-700">{error}</p>}
+        </footer>
+      )}
     </div>
   );
 }

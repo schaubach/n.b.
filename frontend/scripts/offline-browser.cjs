@@ -78,7 +78,12 @@ async function run() {
     const photo = canvas.toDataURL("image/jpeg");
     state.classes = [{ id: "offline-class", name: "Offline-Testklasse", grade_system: "grades_1_6", grade_scale_id: "MEDA" }];
     state.students = [{ id: "ada", class_id: "offline-class", first_name: "Ada", last_name: "Alpha", photo }];
+    state.students.push({ id: "berta", class_id: "offline-class", first_name: "Berta", last_name: "Beta" });
     state.sessions = [{ id: "test-ka", class_id: "offline-class", title: "Testarbeit", category: "klausur", date: "09.09.2026", weight: 1 }];
+    state.sessions.push(
+      { id: "test-oral", class_id: "offline-class", title: "Sitzplannoten", category: "sonstige", sl_type: "oral", date: "09.09.2026", weight: 1 },
+      { id: "test-written", class_id: "offline-class", title: "Schriftliche Noten", category: "sonstige", sl_type: "written", date: "09.09.2026", weight: 1 },
+    );
     state.grades = [{ session_id: "test-ka", student_id: "ada", value: "2" }];
     state.teacher_config = { name: "Testlehrkraft", email: "test@example.invalid", password: "offline-test-iserv", backup_interval_days: 7, mail_backend_pre_shared_key: "test-psk", backend_identity_public_key: "test-public-key" };
     const iv = crypto.getRandomValues(new Uint8Array(12));
@@ -104,7 +109,54 @@ async function run() {
   await page.getByLabel("Passwort", { exact: true }).fill("offline-test-vault");
   await page.getByRole("button", { name: "Entsperren", exact: true }).click();
   await page.getByText("Offline-Testklasse", { exact: true }).waitFor();
+  await page.evaluate(() => { location.hash = "/seat-plan/test-oral"; });
+  await page.getByRole("button", { name: /Ada Alpha/ }).click();
+  const noteField = page.getByLabel("Zusatzinfo zur Note", { exact: true });
+  await noteField.fill("Gut begruendeter Beitrag");
+  assert.equal(await page.getByRole("button", { name: "Speichern", exact: true }).count(), 0);
+  await page.getByRole("button", { name: "Note 2+", exact: true }).click();
+  await noteField.waitFor({ state: "hidden" });
+  await page.getByRole("button", { name: /Ada Alpha/ }).click();
+  assert.equal(await noteField.inputValue(), "Gut begruendeter Beitrag");
+  await page.getByRole("button", { name: "Schließen", exact: true }).click();
+  await page.evaluate(() => { location.hash = "/grade/test-written"; });
+  await noteField.waitFor();
+  for (const size of [{ width: 1024, height: 1366 }, { width: 390, height: 844 }, { width: 844, height: 390 }]) {
+    await page.setViewportSize(size);
+    await page.waitForTimeout(350);
+    await noteField.scrollIntoViewIfNeeded();
+    const field = await noteField.boundingBox();
+    const card = await page.getByTestId("student-swipe-card").boundingBox();
+    assert(field.x >= 0 && field.x + field.width <= size.width);
+    assert(field.y + field.height <= size.height);
+    assert(card.y + card.height < field.y);
+    await page.screenshot({ path: path.join(work, `grade-comment-${size.width}.png`) });
+  }
+  await page.setViewportSize({ width: 1024, height: 1366 });
+  await noteField.fill("Sorgfaeltige Ausarbeitung");
+  await page.getByTestId("grade-cell-2+").click();
+  await page.getByTestId("student-swipe-card").filter({ hasText: "Berta" }).waitFor();
+  assert.equal(await noteField.inputValue(), "");
+  await page.getByTestId("undo-grade-button").click();
+  await page.getByTestId("student-swipe-card").filter({ hasText: "Ada" }).waitFor();
+  assert.equal(await noteField.inputValue(), "Sorgfaeltige Ausarbeitung");
+  await page.getByTestId("grade-cell-2").click();
+  await page.getByTestId("student-swipe-card").filter({ hasText: "Berta" }).waitFor();
+  await noteField.fill("Per Ziehen bewertet");
+  await page.waitForFunction(() => document.querySelectorAll('[data-testid="student-swipe-card"]').length === 1);
+  await page.waitForTimeout(400);
+  const source = await page.getByTestId("student-swipe-card").boundingBox();
+  const target = await page.getByTestId("grade-cell-3").boundingBox();
+  await page.mouse.move(source.x + source.width / 2, source.y + source.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(target.x + target.width / 2, target.y + target.height / 2, { steps: 20 });
+  await page.mouse.up();
+  await page.waitForURL(/summary\/test-written/);
+  await page.evaluate(() => { location.hash = "/"; });
   await page.getByTestId("gradebook-class-offline-class").click();
+  await page.getByTitle("Gut begruendeter Beitrag", { exact: true }).hover();
+  await page.getByTitle("Sorgfaeltige Ausarbeitung", { exact: true }).hover();
+  await page.getByTitle("Per Ziehen bewertet", { exact: true }).hover();
   const pdfDownload = page.waitForEvent("download");
   await page.getByRole("button", { name: "PDF", exact: true }).filter({ visible: true }).click();
   const pdf = await pdfDownload;
@@ -155,6 +207,9 @@ async function run() {
   await page.getByTestId("gradebook-class-offline-class").click();
   await page.getByText("Ada Alpha", { exact: true }).waitFor();
   assert.match(await page.getByTestId("gradebook-modal").locator("tbody").innerText(), /2/);
+  await page.getByTitle("Gut begruendeter Beitrag", { exact: true }).waitFor();
+  await page.getByTitle("Sorgfaeltige Ausarbeitung", { exact: true }).waitFor();
+  await page.getByTitle("Per Ziehen bewertet", { exact: true }).waitFor();
   await page.getByTestId("gradebook-modal").screenshot({ path: path.join(work, "offline-grades.png") });
   await page.getByRole("button", { name: "Schliessen", exact: true }).click();
   await page.waitForFunction(() => {

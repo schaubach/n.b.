@@ -278,7 +278,7 @@ function SessionGradeCell({ row, cell, systemId, onEdit, veiled = false }) {
           type="button"
           onClick={() => onEdit(row, cell)}
           className={`inline-flex min-w-12 flex-col items-center justify-center rounded-xl border-2 px-2.5 py-1 font-mono text-base font-black shadow-brutal-sm transition-transform active:scale-95 ${gradeColorClasses(cell.value, systemId)}`}
-          title="Note anpassen"
+          title={veiled ? undefined : (cell.comment || "Note anpassen")}
         >
           <span>{cell.value}</span>
           {showCalculated && <span className="mt-0.5 text-[10px] font-black opacity-80">ber. {calculatedDetail}</span>}
