@@ -171,7 +171,7 @@ export default function SeatPlanGrade() {
       if (previous >= 0) next[previous] = null;
     }
     next[index] = studentId || null;
-    persist(rows, columns, next);
+    persist(rows, columns, next, { preserveUnplaced: true });
   };
 
   const changeRows = (delta) => {
@@ -316,7 +316,7 @@ export default function SeatPlanGrade() {
             <h2 className="font-heading text-lg font-black text-stone-900">Nicht zugeordnete Lernende</h2>
             {csvOnlyStudents.length > 0 && (
               <div className="mt-4">
-                <h3 className="mb-2 text-sm font-black uppercase text-stone-600">Nur in der IServ-Gruppenliste</h3>
+                <h3 className="mb-2 text-sm font-black uppercase text-stone-600">Ohne Sitzplatz</h3>
                 <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-6">
                   {csvOnlyStudents.map((student) => (
                     <SeatCard key={student.id} student={student} systemId={session.grade_system} onClick={() => openStudent(student)} showGrade={!setupOnly} />

@@ -300,6 +300,29 @@ async function run() {
   assert.equal(await page.getByTestId("student-swipe-card").count(), 0);
   assert.deepEqual(failures, []);
   console.log("PASS: oral quick grading skips inactive students, including classes with no active students");
+  await page.evaluate(() => { location.hash = "/classes/quick-class/seat-plan"; });
+  await page.getByRole("button", { name: "Sitzplan bearbeiten", exact: true }).click();
+  await page.getByTestId("seat-assignment-0").click();
+  await page.getByTestId("seat-assignment-picker").getByRole("button", { name: "Freier Platz", exact: true }).click();
+  await page.getByText("gespeichert", { exact: true }).waitFor();
+  await page.getByRole("heading", { name: "Nicht zugeordnete Lernende", exact: true }).waitFor();
+  assert.match(await page.getByTestId("seat-assignment-0").innerText(), /Freier Platz/);
+  await page.getByTestId("seat-assignment-0").click();
+  assert.equal(await page.getByTestId("seat-option-quick-active").evaluate((el) => getComputedStyle(el).fontWeight), "700");
+  await page.getByTestId("seat-assignment-picker").getByRole("button", { name: "Schließen", exact: true }).click();
+  await page.reload();
+  await page.getByLabel("Passwort", { exact: true }).fill("offline-test-vault");
+  await page.getByRole("button", { name: "Entsperren", exact: true }).click();
+  await page.getByRole("heading", { name: "Nicht zugeordnete Lernende", exact: true }).waitFor();
+  await page.getByRole("button", { name: "Sitzplan bearbeiten", exact: true }).click();
+  assert.match(await page.getByTestId("seat-assignment-0").innerText(), /Freier Platz/);
+  await page.getByTestId("seat-assignment-0").click();
+  await page.getByTestId("seat-option-quick-active").click();
+  await page.getByText("gespeichert", { exact: true }).waitFor();
+  await page.getByTestId("seat-assignment-0").click();
+  assert.equal(await page.getByTestId("seat-option-quick-active").evaluate((el) => getComputedStyle(el).fontWeight), "400");
+  assert.deepEqual(failures, []);
+  console.log("PASS: clearing a default seat, unplaced area, bold option, reload and reassignment");
 }
 
 run().catch((error) => { console.error(error); process.exitCode = 1; }).finally(async () => {

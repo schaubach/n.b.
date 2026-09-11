@@ -33,6 +33,18 @@ function baseState() {
   };
 }
 
+test("manual seat clearing keeps the student unplaced on later reads", () => {
+  const state = baseState();
+  const original = normalizeSeatingPlan(state, "class-1");
+  expect(original.seats).toHaveLength(1);
+  const cleared = normalizeSeatingPlan(state, "class-1", { ...original, seats: [], preserve_unplaced: true });
+  state.seating_plans = [cleared];
+  expect(normalizeSeatingPlan(state, "class-1").seats).toEqual([]);
+  expect(state.students).toHaveLength(1);
+  const assigned = normalizeSeatingPlan(state, "class-1", { ...cleared, seats: [{ row: 0, column: 1, student_id: "student-1" }] });
+  expect(assigned.seats).toEqual([{ row: 0, column: 1, student_id: "student-1" }]);
+});
+
 test("point recalculation uses class grade system for 0-15 KL main value", () => {
   const state = baseState();
   const session = state.sessions[0];

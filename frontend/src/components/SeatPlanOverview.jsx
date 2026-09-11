@@ -22,7 +22,7 @@ export default function SeatPlanOverview({ rows, columns, cells, studentsById, c
   const weights = seatTrackWeights(rows, columns, cells);
   const extraColumns = Math.max(2, Math.min(8, Math.floor(width / 120)));
   const groups = [
-    { title: "Nur in der IServ-Gruppenliste", students: csvOnlyStudents, tone: "border-amber-400" },
+    { title: "Nicht zugeordnete Lernende", students: csvOnlyStudents, tone: "border-amber-400" },
   ].filter((group) => group.students.length);
   const groupRows = groups.map((group) => Math.ceil(group.students.length / extraColumns));
   const renderStudent = (student) => <OverviewTile student={student} systemId={systemId} onClick={() => onStudent(student)} border={student ? assessmentBorder(student) : ""} />;
