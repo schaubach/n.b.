@@ -155,6 +155,15 @@ async function run() {
   await page.evaluate(() => { location.hash = "/"; });
   await page.getByTestId("gradebook-class-offline-class").click();
   await page.getByTitle("Gut begruendeter Beitrag", { exact: true }).hover();
+  await page.getByTitle("Gut begruendeter Beitrag", { exact: true }).click();
+  const correction = page.getByTestId("gradebook-picker");
+  assert.equal(await correction.getByTestId("gradebook-note-comment").locator("p").last().innerText(), "Gut begruendeter Beitrag");
+  await correction.screenshot({ path: path.join(work, "grade-comment-dialog.png") });
+  await correction.getByRole("button", { name: "2", exact: true }).click();
+  await correction.waitFor({ state: "hidden" });
+  await page.getByTitle("Gut begruendeter Beitrag", { exact: true }).click();
+  assert.equal(await correction.getByTestId("gradebook-note-comment").locator("p").last().innerText(), "Gut begruendeter Beitrag");
+  await correction.getByRole("button", { name: "Schließen", exact: true }).click();
   await page.getByTitle("Sorgfaeltige Ausarbeitung", { exact: true }).hover();
   await page.getByTitle("Per Ziehen bewertet", { exact: true }).hover();
   const pdfDownload = page.waitForEvent("download");

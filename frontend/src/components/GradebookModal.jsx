@@ -311,7 +311,7 @@ function PickerModal({ picker, systemId, onPick, onClear, onClose }) {
       {picker && (
         <motion.div className="fixed inset-0 z-[140] flex items-center justify-center p-4" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} data-testid="gradebook-picker">
           <div className="absolute inset-0 bg-stone-900/45 backdrop-blur-sm" onClick={onClose} />
-          <motion.div initial={{ scale: 0.92, y: 18, opacity: 0 }} animate={{ scale: 1, y: 0, opacity: 1 }} exit={{ scale: 0.96, opacity: 0 }} className="relative w-full max-w-md rounded-3xl border-2 border-stone-900 bg-white p-6 shadow-brutal">
+          <motion.div initial={{ scale: 0.92, y: 18, opacity: 0 }} animate={{ scale: 1, y: 0, opacity: 1 }} exit={{ scale: 0.96, opacity: 0 }} className="relative max-h-[calc(100dvh-2rem)] w-full max-w-md overflow-y-auto overscroll-contain rounded-3xl border-2 border-stone-900 bg-white p-6 shadow-brutal">
             <button onClick={onClose} className="absolute right-4 top-4 text-stone-400 hover:text-stone-900" aria-label="Schließen"><X className="h-5 w-5" /></button>
             <p className="text-xs font-bold uppercase tracking-[0.2em] text-stone-400">{title}</p>
             <h3 className="mt-1 font-heading text-2xl font-black text-stone-900">{picker.student.first_name} {picker.student.last_name}</h3>
@@ -321,6 +321,12 @@ function PickerModal({ picker, systemId, onPick, onClear, onClose }) {
                 <button key={option} onClick={() => onPick(option)} className={`rounded-xl border-2 px-3 py-3 font-mono text-xl font-black transition-all active:scale-95 ${gradeColorClasses(option, systemId)} ${picker.currentValue === option ? "ring-4 ring-stone-900" : ""}`}>{option}</button>
               ))}
             </div>
+            {!isAverage && picker.comment && (
+              <div className="mt-4 rounded-lg border border-stone-300 bg-stone-50 p-3" data-testid="gradebook-note-comment">
+                <p className="text-xs font-bold text-stone-500">Zusatzinfo zur Note</p>
+                <p className="mt-1 whitespace-pre-wrap [overflow-wrap:anywhere] text-sm text-stone-900">{picker.comment}</p>
+              </div>
+            )}
             <button onClick={onClear} className="mt-4 w-full rounded-xl border-2 border-stone-300 bg-white px-4 py-3 font-bold text-stone-600 hover:border-stone-900">{clearLabel}</button>
           </motion.div>
         </motion.div>
@@ -537,7 +543,7 @@ export default function GradebookModal({ classId, className, open, onChanged, on
 
   const editGrade = (row, cell) => {
     const prefix = cell.session.category === "klausur" ? examTerms(data.grade_system).short : (slType(cell.session) === "written" ? "SL schrftl." : "SL mündl.");
-    setPicker({ kind: "grade", student: row.student, session: cell.session, label: `${prefix}: ${cell.session.title} ${cell.session.date}`, currentValue: cell.value || "", currentCalculated: cell.calculated_value || "" });
+    setPicker({ kind: "grade", student: row.student, session: cell.session, label: `${prefix}: ${cell.session.title} ${cell.session.date}`, currentValue: cell.value || "", currentCalculated: cell.calculated_value || "", comment: cell.comment || "" });
   };
 
   const saveAverageOverride = async (value) => {
@@ -562,7 +568,7 @@ export default function GradebookModal({ classId, className, open, onChanged, on
     setData((current) => {
       const rest = (current.grades || []).filter((grade) => !(grade.session_id === picker.session.id && grade.student_id === picker.student.id));
       const nextValue = normalizedValue || (isPoints ? calculated : "");
-      return { ...current, grades: nextValue ? [...rest, { session_id: picker.session.id, student_id: picker.student.id, value: nextValue, calculated_value: calculated, manual_override: !!(isPoints && normalizedValue) }] : rest };
+      return { ...current, grades: nextValue ? [...rest, { session_id: picker.session.id, student_id: picker.student.id, value: nextValue, comment: picker.comment || "", calculated_value: calculated, manual_override: !!(isPoints && normalizedValue) }] : rest };
     });
   };
 
