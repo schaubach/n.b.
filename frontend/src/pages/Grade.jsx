@@ -60,18 +60,22 @@ export default function Grade() {
   useEffect(() => {
     (async () => {
       const res = await api.get(`/sessions/${sessionId}`);
+      const isOral = res.data.category !== "klausur" && (res.data.sl_type || "oral") === "oral";
+      const visibleStudents = isOral
+        ? refreshOralAverage(res.data.students.filter((student) => !student.inactive))
+        : res.data.students;
       setSession(res.data);
-      setStudents(res.data.students);
+      setStudents(visibleStudents);
       setCells(buildCells(res.data.grade_system));
-      const firstUngraded = res.data.students.findIndex((s) => !s.grade);
-      setIndex(firstUngraded === -1 ? res.data.students.length : firstUngraded);
+      const firstUngraded = visibleStudents.findIndex((s) => !s.grade);
+      setIndex(firstUngraded === -1 ? visibleStudents.length : firstUngraded);
       setLoading(false);
     })();
   }, [sessionId]);
 
   // When all students are graded, go straight to the list.
   useEffect(() => {
-    if (!loading && students.length > 0 && index >= students.length) {
+    if (!loading && index >= students.length) {
       const t = setTimeout(() => navigate(`/summary/${sessionId}`, { replace: true }), 380);
       return () => clearTimeout(t);
     }

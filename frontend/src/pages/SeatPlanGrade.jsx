@@ -2,10 +2,11 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { AnimatePresence, motion } from "framer-motion";
 import {
-  ArrowLeft, Check, FileUp, LayoutGrid, Loader2, Minus, Pencil, Plus, Trash2, X,
+  ArrowLeft, Check, ChevronDown, FileUp, LayoutGrid, Loader2, Minus, Pencil, Plus, Trash2, X,
 } from "lucide-react";
 import api from "../lib/api";
 import GradeCommentField from "../components/GradeCommentField";
+import SeatPlanOverview from "../components/SeatPlanOverview";
 import { gradeColorClasses, initials } from "../lib/grades";
 import { gradeOptions, pointGradeLabel } from "../lib/gradebook";
 import { parseSeatPlanPdf } from "../lib/seatPlanPdf";
@@ -59,6 +60,9 @@ export default function SeatPlanGrade() {
   const [parsing, setParsing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [editing, setEditing] = useState(false);
+  const [seatPicker, setSeatPicker] = useState(null);
+  const [showAll, setShowAll] = useState(false);
+  const fit = !setupOnly && showAll;
   const [picker, setPicker] = useState(null);
   const [infoEditor, setInfoEditor] = useState(null);
   const [message, setMessage] = useState("");
@@ -87,7 +91,7 @@ export default function SeatPlanGrade() {
         setCells(cellsFromPlan(nextPlan));
         setPreserveUnplaced(!!nextPlan.preserve_unplaced);
         setPdfOnlyEntries(nextPlan.pdf_only_entries || []);
-        if (!planRes.data.saved) setMessage("Standard-Sitzplan erstellt. Du kannst ihn direkt verwenden oder eine Sitzplan-PDF hochladen.");
+        if (!planRes.data.saved && setupOnly) setMessage("Standard-Sitzplan erstellt. Du kannst ihn direkt verwenden oder eine Sitzplan-PDF hochladen.");
       } catch (err) {
         setError(err?.response?.data?.detail || err?.message || "Sitzplan konnte nicht geladen werden.");
       } finally {
@@ -96,14 +100,14 @@ export default function SeatPlanGrade() {
     })();
   }, [classId, sessionId, setupOnly]);
 
-  const studentsById = useMemo(() => new Map(students.map((student) => [student.id, student])), [students]);
+  const studentsById = useMemo(() => new Map(students.filter((student) => setupOnly || !student.inactive).map((student) => [student.id, student])), [students, setupOnly]);
   const activeStudents = useMemo(() => students.filter((student) => !student.inactive), [students]);
   const inactiveStudents = useMemo(() => students.filter((student) => student.inactive), [students]);
   const seatedStudentIds = useMemo(() => new Set(cells.filter(Boolean)), [cells]);
   const csvOnlyStudents = useMemo(() => preserveUnplaced
     ? activeStudents.filter((student) => !seatedStudentIds.has(student.id))
     : [], [activeStudents, preserveUnplaced, seatedStudentIds]);
-  const gradedCount = students.filter((student) => student.grade).length;
+  const gradedCount = activeStudents.filter((student) => student.grade).length;
 
   const persist = async (nextRows, nextColumns, nextCells, metadata = {}) => {
     const nextPreserveUnplaced = metadata.preserveUnplaced ?? preserveUnplaced;
@@ -249,24 +253,29 @@ export default function SeatPlanGrade() {
   }
 
   return (
-    <div className="min-h-screen bg-stone-50 bg-dots">
-      <header className="sticky top-0 z-40 border-b-2 border-stone-200 bg-stone-50/95 px-3 py-3 backdrop-blur sm:px-6">
+    <div className={`${fit ? "h-[100dvh] flex flex-col overflow-hidden" : "min-h-screen"} bg-stone-50 bg-dots`}>
+      <header className="sticky top-0 z-40 shrink-0 border-b-2 border-stone-200 bg-stone-50/95 px-3 py-3 backdrop-blur sm:px-6">
         <div className="mx-auto flex max-w-[1600px] flex-wrap items-center justify-between gap-3">
           <button onClick={() => navigate("/")} className="flex items-center gap-2 rounded-full border-2 border-stone-900 bg-white px-3 py-2 font-bold shadow-brutal-sm">
             <ArrowLeft className="h-5 w-5" /> <span className="hidden sm:inline">Klassen</span>
           </button>
           <div className="min-w-0 flex-1 text-center">
             <p className="truncate font-heading text-lg font-black text-stone-900">{session.class_name}</p>
-            <p className="truncate text-xs font-bold uppercase tracking-[0.14em] text-stone-500">{setupOnly ? "Sitzplan und Zusatzinfos" : `${session.title} · Sitzplan · ${gradedCount}/${students.length}`}</p>
+            <p className="truncate text-xs font-bold uppercase tracking-[0.14em] text-stone-500">{setupOnly ? "Sitzplan und Zusatzinfos" : `${session.title} · Sitzplan · ${gradedCount}/${activeStudents.length}`}</p>
           </div>
-          <button onClick={() => navigate(setupOnly ? "/" : `/summary/${sessionId}`)} className="flex items-center gap-2 rounded-xl border-2 border-stone-900 bg-stone-900 px-4 py-2.5 font-heading font-extrabold text-white shadow-brutal-sm">
+          {!setupOnly && <div role="group" aria-label="Sitzplanansicht" className="flex shrink-0 overflow-hidden rounded-lg border-2 border-stone-900 bg-white max-sm:order-last max-sm:w-full">
+            {[{ all: true, label: "Alle anzeigen" }, { all: false, label: "Details anzeigen" }].map(({ all, label }) => (
+              <button key={label} type="button" aria-pressed={showAll === all} onClick={() => setShowAll(all)} className={`flex-1 whitespace-nowrap px-3 py-2 text-sm font-bold ${showAll === all ? "bg-stone-900 text-white" : "text-stone-700 hover:bg-stone-100"}`}>{label}</button>
+            ))}
+          </div>}
+          <button disabled={saving} onClick={() => navigate(setupOnly ? "/" : `/summary/${sessionId}`)} className="flex items-center gap-2 rounded-xl border-2 border-stone-900 bg-stone-900 px-4 py-2.5 font-heading font-extrabold text-white shadow-brutal-sm">
             <Check className="h-5 w-5" /> Fertig
           </button>
         </div>
       </header>
 
-      <main className="mx-auto max-w-[1600px] px-3 py-5 sm:px-6">
-        <div className="flex flex-wrap items-center gap-2 rounded-2xl border-2 border-stone-900 bg-white p-3 shadow-brutal-sm">
+      <main className={fit ? "flex min-h-0 w-full flex-1 flex-col p-2 sm:p-3" : "mx-auto max-w-[1600px] px-3 py-5 sm:px-6"}>
+        {setupOnly && <div className="flex flex-wrap items-center gap-2 rounded-2xl border-2 border-stone-900 bg-white p-3 shadow-brutal-sm">
           <input ref={fileRef} type="file" accept=".pdf,application/pdf" className="hidden" onChange={(event) => uploadPdf(event.target.files?.[0])} />
           <button onClick={() => fileRef.current?.click()} disabled={parsing || saving} className="flex items-center gap-2 rounded-xl border-2 border-stone-900 bg-emerald-400 px-4 py-2.5 font-heading font-extrabold disabled:opacity-50">
             {parsing ? <Loader2 className="h-5 w-5 animate-spin" /> : <FileUp className="h-5 w-5" />} Sitzplan hochladen
@@ -283,17 +292,18 @@ export default function SeatPlanGrade() {
           <span className="ml-auto inline-flex min-w-[7rem] items-center justify-end gap-2 text-sm font-bold text-stone-500">
             {saving ? <><Loader2 className="h-4 w-4 animate-spin" /> speichere</> : <><Check className="h-4 w-4 text-emerald-600" /> gespeichert</>}
           </span>
-        </div>
+        </div>}
 
         {message && <div className="mt-3 rounded-xl border-2 border-emerald-300 bg-emerald-50 px-4 py-3 font-bold text-emerald-900">{message}</div>}
         {error && <div className="mt-3 flex items-center gap-2 rounded-xl border-2 border-rose-400 bg-rose-100 px-4 py-3 font-bold text-rose-900"><X className="h-5 w-5 shrink-0" />{error}</div>}
 
+        {fit ? <SeatPlanOverview rows={rows} columns={columns} cells={cells} studentsById={studentsById} csvOnlyStudents={csvOnlyStudents} systemId={session.grade_system} onStudent={openStudent} assessmentBorder={assessmentBorder} /> : <>
         <div className="mt-5 overflow-auto rounded-2xl border-2 border-stone-900 bg-stone-200 p-3 shadow-brutal-sm" style={{ maxHeight: "calc(100vh - 210px)" }}>
           <div className="grid gap-3" style={{ gridTemplateColumns: `repeat(${columns}, minmax(132px, 1fr))`, minWidth: `${columns * 144}px` }}>
             {cells.map((studentId, index) => {
               const student = studentsById.get(studentId);
-              return editing ? (
-                <SeatEditor key={index} student={student} students={activeStudents} onChange={(value) => assignSeat(index, value)} />
+              return setupOnly && editing ? (
+                <SeatEditor key={index} index={index} student={student} disabled={saving} onOpen={() => setSeatPicker(index)} />
               ) : (
                 <SeatCard key={index} student={student} systemId={session.grade_system} onClick={() => openStudent(student)} showGrade={!setupOnly} />
               );
@@ -301,7 +311,7 @@ export default function SeatPlanGrade() {
           </div>
         </div>
 
-        {(csvOnlyStudents.length > 0 || pdfOnlyEntries.length > 0) && (
+        {(csvOnlyStudents.length > 0 || (setupOnly && pdfOnlyEntries.length > 0)) && (
           <section className="mt-5 rounded-2xl border-2 border-amber-500 bg-amber-50 p-4 shadow-brutal-sm">
             <h2 className="font-heading text-lg font-black text-stone-900">Nicht zugeordnete Lernende</h2>
             {csvOnlyStudents.length > 0 && (
@@ -314,7 +324,7 @@ export default function SeatPlanGrade() {
                 </div>
               </div>
             )}
-            {pdfOnlyEntries.length > 0 && (
+            {setupOnly && pdfOnlyEntries.length > 0 && (
               <div className="mt-4">
                 <h3 className="mb-2 text-sm font-black uppercase text-stone-600">Nur im Sitzplan-PDF</h3>
                 <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-6">
@@ -331,7 +341,7 @@ export default function SeatPlanGrade() {
           </section>
         )}
 
-        {inactiveStudents.length > 0 && (
+        {setupOnly && inactiveStudents.length > 0 && (
           <section className="mt-5 rounded-2xl border-2 border-stone-400 bg-white p-4 shadow-brutal-sm">
             <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
               <h2 className="font-heading text-lg font-black text-stone-900">Nicht mehr aktive Lernende</h2>
@@ -344,10 +354,12 @@ export default function SeatPlanGrade() {
             </div>
           </section>
         )}
+        </>}
       </main>
 
       {!setupOnly && <GradePicker student={picker} systemId={session.grade_system} saving={saving} error={error} onPick={(value, comment) => setGrade(picker, value, comment)} onRemove={() => setGrade(picker, null)} onClose={() => { if (!saving) setPicker(null); }} />}
       {setupOnly && <AdditionalInfoEditor student={infoEditor} saving={saving} onSave={(value) => saveAdditionalInfo(infoEditor, value)} onClose={() => setInfoEditor(null)} />}
+      {setupOnly && seatPicker !== null && <SeatAssignmentPicker students={activeStudents} seatedStudentIds={seatedStudentIds} selectedId={cells[seatPicker]} onSelect={(value) => { assignSeat(seatPicker, value); setSeatPicker(null); }} onClose={() => setSeatPicker(null)} />}
     </div>
   );
 }
@@ -356,18 +368,44 @@ function StepButton({ icon: Icon, onClick, disabled }) {
   return <button type="button" onClick={onClick} disabled={disabled} className="flex h-9 w-9 items-center justify-center rounded-lg border-2 border-stone-900 bg-white disabled:opacity-30"><Icon className="h-4 w-4" /></button>;
 }
 
-function SeatEditor({ student, students, onChange }) {
+function SeatEditor({ student, index, disabled, onOpen }) {
   return (
     <div className={`flex min-h-28 flex-col justify-between rounded-xl border-2 border-dashed p-2 ${student ? "border-stone-900 bg-white" : "border-stone-400 bg-stone-100"}`}>
       <div className="flex items-center gap-2">
         <LayoutGrid className="h-4 w-4 text-stone-400" />
         <span className="truncate text-xs font-bold text-stone-500">{student ? `${student.first_name} ${student.last_name}` : "Freier Platz"}</span>
       </div>
-      <select value={student?.id || ""} onChange={(event) => onChange(event.target.value)} className="mt-2 w-full rounded-lg border-2 border-stone-300 bg-white px-2 py-2 text-sm font-bold text-stone-900">
-        <option value="">Freier Platz</option>
-        {students.map((option) => <option key={option.id} value={option.id}>{option.last_name}, {option.first_name}</option>)}
-      </select>
+      <button type="button" disabled={disabled} onClick={onOpen} aria-haspopup="dialog" aria-label={`Name für Platz ${index + 1} auswählen`} data-testid={`seat-assignment-${index}`} className="mt-2 flex w-full items-center justify-between gap-2 rounded-lg border-2 border-stone-300 bg-white px-2 py-2 text-left text-sm font-normal text-stone-900 disabled:opacity-50">
+        <span className="min-w-0 truncate">{student ? `${student.last_name}, ${student.first_name}` : "Freier Platz"}</span><ChevronDown className="h-4 w-4 shrink-0" />
+      </button>
     </div>
+  );
+}
+
+function SeatAssignmentPicker({ students, seatedStudentIds, selectedId, onSelect, onClose }) {
+  const ref = useRef(null);
+  useEffect(() => {
+    const dialog = ref.current;
+    dialog.showModal();
+    return () => dialog.close();
+  }, []);
+  return (
+    <dialog ref={ref} aria-labelledby="seat-assignment-title" onCancel={onClose} onClick={(event) => { if (event.target === event.currentTarget) onClose(); }} className="m-auto max-h-[calc(100dvh-2rem)] w-[calc(100%-2rem)] max-w-md overflow-hidden rounded-2xl border-2 border-stone-900 bg-white p-0 text-stone-900 shadow-brutal backdrop:bg-stone-900/45" data-testid="seat-assignment-picker">
+      <div className="flex max-h-[calc(100dvh-3rem)] flex-col">
+        <div className="flex shrink-0 items-center justify-between gap-3 border-b border-stone-200 p-4">
+          <h2 id="seat-assignment-title" className="font-heading text-lg font-black">Sitzplatz zuordnen</h2>
+          <button type="button" onClick={onClose} aria-label="Schließen" className="p-2"><X className="h-5 w-5" /></button>
+        </div>
+        <div className="min-h-0 overflow-y-auto overscroll-contain p-2">
+          <button type="button" onClick={() => onSelect("")} className="w-full rounded-lg px-3 py-3 text-left font-normal hover:bg-stone-100">Freier Platz</button>
+          {students.map((student) => (
+            <button type="button" key={student.id} aria-pressed={selectedId === student.id} onClick={() => onSelect(student.id)} data-testid={`seat-option-${student.id}`} className={`flex min-h-11 w-full items-center justify-between gap-2 rounded-lg px-3 py-3 text-left [overflow-wrap:anywhere] hover:bg-stone-100 ${seatedStudentIds.has(student.id) ? "font-normal" : "font-bold"} ${selectedId === student.id ? "bg-emerald-50" : ""}`}>
+              <span>{student.last_name}, {student.first_name}</span>{selectedId === student.id && <Check className="h-4 w-4 shrink-0" />}
+            </button>
+          ))}
+        </div>
+      </div>
+    </dialog>
   );
 }
 

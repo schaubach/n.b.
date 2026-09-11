@@ -85,6 +85,21 @@ async function run() {
       { id: "test-written", class_id: "offline-class", title: "Schriftliche Noten", category: "sonstige", sl_type: "written", date: "09.09.2026", weight: 1 },
     );
     state.grades = [{ session_id: "test-ka", student_id: "ada", value: "2" }];
+    state.classes.push({ id: "fit-class", name: "Sitzplan-Testklasse", grade_system: "points_0_15", grade_scale_id: "MEDA" });
+    state.classes.push({ id: "quick-class", name: "Mdl-Testklasse", grade_system: "grades_1_6" }, { id: "inactive-class", name: "Inaktive Testklasse", grade_system: "grades_1_6" });
+    state.students.push(
+      { id: "quick-inactive", class_id: "quick-class", first_name: "Inaktiv", last_name: "Alpha", inactive: true },
+      { id: "quick-active", class_id: "quick-class", first_name: "Aktiv", last_name: "Beta" },
+      { id: "only-inactive", class_id: "inactive-class", first_name: "Inaktiv", last_name: "Gamma", inactive: true },
+    );
+    state.sessions.push(
+      { id: "quick-oral", class_id: "quick-class", title: "Mdl", category: "sonstige", sl_type: "oral", weight: 1 },
+      { id: "inactive-oral", class_id: "inactive-class", title: "Mdl", category: "sonstige", sl_type: "oral", weight: 1 },
+    );
+    const fitStudents = Array.from({ length: 32 }, (_, index) => ({ id: `fit-${index}`, class_id: "fit-class", first_name: `Vorname ${index + 1}`, last_name: `Nachname ${index + 1}`, additional_info: "Kurze Zusatzinfo", photo, inactive: index === 31 }));
+    state.students.push(...fitStudents);
+    state.sessions.push({ id: "fit-session", class_id: "fit-class", title: "Mündliche Noten", category: "sonstige", sl_type: "oral", date: "11.09.2026", weight: 1 });
+    state.seating_plans = [{ class_id: "fit-class", rows: 6, columns: 7, preserve_unplaced: true, seats: fitStudents.slice(0, 30).map((student, index) => ({ student_id: student.id, row: Math.floor(index / 6), column: index % 6 + (index % 6 >= 3 ? 1 : 0) })), pdf_only_entries: [{ name: "Nur PDF" }] }];
     state.teacher_config = { name: "Testlehrkraft", email: "test@example.invalid", password: "offline-test-iserv", backup_interval_days: 7, mail_backend_pre_shared_key: "test-psk", backend_identity_public_key: "test-public-key" };
     const iv = crypto.getRandomValues(new Uint8Array(12));
     const encrypted = await crypto.subtle.encrypt({ name: "AES-GCM", iv }, key, new TextEncoder().encode(JSON.stringify(state)));
@@ -117,6 +132,7 @@ async function run() {
   await page.getByRole("button", { name: "Note 2+", exact: true }).click();
   await noteField.waitFor({ state: "hidden" });
   await page.getByRole("button", { name: /Ada Alpha/ }).click();
+  await page.waitForFunction(() => Array.from(document.querySelectorAll("textarea")).some((field) => field.value === "Gut begruendeter Beitrag"));
   assert.equal(await noteField.inputValue(), "Gut begruendeter Beitrag");
   await page.getByRole("button", { name: "Schließen", exact: true }).click();
   await page.evaluate(() => { location.hash = "/grade/test-written"; });
@@ -227,8 +243,63 @@ async function run() {
   });
   await page.screenshot({ path: path.join(work, "offline-restored.png") });
   assert.deepEqual(failures, []);
+  await page.evaluate(() => { location.hash = "/seat-plan/fit-session"; });
+  await page.getByRole("button", { name: "Alle anzeigen", exact: true }).click();
+  assert.equal(await page.getByRole("button", { name: "Sitzplan hochladen", exact: true }).count(), 0);
+  assert.equal(await page.getByRole("button", { name: "Sitzplan bearbeiten", exact: true }).count(), 0);
+  assert.equal(await page.getByText("Nur PDF", { exact: true }).count(), 0);
+  for (const size of [{ width: 1024, height: 768 }, { width: 768, height: 1024 }, { width: 1366, height: 768 }, { width: 390, height: 844 }]) {
+    await page.setViewportSize(size);
+    await page.waitForTimeout(300);
+    const tiles = page.locator('[data-testid^="overview-student-"]');
+    assert.equal(await tiles.count(), 31);
+    assert.equal(await page.getByTestId("overview-student-fit-31").count(), 0);
+    for (const tile of await tiles.all()) {
+      const box = await tile.boundingBox();
+      assert(box.width > 0 && box.height > 0 && box.x >= 0 && box.y >= 0 && box.x + box.width <= size.width + 1 && box.y + box.height <= size.height + 1, JSON.stringify(box));
+    }
+    assert.equal(await page.evaluate(() => document.documentElement.scrollHeight > innerHeight + 1), false);
+    if (size.width === 390) assert.equal(await page.getByTestId("overview-student-fit-0").locator("img").isVisible(), false);
+    await page.screenshot({ path: path.join(work, `seating-all-${size.width}.png`) });
+  }
+  await page.getByTestId("overview-student-fit-0").click();
+  await page.getByRole("button", { name: "Note 15", exact: true }).click();
+  await page.getByTestId("overview-student-fit-0").getByText("15", { exact: true }).waitFor();
+  await page.getByRole("button", { name: "Details anzeigen", exact: true }).click();
+  assert.equal(await page.getByTestId("seat-plan-overview").count(), 0);
+  assert.equal(await page.getByText("Nicht mehr aktive Lernende", { exact: true }).count(), 0);
+  assert.equal(await page.getByText("Nur PDF", { exact: true }).count(), 0);
+  await page.evaluate(() => { location.hash = "/classes/fit-class/seat-plan"; });
+  await page.getByRole("button", { name: "Sitzplan hochladen", exact: true }).waitFor();
+  await page.getByRole("button", { name: "Sitzplan bearbeiten", exact: true }).waitFor();
+  await page.getByRole("button", { name: "Sitzplan bearbeiten", exact: true }).click();
+  await page.getByTestId("seat-assignment-3").click();
+  const assignment = page.getByTestId("seat-assignment-picker");
+  assert.equal(await assignment.getByTestId("seat-option-fit-0").evaluate((el) => getComputedStyle(el).fontWeight), "400");
+  assert.equal(await assignment.getByTestId("seat-option-fit-30").evaluate((el) => getComputedStyle(el).fontWeight), "700");
+  await assignment.getByTestId("seat-option-fit-30").click();
+  await assignment.waitFor({ state: "hidden" });
+  await page.getByText("gespeichert", { exact: true }).waitFor();
+  await page.getByTestId("seat-assignment-0").click();
+  assert.equal(await assignment.getByTestId("seat-option-fit-30").evaluate((el) => getComputedStyle(el).fontWeight), "400");
+  await assignment.screenshot({ path: path.join(work, "seat-assignment-picker.png") });
+  await assignment.getByRole("button", { name: "Schließen", exact: true }).click();
+  await page.getByText("Nur PDF", { exact: true }).waitFor();
+  assert.equal(await page.getByRole("button", { name: "Alle anzeigen", exact: true }).count(), 0);
+  assert.deepEqual(failures, []);
   console.log("PASS: offline restart, unlock, grades, PDF download, seating PDF import, encrypted backup with photos, credentials export, backup restore");
   console.log("Test artifacts:", work);
+  await page.evaluate(() => { location.hash = "/grade/quick-oral"; });
+  await page.getByTestId("student-swipe-card").filter({ hasText: "Beta" }).waitFor();
+  assert.equal((await page.getByTestId("grade-progress").innerText()).trim(), "0 / 1");
+  assert.equal(await page.getByTestId("student-swipe-card").filter({ hasText: "Inaktiv" }).count(), 0);
+  await page.getByTestId("grade-cell-2").click();
+  await page.waitForURL(/summary\/quick-oral/);
+  await page.evaluate(() => { location.hash = "/grade/inactive-oral"; });
+  await page.waitForURL(/summary\/inactive-oral/);
+  assert.equal(await page.getByTestId("student-swipe-card").count(), 0);
+  assert.deepEqual(failures, []);
+  console.log("PASS: oral quick grading skips inactive students, including classes with no active students");
 }
 
 run().catch((error) => { console.error(error); process.exitCode = 1; }).finally(async () => {
