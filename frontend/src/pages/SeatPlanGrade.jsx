@@ -61,7 +61,7 @@ export default function SeatPlanGrade() {
   const [saving, setSaving] = useState(false);
   const [editing, setEditing] = useState(false);
   const [seatPicker, setSeatPicker] = useState(null);
-  const [showAll, setShowAll] = useState(false);
+  const [showAll, setShowAll] = useState(true);
   const fit = !setupOnly && showAll;
   const [picker, setPicker] = useState(null);
   const [infoEditor, setInfoEditor] = useState(null);

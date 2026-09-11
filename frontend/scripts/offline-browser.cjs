@@ -125,6 +125,8 @@ async function run() {
   await page.getByRole("button", { name: "Entsperren", exact: true }).click();
   await page.getByText("Offline-Testklasse", { exact: true }).waitFor();
   await page.evaluate(() => { location.hash = "/seat-plan/test-oral"; });
+  await page.getByTestId("seat-plan-overview").waitFor();
+  assert.equal(await page.getByRole("button", { name: "Alle anzeigen", exact: true }).getAttribute("aria-pressed"), "true");
   await page.getByRole("button", { name: /Ada Alpha/ }).click();
   const noteField = page.getByLabel("Zusatzinfo zur Note", { exact: true });
   await noteField.fill("Gut begruendeter Beitrag");
