@@ -8,14 +8,15 @@ function detectDelimiter(line) {
   return semicolons >= commas ? ";" : ",";
 }
 
-export function parseCsvRows(text) {
+export function parseCsvRows(text, options = {}) {
   const input = stripBom(String(text || "")).replace(/\r\n/g, "\n").replace(/\r/g, "\n");
   const firstLine = input.split("\n").find((line) => line.trim()) || "";
-  const delimiter = detectDelimiter(firstLine);
+  const delimiter = options.delimiter || detectDelimiter(firstLine);
   const rows = [];
   let row = [];
   let cell = "";
   let quoted = false;
+  let closedQuote = false;
 
   for (let i = 0; i < input.length; i += 1) {
     const ch = input[i];
@@ -26,6 +27,7 @@ export function parseCsvRows(text) {
           i += 1;
         } else {
           quoted = false;
+          closedQuote = true;
         }
       } else {
         cell += ch;
@@ -33,20 +35,30 @@ export function parseCsvRows(text) {
       continue;
     }
 
-    if (ch === '"') quoted = true;
+    if (options.strict && closedQuote && ch !== delimiter && ch !== "\n") {
+      if (ch === " " || ch === "\t") continue;
+      throw new Error("CSV: Ungültiges Zeichen nach einem schließenden Anführungszeichen.");
+    }
+    if (ch === '"') {
+      if (options.strict && cell !== "") throw new Error("CSV: Anführungszeichen innerhalb eines ungeschützten Feldes.");
+      quoted = true;
+    }
     else if (ch === delimiter) {
       row.push(cell);
       cell = "";
+      closedQuote = false;
     } else if (ch === "\n") {
       row.push(cell);
       if (row.some((value) => value.trim() !== "")) rows.push(row);
       row = [];
       cell = "";
+      closedQuote = false;
     } else {
       cell += ch;
     }
   }
 
+  if (options.strict && quoted) throw new Error("CSV: Ein schließendes Anführungszeichen fehlt.");
   row.push(cell);
   if (row.some((value) => value.trim() !== "")) rows.push(row);
   return rows;

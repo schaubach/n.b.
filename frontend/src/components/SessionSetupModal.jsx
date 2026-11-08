@@ -26,6 +26,7 @@ export default function SessionSetupModal({ open, className, category = "sonstig
   const [slType, setSlType] = useState("oral");
   const [entryMode, setEntryMode] = useState("standard");
   const [pointsMode, setPointsMode] = useState(false);
+  const [pointsImport, setPointsImport] = useState(false);
   const [selectedScale, setSelectedScale] = useState(gradeScaleId || "MEDA");
 
   useEffect(() => {
@@ -36,6 +37,7 @@ export default function SessionSetupModal({ open, className, category = "sonstig
       setSlType("oral");
       setEntryMode("standard");
       setPointsMode(false);
+      setPointsImport(false);
       setSelectedScale(gradeScaleId || "MEDA");
     }
   }, [open, isKlausur, examLabel, gradeScaleId]);
@@ -52,6 +54,7 @@ export default function SessionSetupModal({ open, className, category = "sonstig
       sl_type: isKlausur ? null : slType,
       entry_mode: !isKlausur && slType === "oral" ? entryMode : "standard",
       points_mode: canUsePoints && pointsMode,
+      points_import: canUsePoints && pointsImport,
       grade_scale_id: selectedScale,
     });
   };
@@ -70,7 +73,7 @@ export default function SessionSetupModal({ open, className, category = "sonstig
             animate={{ scale: 1, y: 0, opacity: 1 }}
             exit={{ scale: 0.95, opacity: 0 }}
             transition={{ type: "spring", stiffness: 320, damping: 26 }}
-            className="relative w-full max-w-xl bg-white border-2 border-stone-900 rounded-3xl shadow-brutal p-6 sm:p-8"
+            className="relative max-h-[calc(100dvh-2rem)] overflow-y-auto w-full max-w-xl bg-white border-2 border-stone-900 rounded-3xl shadow-brutal p-6 sm:p-8"
           >
             <button
               onClick={onClose}
@@ -153,10 +156,14 @@ export default function SessionSetupModal({ open, className, category = "sonstig
               {canUsePoints && (
                 <div className="rounded-2xl border-2 border-amber-300 bg-amber-50 p-3">
                   <label className="flex items-center gap-3 font-bold text-stone-800">
-                    <input type="checkbox" checked={pointsMode} onChange={(event) => setPointsMode(event.target.checked)} className="h-5 w-5 accent-stone-900" />
+                    <input type="checkbox" checked={pointsMode && !pointsImport} onChange={(event) => { setPointsMode(event.target.checked); setPointsImport(false); }} className="h-5 w-5 accent-stone-900" />
                     <span className="inline-flex items-center gap-2"><Percent className="h-4 w-4" /> Punkte-&gt;Noten verwenden</span>
                   </label>
-                  {pointsMode && (
+                  <label className="mt-3 flex items-center gap-3 font-bold text-stone-800">
+                    <input type="checkbox" checked={pointsImport} onChange={(event) => { setPointsImport(event.target.checked); setPointsMode(false); }} className="h-5 w-5 accent-stone-900" />
+                    CSV-Punkte importieren (MeinWerk)
+                  </label>
+                  {(pointsMode || pointsImport) && (
                     <label className="mt-3 block">
                       <span className="text-sm font-bold text-stone-700">Notenskala</span>
                       <select value={selectedScale} onChange={(event) => setSelectedScale(event.target.value)} className="mt-1 w-full rounded-xl border-2 border-stone-300 bg-white px-4 py-3 font-bold text-stone-900">
@@ -196,7 +203,7 @@ export default function SessionSetupModal({ open, className, category = "sonstig
               data-testid="setup-start-button"
               className="mt-6 w-full px-5 py-4 bg-stone-900 text-white font-heading font-extrabold rounded-2xl border-2 border-stone-900 shadow-brutal-sm hover:-translate-y-0.5 active:translate-y-0 active:shadow-none transition-all flex items-center justify-center gap-2"
             >
-              <Play className="w-5 h-5" /> Bewertung starten
+              <Play className="w-5 h-5" /> {canUsePoints && pointsImport ? "CSV-Import prüfen" : "Bewertung starten"}
             </button>
           </motion.div>
         </motion.div>

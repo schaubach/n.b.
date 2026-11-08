@@ -272,8 +272,10 @@ export function pointsNeededForBetter(achieved, maxPoints, scale, rowIndex, grad
   const neededTotal = (Number(better.minPercent) / 100) * maxPoints;
   const missing = neededTotal - Number(achieved || 0);
   if (!(missing > 0)) return null;
+  // Subtraction can put an exact tenth just above its boundary (8.5 - 8.2).
+  const tolerance = Number.EPSILON * Math.max(1, Math.abs(neededTotal), Math.abs(Number(achieved || 0))) * 4;
   return {
-    points: Math.ceil(missing * 10) / 10,
+    points: Math.max(0.1, Math.ceil((missing - tolerance) * 10) / 10),
     target,
     minPercent: better.minPercent,
   };

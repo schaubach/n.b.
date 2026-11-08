@@ -1,0 +1,11 @@
+﻿Mail;erreichte Punkte;maximale Punkte;Status
+anna.berg@schule.example;7,5;10;ungeprüft
+ben.cramer@schule.example;;10;fehlt
+cem.demir@schule.example;;10;unbewertet
+dora.engel@schule.example;9;10;geprüft
+emil.fuchs@schule.example;6;10;veraltet
+gus.hahn@schule.example;6;10;unveröffentlicht, geprüft
+ina.jung@schule.example;10;10;unveröffentlicht, ungeprüft
+kai.lang@schule.example;4,5;10;unveröffentlicht, veraltet
+lea.maier@schule.example;;;ungeprüft
+mo.nowak@schule.example;0;10;geprüft

@@ -1,6 +1,7 @@
 import { getState, mutateState, replaceState } from "./cryptoStore";
 import { GRADE_SYSTEMS } from "./grades";
 import { parseClassCsv } from "./csvImport";
+import { importMail, validatePointsReview } from "./pointsImport";
 import { nameSimilarity } from "./seatPlanPdf";
 import {
   allGradeScales,
@@ -356,10 +357,13 @@ export function oralGradeStatsForClass(state, classId) {
 function pointSummary(state, session, studentId) {
   const record = (state.point_sessions || []).find((item) => item.session_id === session.id);
   if (!record) return null;
-  const max = (record.columns || []).reduce((sum, column) => sum + (Number(column.max_points) || 0), 0);
+  const imported = Array.isArray(record.import_totals);
+  const total = imported ? record.import_totals.find((item) => item.student_id === studentId) : null;
+  const max = imported ? (total?.maximum || 0) : (record.columns || []).reduce((sum, column) => sum + (Number(column.max_points) || 0), 0);
   const studentEntries = (record.entries || []).filter((entry) => entry.student_id === studentId);
-  const achieved = studentEntries.reduce((sum, entry) => sum + (Number(entry.points) || 0), 0);
-  if (!studentEntries.length || !(max > 0)) return { achieved: studentEntries.length ? achieved : null, max, percent: null, calculated_value: "" };
+  const achieved = imported ? total?.achieved : studentEntries.reduce((sum, entry) => sum + (Number(entry.points) || 0), 0);
+  const hasPoints = imported ? !!total : studentEntries.length > 0;
+  if (!hasPoints || !(max > 0)) return { achieved: hasPoints ? achieved : null, max, percent: null, calculated_value: "" };
   const gradeSystem = sessionGradeSystem(state, session);
   const sessionForCalc = { ...session, grade_system: gradeSystem };
   const scales = gradeScalesForState(state);
@@ -557,6 +561,13 @@ export function deleteInactiveStudentInState(state, studentId) {
   state.point_sessions = (state.point_sessions || []).map((record) => ({
     ...record,
     entries: (record.entries || []).filter((entry) => entry.student_id !== student.id),
+    ...(record.import_totals ? {
+      import_totals: record.import_totals.filter((entry) => entry.student_id !== student.id),
+      import_review: (record.import_review || []).filter((entry) => entry.student_id !== student.id && !(
+        state.sessions.some((session) => session.id === record.session_id && session.class_id === student.class_id)
+        && student.email && String(entry.mail || "").toLowerCase() === student.email.toLowerCase()
+      )),
+    } : {}),
   }));
   state.seating_plans = (state.seating_plans || []).map((plan) => plan.class_id === student.class_id ? {
     ...plan,
@@ -586,7 +597,7 @@ async function get(url) {
       const grade = state.grades.find((item) => item.session_id === session.id && item.student_id === student.id);
       return { ...studentOut(student), grade: grade?.value || "", calculated_value: grade?.calculated_value || "", manual_override: !!grade?.manual_override, point_summary: pointSummary(state, session, student.id) };
     });
-    return { data: { session: { ...session, class_name: cls.name || "", grade_system: cls.grade_system || "grades_1_6", grade_scale_id: session.grade_scale_id || scale.id }, students, columns: record.columns || [], entries: record.entries || [], grade_scales: scales, grade_scale: scale } };
+    return { data: { session: { ...session, class_name: cls.name || "", grade_system: cls.grade_system || "grades_1_6", grade_scale_id: session.grade_scale_id || scale.id }, students, columns: record.columns || [], entries: record.entries || [], import_review: record.import_review || null, grade_scales: scales, grade_scale: scale } };
   }
 
   if (path === "/teacher-config") {
@@ -741,6 +752,59 @@ async function get(url) {
 
 async function post(url, body) {
   const path = normalizePath(url);
+
+  if (path === "/sessions/import-points") {
+    return mutateState((state) => {
+      const existing = body.session_id ? findSession(state, body.session_id) : null;
+      if (existing && existing.entry_mode !== "csv_points") httpError("Nur CSV-Bewertungen können hier geändert werden.");
+      const cls = findClass(state, existing?.class_id || body.class_id);
+      const options = existing || body;
+      if (!existing && options.category !== "klausur" && options.sl_type !== "written") httpError("Punkteimport ist nur für schriftliche Bewertungen möglich.");
+      const classStudents = state.students.filter((student) => student.class_id === cls.id);
+      const knownEmails = new Set(classStudents.map((student) => importMail(student.email)).filter(Boolean));
+      const newIds = new Map();
+      if (body.new_students && (!Array.isArray(body.new_students) || body.new_students.length > 2000)) httpError("Ungültige neue Lernende.");
+      const additions = (body.new_students || []).map((student, index) => {
+        const email = importMail(student.email);
+        const first = String(student.first_name || "").trim();
+        const last = String(student.last_name || "").trim();
+        if (!first || !last || first.length > 100 || last.length > 100 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) httpError("Neue Lernende brauchen Vorname, Nachname und eine gültige Mailadresse.");
+        if (knownEmails.has(email)) httpError("Die Mailadresse neuer Lernender ist in der Klasse bereits vorhanden. Bitte Zuordnung erneut prüfen.");
+        if (!student.temporary_id || newIds.has(student.temporary_id) || state.students.some((item) => item.id === student.temporary_id)) httpError("Ungültige vorläufige Zuordnung.");
+        const newId = id();
+        newIds.set(student.temporary_id, newId);
+        knownEmails.add(email);
+        return { id: newId, class_id: cls.id, source_key: `mail:${email}`, first_name: first, last_name: last, email,
+          order: Math.max(0, ...classStudents.map((item) => item.order || 0)) + index + 1,
+          photo: null, additional_info: "", inactive: false, inactive_at: null, created_at: nowIso() };
+      });
+      const review = Array.isArray(body.review) ? body.review.map((row) => ({ ...row, student_id: newIds.get(row.student_id) || row.student_id })) : body.review;
+      const totals = validatePointsReview(review, [...classStudents, ...additions]);
+      const scale = gradeScalesForState(state).find((item) => item.id === body.grade_scale_id);
+      if (!scale) httpError("Die ausgewählte Notenskala ist nicht mehr vorhanden.");
+      const session = existing || {
+        id: id(), class_id: cls.id, title: String(body.title || "Punkteimport").trim(),
+        date: String(body.date || todayDe()), weight: Number(body.weight) > 0 ? Number(body.weight) : 1,
+        category: body.category === "klausur" ? "klausur" : "sonstige",
+        sl_type: body.category === "klausur" ? null : "written", created_at: nowIso(),
+      };
+      session.entry_mode = "csv_points";
+      session.points_mode = true;
+      session.grade_scale_id = scale.id;
+      // Reopening keeps the assessment's scale; choosing another scale replaces it.
+      if (!existing || existing.point_scale_override?.id !== scale.id) session.point_scale_override = normalizePointScale(scale, cls.grade_system);
+      if (!existing) state.sessions.push(session);
+      state.students.push(...additions);
+      const record = pointSessionFor(state, session.id);
+      record.import_totals = totals;
+      record.import_review = JSON.parse(JSON.stringify(review));
+      record.columns = [];
+      record.entries = [];
+      state.grades.filter((grade) => grade.session_id === session.id).forEach((grade) => { grade.manual_override = false; });
+      recalculatePointGrades(state, session);
+      return { data: { id: session.id, class_id: cls.id } };
+    });
+  }
 
   if (path === "/backup/restore-state") {
     await replaceState(body.state || {});
@@ -1006,6 +1070,7 @@ async function put(url, body) {
   if (pointsUpdate) {
     return mutateState((state) => {
       const session = findSession(state, pointsUpdate[1]);
+      if (session.entry_mode === "csv_points") httpError("Diese Bewertung wird über die CSV-Punkteprüfung bearbeitet.");
       const cls = findClass(state, session.class_id);
       session.points_mode = true;
       session.grade_scale_id = body.grade_scale_id || session.grade_scale_id || cls.grade_scale_id || "MEDA";

@@ -4,6 +4,7 @@ import Home from "./pages/Home";
 import Grade from "./pages/Grade";
 import Summary from "./pages/Summary";
 import PointsGrade from "./pages/PointsGrade";
+import PointsImport from "./pages/PointsImport";
 import GradebookPage from "./pages/GradebookPage";
 import SeatPlanGrade from "./pages/SeatPlanGrade";
 import SecurityGate from "./components/SecurityGate";
@@ -20,6 +21,8 @@ export default function App() {
           <Route path="/classes/:classId/seat-plan" element={<SeatPlanGrade />} />
           <Route path="/summary/:sessionId" element={<Summary />} />
           <Route path="/points/:sessionId" element={<PointsGrade />} />
+          <Route path="/classes/:classId/points-import" element={<PointsImport />} />
+          <Route path="/points-import/:sessionId" element={<PointsImport />} />
           <Route path="/gradebook/:classId" element={<GradebookPage />} />
         </Routes>
       </HashRouter>

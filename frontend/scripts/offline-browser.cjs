@@ -86,6 +86,11 @@ async function run() {
     );
     state.grades = [{ session_id: "test-ka", student_id: "ada", value: "2" }];
     state.classes.push({ id: "fit-class", name: "Sitzplan-Testklasse", grade_system: "points_0_15", grade_scale_id: "MEDA" });
+    state.classes.push({ id: "import-class", name: "CSV-Testklasse", grade_system: "grades_1_6", grade_scale_id: "MEDA" });
+    ["anna.berg", "ben.cramer", "cem.demir", "dora.engel", "emil.fuchs", "gus.hahn", "ina.jung", "kai.lang", "lea.maier", "mo.nowak", "ohne.csv"].forEach((name) => {
+      const [first, last] = name.split(".");
+      state.students.push({ id: name, class_id: "import-class", email: `${name}@schule.example`, first_name: first, last_name: last });
+    });
     state.classes.push({ id: "quick-class", name: "Mdl-Testklasse", grade_system: "grades_1_6" }, { id: "inactive-class", name: "Inaktive Testklasse", grade_system: "grades_1_6" });
     state.students.push(
       { id: "quick-inactive", class_id: "quick-class", first_name: "Inaktiv", last_name: "Alpha", inactive: true },
@@ -325,6 +330,89 @@ async function run() {
   assert.equal(await page.getByTestId("seat-option-quick-active").evaluate((el) => getComputedStyle(el).fontWeight), "400");
   assert.deepEqual(failures, []);
   console.log("PASS: clearing a default seat, unplaced area, bold option, reload and reassignment");
+  await page.getByTestId("seat-assignment-picker").getByRole("button", { name: "Schließen", exact: true }).click();
+  await page.evaluate(() => { location.hash = "/"; });
+  await page.getByTestId("start-sonstige-import-class").click();
+  assert.equal(await page.getByLabel("CSV-Punkte importieren (MeinWerk)").count(), 0);
+  await page.getByTestId("setup-sl-type-written").click();
+  await page.getByLabel("CSV-Punkte importieren (MeinWerk)").check();
+  await page.getByTestId("setup-close").click();
+  await page.getByTestId("start-klausur-import-class").click();
+  await page.getByLabel("CSV-Punkte importieren (MeinWerk)").check();
+  await page.getByTestId("setup-start-button").click();
+  await page.getByTestId("points-import-file").waitFor({ state: "attached" });
+  const example = fs.readFileSync(path.join(root, "scripts/fixtures/meinwerk-points.csv"), "utf8");
+  await page.getByTestId("points-import-file").setInputFiles({ name: "Bewertung.csv", mimeType: "text/csv", buffer: Buffer.from(example + "neue.person@schule.example;8;10;ungeprüft\r\n") });
+  await page.getByTestId("points-import-row-11").waitFor();
+  assert.equal(await page.getByTestId("points-import-finish").isDisabled(), true);
+  assert.equal(await page.getByLabel("Entscheidung Zeile 4", { exact: true }).inputValue(), "accept");
+  assert.equal(await page.getByLabel("Entscheidung Zeile 10", { exact: true }).inputValue(), "accept");
+  const invalid = page.getByLabel("Erreichte Punkte Zeile 1", { exact: true });
+  await invalid.fill("99");
+  assert.equal(await page.getByTestId("points-import-better-0").count(), 0);
+  await page.getByTestId("points-import-row-0").getByText("Erreichte Punkte überschreiten die maximalen Punkte.", { exact: true }).waitFor();
+  assert.equal(await page.getByTestId("points-import-row-0").evaluate((el) => getComputedStyle(el).backgroundColor), "rgb(255, 241, 242)");
+  for (const size of [{ width: 1024, height: 768 }, { width: 390, height: 844 }]) {
+    await page.setViewportSize(size);
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth + 1), false);
+    await page.screenshot({ path: path.join(work, `points-import-${size.width}.png`) });
+  }
+  await invalid.fill("7,5");
+  await page.getByTestId("points-import-better-0").waitFor();
+  assert.match(await page.getByTestId("points-import-better-0").innerText(), /P\. bis/);
+  for (const size of [{ width: 1024, height: 768 }, { width: 390, height: 844 }]) {
+    await page.setViewportSize(size);
+    await page.getByTestId("points-import-better-0").scrollIntoViewIfNeeded();
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth + 1), false);
+    await page.screenshot({ path: path.join(work, `points-import-distance-${size.width}.png`) });
+  }
+  await page.getByRole("button", { name: "Lernende/n zufügen", exact: true }).click();
+  await page.getByLabel("Vorname", { exact: true }).fill("Neue");
+  await page.getByLabel("Nachname", { exact: true }).fill("Person");
+  await page.getByRole("button", { name: "Zur Aufnahme vormerken", exact: true }).click();
+  await page.getByText("1 neue Lernende zur Aufnahme vorgemerkt", { exact: true }).waitFor();
+  const count = await page.getByTestId("points-import-table").locator("tbody tr").count();
+  for (let i = 1; i <= count; i++) {
+    await page.getByLabel(`Entscheidung Zeile ${i}`, { exact: true }).selectOption([2, 3, 9, 12].includes(i) ? "missing" : "accept");
+  }
+  assert.equal(await page.getByTestId("points-import-finish").isEnabled(), true);
+  await page.getByTestId("points-import-finish").click();
+  await page.waitForURL(/gradebook\/import-class/);
+  await page.getByText("Neue Person", { exact: true }).waitFor();
+  await page.getByRole("button", { name: "Punkte -> Noten öffnen", exact: true }).click();
+  await page.waitForURL(/points-import\//);
+  await page.getByLabel("Erreichte Punkte Zeile 10", { exact: true }).waitFor();
+  assert.equal(await page.getByLabel("Erreichte Punkte Zeile 10", { exact: true }).inputValue(), "0");
+  assert.match(await page.getByLabel("Lernende Zeile 11", { exact: true }).locator("option:checked").innerText(), /Person, Neue/);
+  await page.reload();
+  await page.getByLabel("Passwort", { exact: true }).fill("offline-test-vault");
+  await page.getByRole("button", { name: "Entsperren", exact: true }).click();
+  await page.getByLabel("Erreichte Punkte Zeile 10", { exact: true }).waitFor();
+  assert.equal(await page.getByLabel("Erreichte Punkte Zeile 10", { exact: true }).inputValue(), "0");
+  assert.deepEqual(failures, []);
+  console.log("PASS: offline CSV review, visible errors, new learner, confirmation, gradebook, reopen and reload");
+  const importReviewUrl = page.url();
+  await page.evaluate(() => { location.hash = "/"; });
+  const importBackupEvent = page.waitForEvent("download");
+  await page.getByTestId("home-backup-button").click();
+  const importBackup = await importBackupEvent;
+  const importBackupPath = path.join(work, "points-import-backup.zip");
+  await importBackup.saveAs(importBackupPath);
+  const importBackupCsv = execFileSync("unzip", ["-P", "offline-test-iserv", "-p", importBackupPath, "data/state.csv"], { encoding: "utf8" });
+  assert.match(importBackupCsv, /import_totals/);
+  assert.match(importBackupCsv, /neue.person@schule.example/);
+  await page.getByTestId("teacher-config-button").click();
+  await page.getByTestId("teacher-config-modal").locator('input[type="file"]:not([accept])').setInputFiles(importBackupPath);
+  await page.getByRole("button", { name: "Entsperren", exact: true }).waitFor();
+  await page.getByLabel("Passwort", { exact: true }).fill("offline-test-vault");
+  await page.getByRole("button", { name: "Entsperren", exact: true }).click();
+  await page.getByTestId("import-button").waitFor();
+  await page.evaluate((hash) => { location.hash = hash; }, new URL(importReviewUrl).hash);
+  await page.getByLabel("Erreichte Punkte Zeile 10", { exact: true }).waitFor();
+  assert.equal(await page.getByLabel("Erreichte Punkte Zeile 10", { exact: true }).inputValue(), "0");
+  assert.match(await page.getByLabel("Lernende Zeile 11", { exact: true }).locator("option:checked").innerText(), /Person, Neue/);
+  assert.deepEqual(failures, []);
+  console.log("PASS: imported scores, review decisions and added learners survive encrypted backup restore");
 }
 
 run().catch((error) => { console.error(error); process.exitCode = 1; }).finally(async () => {

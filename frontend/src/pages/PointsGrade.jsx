@@ -84,6 +84,10 @@ export default function PointsGrade() {
       setLoading(true);
       try {
         const res = await api.get("/sessions/" + sessionId + "/points");
+        if (res.data.session.entry_mode === "csv_points") {
+          navigate(`/points-import/${sessionId}`, { replace: true });
+          return;
+        }
         setData(res.data);
         const loadedColumns = res.data.columns?.length ? res.data.columns : [makeColumn(1)];
         setColumns(loadedColumns);
@@ -99,7 +103,7 @@ export default function PointsGrade() {
         setLoading(false);
       }
     })();
-  }, [sessionId]);
+  }, [sessionId, navigate]);
 
   const selectedScale = useMemo(() => findGradeScale(data?.grade_scales || [], scaleId), [data?.grade_scales, scaleId]);
   const activeScale = useMemo(() => localScale || normalizeScale(selectedScale, data?.session?.grade_system), [localScale, selectedScale, data?.session?.grade_system]);

@@ -209,19 +209,22 @@ export async function getState() {
 
 export async function saveState(nextState) {
   if (!vaultKey) throw new Error("Lokaler Tresor ist gesperrt.");
-  cachedState = nextState;
   await idbSet(DATA_STORE, STATE_KEY, await encryptJson(vaultKey, nextState));
+  cachedState = nextState;
 }
 
 export function mutateState(mutator) {
-  writeQueue = writeQueue.then(async () => {
+  const operation = writeQueue.then(async () => {
     if (!unlocked || !vaultKey) throw new Error("Lokaler Tresor ist gesperrt.");
     if (!cachedState) cachedState = await loadStateWithKey(vaultKey);
-    const result = await mutator(cachedState);
-    await saveState(cachedState);
+    const nextState = JSON.parse(JSON.stringify(cachedState));
+    const result = await mutator(nextState);
+    await saveState(nextState);
     return result;
   });
-  return writeQueue;
+  // A rejected operation must neither publish partial data nor poison later writes.
+  writeQueue = operation.catch(() => {});
+  return operation;
 }
 
 export async function replaceState(nextState) {

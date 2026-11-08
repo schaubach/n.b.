@@ -155,6 +155,10 @@ export default function Home() {
   };
 
   const startRound = async (classId, opts) => {
+    if (opts.points_import) {
+      navigate(`/classes/${classId}/points-import`, { state: opts });
+      return;
+    }
     const res = await api.post("/sessions", { class_id: classId, ...opts });
     navigate(res.data.points_mode ? `/points/${res.data.id}` : res.data.entry_mode === "seat_plan" ? `/seat-plan/${res.data.id}` : `/grade/${res.data.id}`);
   };
