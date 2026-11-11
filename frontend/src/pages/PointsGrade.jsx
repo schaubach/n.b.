@@ -52,6 +52,11 @@ function pointInfo(value, gradeSystem) {
   return gradeSystem === "points_0_15" ? pointGradeLabel(value) : "";
 }
 
+const SUMMARY_COL_WIDTH = 256;
+const NAME_COL_WIDTH = 224;
+const summaryColStyle = { width: SUMMARY_COL_WIDTH, minWidth: SUMMARY_COL_WIDTH, maxWidth: SUMMARY_COL_WIDTH };
+const nameColStyle = { left: SUMMARY_COL_WIDTH, width: NAME_COL_WIDTH, minWidth: NAME_COL_WIDTH, maxWidth: NAME_COL_WIDTH };
+
 function GradePill({ value, gradeSystem, size = "normal" }) {
   if (!value) return <span className="font-bold text-stone-300">-</span>;
   const info = pointInfo(value, gradeSystem);
@@ -76,6 +81,24 @@ export default function PointsGrade() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const dirtyRef = useRef(false);
+  const tableScrollRef = useRef(null);
+
+  const handlePointsKeyDown = (event, rowIndex, columnIndex) => {
+    if (event.key !== "Tab" || event.altKey || event.ctrlKey || event.metaKey) return;
+    const columnCount = columns.length;
+    const rowCount = data?.students?.length || 0;
+    let nextRow = rowIndex;
+    let nextColumn = columnIndex + (event.shiftKey ? -1 : 1);
+    if (nextColumn >= columnCount) { nextRow += 1; nextColumn = 0; }
+    if (nextColumn < 0) { nextRow -= 1; nextColumn = columnCount - 1; }
+    if (nextRow < 0 || nextRow >= rowCount) return;
+    const target = tableScrollRef.current?.querySelector(`input[data-points-row="${nextRow}"][data-points-col="${nextColumn}"]`);
+    if (!target) return;
+    event.preventDefault();
+    target.focus();
+    target.select();
+    target.scrollIntoView({ block: "nearest", inline: "nearest" });
+  };
 
   const markDirty = () => { dirtyRef.current = true; };
 
@@ -275,11 +298,12 @@ export default function PointsGrade() {
       {error && <div className="mx-4 mt-3 rounded-2xl border-2 border-rose-300 bg-rose-100 px-4 py-3 font-bold text-rose-900">{error}</div>}
 
       <main className="min-h-0 flex-1 overflow-auto p-4 sm:p-6">
-        <div className="min-w-max overflow-hidden rounded-2xl border-2 border-stone-900 bg-white shadow-brutal-sm">
+        <div ref={tableScrollRef} className="max-h-[calc(100vh-12rem)] max-w-full overflow-auto rounded-2xl border-2 border-stone-900 bg-white shadow-brutal-sm" style={{ scrollPaddingLeft: SUMMARY_COL_WIDTH + NAME_COL_WIDTH, scrollPaddingTop: 96 }}>
           <table className="w-full border-separate border-spacing-0 text-sm">
             <thead>
               <tr>
-                <th className="sticky left-0 top-0 z-40 min-w-56 border-b-2 border-stone-900 bg-stone-900 px-4 py-3 text-left font-heading font-black text-white">Lernende*r</th>
+                <th className="sticky left-0 top-0 z-40 border-b-2 border-stone-900 bg-stone-800 px-4 py-3 text-center font-heading font-black text-white" style={summaryColStyle}>Auswertung</th>
+                <th className="sticky top-0 z-40 border-b-2 border-r-2 border-stone-900 bg-stone-900 px-4 py-3 text-left font-heading font-black text-white" style={nameColStyle}>Lernende*r</th>
                 {columns.map((column, index) => (
                   <th key={column.id} className="sticky top-0 z-30 min-w-36 border-b-2 border-l border-stone-900 bg-amber-300 p-2 text-stone-900">
                     <input value={column.title} onChange={(event) => updateColumn(column.id, { title: event.target.value })} className="w-full rounded-lg border-2 border-stone-900/20 bg-white/80 px-2 py-1 text-center font-bold" />
@@ -289,7 +313,6 @@ export default function PointsGrade() {
                     </div>
                   </th>
                 ))}
-                <th className="sticky top-0 z-30 min-w-56 border-b-2 border-l-2 border-stone-900 bg-stone-800 px-4 py-3 text-center font-heading font-black text-white">Auswertung</th>
               </tr>
             </thead>
             <tbody>
@@ -299,19 +322,29 @@ export default function PointsGrade() {
                 const inactiveTone = row.student.inactive ? "opacity-60 grayscale" : "";
                 return (
                   <tr key={row.student.id} className={`${bg} ${inactiveTone}`}>
-                    <td className={"sticky left-0 z-20 border-t-2 border-stone-200 px-4 py-3 font-bold text-stone-900 " + bg}>{row.student.first_name} <span className="font-black">{row.student.last_name}</span>{row.student.inactive ? <span className="ml-2 rounded-full bg-stone-200 px-2 py-0.5 text-[10px] font-black uppercase text-stone-600">nicht im Import</span> : null}</td>
-                    {columns.map((column) => (
-                      <td key={column.id} className="border-l border-t-2 border-stone-200 px-2 py-2 text-center">
-                        <input type="number" min="0" step="0.5" value={entries[entryKey(row.student.id, column.id)] || ""} onChange={(event) => updateEntry(row.student.id, column.id, event.target.value)} className="w-24 rounded-xl border-2 border-stone-200 px-2 py-2 text-center font-mono font-black outline-none focus:border-stone-900" />
-                      </td>
-                    ))}
-                    <td className="border-l-2 border-t-2 border-stone-200 px-3 py-2 text-center">
-                      <div className="flex items-center justify-center gap-2">
+                    <td className={"sticky left-0 z-20 border-t-2 border-stone-200 px-3 py-2 text-center " + bg} style={summaryColStyle}>
+                      <div className="flex flex-wrap items-center justify-center gap-2">
                         <GradePill value={row.grade} gradeSystem={data.session.grade_system} size="large" />
                         <span className="font-mono text-sm font-bold text-stone-600">{row.hasEntries ? `${formatNumber(row.achieved)} / ${formatNumber(row.max)} · ${formatNumber(row.percent)}%` : "keine Punkte"}</span>
                       </div>
                       {row.better && <div className={"mt-1 inline-flex rounded-full px-2 py-0.5 text-xs font-black " + (near ? "bg-amber-300 text-stone-900 ring-2 ring-stone-900" : "bg-stone-100 text-stone-600")}>{formatNumber(row.better.points)} P. bis {row.better.target || "besser"}</div>}
                     </td>
+                    <td className={"sticky z-20 border-l border-r-2 border-t-2 border-l-stone-200 border-r-stone-900 border-t-stone-200 px-4 py-3 font-bold text-stone-900 " + bg} style={nameColStyle}>{row.student.first_name} <span className="font-black">{row.student.last_name}</span>{row.student.inactive ? <span className="ml-2 rounded-full bg-stone-200 px-2 py-0.5 text-[10px] font-black uppercase text-stone-600">nicht im Import</span> : null}</td>
+                    {columns.map((column, columnIndex) => (
+                      <td key={column.id} className="border-l border-t-2 border-stone-200 px-2 py-2 text-center">
+                        <input
+                          type="number"
+                          min="0"
+                          step="0.5"
+                          data-points-row={rowIndex}
+                          data-points-col={columnIndex}
+                          value={entries[entryKey(row.student.id, column.id)] || ""}
+                          onChange={(event) => updateEntry(row.student.id, column.id, event.target.value)}
+                          onKeyDown={(event) => handlePointsKeyDown(event, rowIndex, columnIndex)}
+                          className="w-24 rounded-xl border-2 border-stone-200 px-2 py-2 text-center font-mono font-black outline-none focus:border-stone-900"
+                        />
+                      </td>
+                    ))}
                   </tr>
                 );
               })}

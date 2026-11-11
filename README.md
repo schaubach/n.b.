@@ -41,6 +41,8 @@ KlasseA;Nachname2;Vorname2;account2
 
 - Fuer schriftliche SL und Klassenarbeiten/Klausuren kann eine Punkte-zu-Noten-Bewertung genutzt werden.
 - Pro Bewertung lassen sich Aufgaben-/Punktespalten anlegen.
+- Die Kopfzeile mit den Aufgabenpunkten sowie die Spalten Auswertung und Lernende bleiben beim Scrollen stehen; die Auswertung steht direkt links neben den Namen.
+- Mit Tab bzw. Shift+Tab springt man von Punktwert zu Punktwert innerhalb einer Zeile und am Zeilenende in die naechste Zeile.
 - Die App berechnet erreichte Punkte, Prozentwert, Note und den Abstand zur naechstbesseren Note.
 - Bei knappen Grenzen wird sichtbar hervorgehoben, wenn nur wenig zur besseren Note fehlt.
 - Die verwendete Notenskala kann fuer eine einzelne Bewertung lokal angepasst werden.
