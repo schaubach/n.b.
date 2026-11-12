@@ -161,7 +161,7 @@ export default function PointsGrade() {
     items.forEach((item) => {
       const current = grouped.get(item.value);
       if (!current) grouped.set(item.value, { ...item });
-      else grouped.set(item.value, { ...current, minPercent: Math.max(Number(current.minPercent) || 0, Number(item.minPercent) || 0), minPoints: Math.max(current.minPoints, item.minPoints) });
+      else grouped.set(item.value, { ...current, minPercent: Math.min(Number(current.minPercent) || 0, Number(item.minPercent) || 0), minPoints: Math.min(current.minPoints, item.minPoints) });
     });
     return Array.from(grouped.values()).sort((a, b) => Number(b.minPercent) - Number(a.minPercent));
   }, [activeScale, data?.session, data?.session?.grade_system, maxPoints, rows]);
