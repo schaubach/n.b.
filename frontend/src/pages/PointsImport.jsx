@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
-import { AlertTriangle, ArrowLeft, Check, FileUp, Loader2, UserPlus, X } from "lucide-react";
+import { AlertTriangle, ArrowLeft, BarChart3, Check, FileUp, Loader2, UserPlus, X } from "lucide-react";
+import GradeDistribution from "../components/GradeDistribution";
 import api from "../lib/api";
 import { importMail, inspectPointsImport, parsePointsImport } from "../lib/pointsImport";
 import { evaluatePercent, normalizePointScale, pointsNeededForBetter } from "../lib/gradeScales";
@@ -20,6 +21,7 @@ export default function PointsImport() {
   const [dirty, setDirty] = useState(false);
   const [newStudents, setNewStudents] = useState([]);
   const [addMail, setAddMail] = useState(null);
+  const [showDistribution, setShowDistribution] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -61,6 +63,10 @@ export default function PointsImport() {
     sessionId && data?.grade_scale?.id === scaleId ? data.grade_scale : data?.grade_scales?.find((item) => item.id === scaleId),
     data?.session.grade_system,
   ), [data, scaleId, sessionId]);
+  const previews = useMemo(() => checks.map((check) => !check.missing && check.valid
+    ? evaluatePercent(check.achieved / check.maximum * 100, scale, data.session.grade_system, data.session)
+    : null), [checks, scale, data]);
+  const maxima = new Set(checks.filter((check) => !check.missing && Number.isFinite(check.maximum) && check.maximum > 0).map((check) => check.maximum));
 
   const change = (index, values) => {
     setRows((current) => {
@@ -90,6 +96,7 @@ export default function PointsImport() {
       setData((current) => ({ ...current, students: originalStudents }));
       setNewStudents([]);
       setRows(parsed);
+      setShowDistribution(false);
       setFilename(file.name);
       setDirty(true);
     } catch (err) { setRows([]); setError(err.message || "Die Datei konnte nicht gelesen werden."); }
@@ -143,18 +150,23 @@ export default function PointsImport() {
             <button type="button" disabled={busy} onClick={() => input.current?.click()} className="flex items-center gap-2 rounded-lg border-2 border-stone-900 bg-white px-4 py-2 font-bold"><FileUp className="h-5 w-5" /> CSV auswählen</button>
             <label className="min-w-0"><span className="block text-xs font-bold text-stone-600">Notenschlüssel</span><select aria-label="Notenschlüssel" disabled={busy} value={scaleId} onChange={(event) => { setScaleId(event.target.value); setDirty(true); }} className="max-w-full rounded-lg border-2 border-stone-300 bg-white p-2">{data.grade_scales.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
             <span className="break-all text-sm text-stone-500">{filename}</span>
+            {!!rows.length && <button type="button" aria-pressed={showDistribution} onClick={() => setShowDistribution((open) => !open)} className="flex items-center gap-2 rounded-lg border-2 border-stone-900 bg-white px-4 py-2 font-bold aria-pressed:bg-stone-900 aria-pressed:text-white"><BarChart3 className="h-5 w-5" /> Notenspiegel</button>}
           </div>
           <div aria-live="polite" className={`shrink-0 rounded-lg border-2 px-3 py-2 font-bold ${unresolved ? "border-amber-500 bg-amber-50 text-amber-900" : "border-emerald-500 bg-emerald-50 text-emerald-900"}`}>
             {unresolved} offene Zeilen · {accepted} bestätigt · {missing} ohne Eintrag
             {newStudents.length > 0 && <span className="block text-sm">{newStudents.length} neue Lernende zur Aufnahme vorgemerkt</span>}
           </div>
           {sessionId && <p className="text-sm font-bold text-amber-900">Erneute Übernahme ersetzt die Noten dieser Spalte einschließlich manueller Überschreibungen.</p>}
-          <div className="min-h-0 flex-1 overflow-auto border border-stone-300 bg-white">
+          {showDistribution && rows.length > 0 ? <div className="min-h-0 flex-1 overflow-auto">
+            <GradeDistribution title="Notenspiegel" countLabel="Anzahl" scale={scale} session={data.session}
+              values={previews.map((preview) => preview?.value)} maxPoints={maxima.size === 1 ? [...maxima][0] : null}
+              note={"Vorschau mit allen gültigen zugeordneten Noten, auch vor der Bestätigung." + (maxima.size > 1 ? " Unterschiedliche Höchstpunktzahlen: Es gelten die Prozentgrenzen." : "")} />
+          </div> : <div className="min-h-0 flex-1 overflow-auto border border-stone-300 bg-white">
             <table className="w-full min-w-[1100px] border-collapse text-sm" data-testid="points-import-table">
               <thead className="sticky top-0 z-10 bg-stone-900 text-white"><tr>{["Quelle / Mail", "Lernende", "Erreichte Punkte", "Maximale Punkte", "Notenvorschau", "Probleme / Hinweise", "Entscheidung"].map((title) => <th key={title} className="px-3 py-3 text-left">{title}</th>)}</tr></thead>
               <tbody>{rows.map((row, index) => {
                 const check = checks[index];
-                const evaluated = !check.missing && check.valid ? evaluatePercent(check.achieved / check.maximum * 100, scale, data.session.grade_system, data.session) : null;
+                const evaluated = previews[index];
                 const grade = evaluated?.value || "";
                 const better = evaluated ? pointsNeededForBetter(check.achieved, check.maximum, scale, evaluated.rowIndex, data.session.grade_system, data.session) : null;
                 const near = better && better.points > 0 && better.points <= 1 && (data.session.grade_system === "points_0_15" || gradeTier(grade, data.session.grade_system) !== gradeTier(better.target, data.session.grade_system));
@@ -174,7 +186,7 @@ export default function PointsImport() {
                 </tr>;
               })}</tbody>
             </table>
-          </div>
+          </div>}
         </>}
       </main>
       {addMail !== null && <AddImportStudent mail={addMail} onClose={() => setAddMail(null)} onAdd={addStudent} />}
