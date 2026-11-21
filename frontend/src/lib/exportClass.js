@@ -23,6 +23,12 @@ export function triggerDownload(file) {
   const a = document.createElement("a");
   a.href = url;
   a.download = file.name;
+  // Safari may preview PDFs instead of downloading them. Keep the vault's
+  // document alive rather than replacing it with the native PDF viewer.
+  if (file.type === "application/pdf") {
+    a.target = "_blank";
+    a.rel = "noopener noreferrer";
+  }
   document.body.appendChild(a);
   a.click();
   a.remove();

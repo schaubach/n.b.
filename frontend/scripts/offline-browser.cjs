@@ -85,6 +85,10 @@ async function run() {
       { id: "test-written", class_id: "offline-class", title: "Schriftliche Noten", category: "sonstige", sl_type: "written", date: "09.09.2026", weight: 1 },
     );
     state.grades = [{ session_id: "test-ka", student_id: "ada", value: "2" }];
+    state.classes.push({ id: "distribution-class", name: "Notenspiegel-Test", grade_system: "grades_1_6", grade_scale_id: "MEDA" });
+    state.students.push({ id: "distribution-student", class_id: "distribution-class", first_name: "Test", last_name: "Person" });
+    state.sessions.push({ id: "distribution-session", class_id: "distribution-class", title: "Schriftliche SL", category: "sonstige", sl_type: "written", points_mode: true, grade_scale_id: "MEDA", weight: 1 });
+    state.point_sessions.push({ session_id: "distribution-session", columns: [{ id: "task", title: "Aufgabe 1", max_points: 10 }], entries: [{ student_id: "distribution-student", column_id: "task", points: 8 }] });
     state.classes.push({ id: "fit-class", name: "Sitzplan-Testklasse", grade_system: "points_0_15", grade_scale_id: "MEDA" });
     state.classes.push({ id: "import-class", name: "CSV-Testklasse", grade_system: "grades_1_6", grade_scale_id: "MEDA" });
     ["anna.berg", "ben.cramer", "cem.demir", "dora.engel", "emil.fuchs", "gus.hahn", "ina.jung", "kai.lang", "lea.maier", "mo.nowak", "ohne.csv"].forEach((name) => {
@@ -162,6 +166,7 @@ async function run() {
   assert.equal(await noteField.inputValue(), "");
   await page.getByTestId("undo-grade-button").click();
   await page.getByTestId("student-swipe-card").filter({ hasText: "Ada" }).waitFor();
+  await page.waitForFunction(() => Array.from(document.querySelectorAll("textarea")).some((field) => field.value === "Sorgfaeltige Ausarbeitung"));
   assert.equal(await noteField.inputValue(), "Sorgfaeltige Ausarbeitung");
   await page.getByTestId("grade-cell-2").click();
   await page.getByTestId("student-swipe-card").filter({ hasText: "Berta" }).waitFor();
@@ -190,11 +195,16 @@ async function run() {
   await page.getByTitle("Sorgfaeltige Ausarbeitung", { exact: true }).hover();
   await page.getByTitle("Per Ziehen bewertet", { exact: true }).hover();
   const pdfDownload = page.waitForEvent("download");
+  const beforePdfUrl = page.url();
+  await page.evaluate(() => { window.pdfVaultDocument = "still-open"; });
   await page.getByRole("button", { name: "PDF", exact: true }).filter({ visible: true }).click();
   const pdf = await pdfDownload;
   const pdfPath = path.join(work, "gradebook.pdf");
   await pdf.saveAs(pdfPath);
   assert.equal(fs.readFileSync(pdfPath).subarray(0, 5).toString(), "%PDF-");
+  assert.equal(page.url(), beforePdfUrl);
+  assert.equal(await page.evaluate(() => window.pdfVaultDocument), "still-open");
+  assert.equal(await page.getByRole("button", { name: "Entsperren", exact: true }).count(), 0);
   await page.getByRole("button", { name: "Schliessen", exact: true }).click();
   await page.getByTestId("class-menu-offline-class").click();
   await page.getByTestId("seat-plan-class-offline-class").click();
@@ -347,6 +357,7 @@ async function run() {
   assert.equal(await page.getByTestId("points-import-finish").isDisabled(), true);
   assert.equal(await page.getByLabel("Entscheidung Zeile 4", { exact: true }).inputValue(), "accept");
   assert.equal(await page.getByLabel("Entscheidung Zeile 10", { exact: true }).inputValue(), "accept");
+  assert.equal(await page.getByLabel("Entscheidung Zeile 6", { exact: true }).inputValue(), "accept");
   const invalid = page.getByLabel("Erreichte Punkte Zeile 1", { exact: true });
   await invalid.fill("99");
   assert.equal(await page.getByTestId("points-import-better-0").count(), 0);
@@ -413,6 +424,21 @@ async function run() {
   assert.match(await page.getByLabel("Lernende Zeile 11", { exact: true }).locator("option:checked").innerText(), /Person, Neue/);
   assert.deepEqual(failures, []);
   console.log("PASS: imported scores, review decisions and added learners survive encrypted backup restore");
+  await page.evaluate(() => { location.hash = "/points/distribution-session"; });
+  const mirror = page.getByRole("button", { name: "Notenspiegel", exact: true });
+  await mirror.waitFor();
+  assert.equal(await page.getByRole("table", { name: "Notenspiegel", exact: true }).count(), 0);
+  for (const size of [{ width: 1024, height: 768 }, { width: 390, height: 844 }]) {
+    await page.setViewportSize(size);
+    await mirror.click();
+    await page.getByRole("table", { name: "Notenspiegel", exact: true }).waitFor();
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth + 1), false);
+    await page.screenshot({ path: path.join(work, `points-distribution-${size.width}.png`) });
+    await mirror.click();
+    assert.equal(await page.locator("input[data-points-row]").inputValue(), "8");
+  }
+  assert.deepEqual(failures, []);
+  console.log("PASS: offline points grade distribution toggles without losing scores");
 }
 
 run().catch((error) => { console.error(error); process.exitCode = 1; }).finally(async () => {

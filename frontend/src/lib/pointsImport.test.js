@@ -10,7 +10,7 @@ test("reads the supplied MeinWerk example without losing statuses or zero", () =
   const people = ["anna.berg", "ben.cramer", "cem.demir", "dora.engel", "emil.fuchs", "gus.hahn", "ina.jung", "kai.lang", "lea.maier", "mo.nowak"].map((name) => ({ id: name, email: `${name}@schule.example` }));
   const rows = parsePointsImport(text, people);
   expect(rows).toHaveLength(10);
-  expect(rows.filter((row) => row.decision === "accept")).toHaveLength(2);
+  expect(rows.filter((row) => row.decision === "accept")).toHaveLength(3);
   expect(rows.find((row) => row.student_id === "mo.nowak").achieved).toBe("0");
 });
 
@@ -29,12 +29,21 @@ test("uses headers rather than column positions and preserves quoted fields", ()
   expect(importMail("'+name@school.test")).toBe("+name@school.test");
 });
 
-test.each(["ungeprüft", "veraltet", "unveröffentlicht, geprüft", "unveröffentlicht, ungeprüft", "unveröffentlicht, veraltet", "neuer Status"])("requires a decision for %s", (status) => {
+test.each(["ungeprüft", "veraltet", "unveröffentlicht, ungeprüft", "unveröffentlicht, veraltet", "neuer Status"])("requires a decision for %s", (status) => {
   const rows = parsePointsImport(header + `a@school.test;7;10;${status}`, students.slice(0, 1));
   expect(rows[0].decision).toBe("pending");
   expect(() => validatePointsReview(rows, students.slice(0, 1))).toThrow();
   rows[0].decision = "accept";
   expect(validatePointsReview(rows, students.slice(0, 1))[0].achieved).toBe(7);
+});
+
+test("accepts checked unpublished results but still flags invalid points and duplicates", () => {
+  const csv = header + "a@school.test;7;10;unveröffentlicht, geprüft";
+  const rows = parsePointsImport(csv, students.slice(0, 1));
+  expect(rows[0].decision).toBe("accept");
+  expect(validatePointsReview(rows, students.slice(0, 1))[0].achieved).toBe(7);
+  expect(parsePointsImport(csv.replace(";7;", ";11;"), students.slice(0, 1))[0].decision).toBe("pending");
+  expect(parsePointsImport(csv + "\n" + csv.split("\r\n")[1], students.slice(0, 1)).every((row) => row.decision === "pending")).toBe(true);
 });
 
 test("does not silently pick one duplicate and allows skipping extras", () => {

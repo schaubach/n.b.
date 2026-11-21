@@ -54,7 +54,7 @@ KlasseA;Nachname2;Vorname2;account2
 - Erwartet wird UTF-8-CSV mit Semikolon und den Spalten `Mail;erreichte Punkte;maximale Punkte;Status`. Dezimalkomma, BOM und zitierte Felder werden unterstuetzt.
 - Die Zuordnung erfolgt anhand der Mailadresse innerhalb der Klasse. Unbekannte Mailadressen bieten `Lernende/n zufuegen`; Vor- und Nachname werden vor der Aufnahme eingegeben.
 - Fehler erscheinen rot, Warnungen gelb und jeweils mit Erklaerung. Doppelte Zuordnungen, ungueltige Punkte, unterschiedliche Hoechstpunktzahlen, inaktive Lernende, fehlende CSV-Zeilen sowie ungepruefte, veraltete oder unbekannte Statuswerte werden gemeldet.
-- Fehlerfreie Zeilen mit Status `geprueft` sind vorausbestaetigt. Alle anderen Zeilen muessen korrigiert und bestaetigt oder ausdruecklich `Ohne Eintrag` belassen werden. Leere Punktefelder sind keine Nullpunkte.
+- Fehlerfreie Zeilen mit Status `geprueft` oder `unveroeffentlicht, geprueft` sind vorausbestaetigt. Alle anderen Zeilen muessen korrigiert und bestaetigt oder ausdruecklich `Ohne Eintrag` belassen werden. Leere Punktefelder sind keine Nullpunkte.
 - Noten entstehen aus den Prozentwerten und der ausgewaehlten Notenskala. KA im System 1-6 bleiben ganzzahlig, schriftliche SL behalten Tendenzen; im System 0-15 werden Notenpunkte uebernommen.
 - Erst `Noten uebernehmen` speichert die Bewertung und vorgemerkte neue Lernende gemeinsam im verschluesselten Tresor. Abbrechen vor der Uebernahme veraendert die Klasse nicht.
 - Das Punkte-Icon der Notenstandsspalte oeffnet die Importpruefung erneut. Eine erneute Uebernahme ersetzt nach Bestaetigung auch manuelle Notenueberschreibungen dieser Spalte. Importpunkte und Pruefentscheidungen sind im Backup enthalten.

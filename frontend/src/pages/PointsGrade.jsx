@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { ArrowLeft, CheckCircle2, Loader2, Plus, Trash2 } from "lucide-react";
+import { ArrowLeft, BarChart3, CheckCircle2, Loader2, Plus, Trash2 } from "lucide-react";
 import api from "../lib/api";
 import { gradeColorClasses, gradeTier } from "../lib/grades";
 import GradeDistribution, { formatNumber, GradePill } from "../components/GradeDistribution";
@@ -57,6 +57,7 @@ export default function PointsGrade() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const [showDistribution, setShowDistribution] = useState(false);
   const dirtyRef = useRef(false);
   const tableScrollRef = useRef(null);
 
@@ -220,13 +221,13 @@ export default function PointsGrade() {
 
   return (
     <div className="flex h-screen flex-col overflow-hidden bg-stone-50 bg-dots">
-      <header className="flex shrink-0 items-center gap-3 border-b-2 border-stone-900 bg-white px-4 py-3 sm:px-6">
+      <header className="grid shrink-0 grid-cols-2 items-center gap-3 border-b-2 border-stone-900 bg-white px-4 py-3 sm:flex sm:px-6">
         <button onClick={openGradebook} className="flex items-center gap-2 rounded-full border-2 border-stone-900 bg-white px-3 py-2 font-bold text-stone-900 shadow-brutal-sm">
           <ArrowLeft className="h-5 w-5" /> Notenstand
         </button>
-        <div className="min-w-0 flex-1 text-center">
+        <div className="order-last col-span-2 min-w-0 flex-1 text-center sm:order-none">
           <p className="text-xs font-bold uppercase tracking-[0.18em] text-stone-400">Punkte -> Noten</p>
-          <h1 className="truncate font-heading text-xl font-black text-stone-900">{data.session.class_name} · {data.session.title}</h1>
+          <h1 className="break-words font-heading text-xl font-black text-stone-900 sm:truncate">{data.session.class_name} · {data.session.title}</h1>
         </div>
         <div aria-live="polite" className={"flex items-center gap-2 rounded-xl border-2 px-4 py-2.5 font-heading font-extrabold shadow-brutal-sm " + (saving ? "border-amber-400 bg-amber-100 text-amber-900" : "border-emerald-500 bg-emerald-100 text-emerald-900")}>
           {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
@@ -234,7 +235,7 @@ export default function PointsGrade() {
         </div>
       </header>
 
-      <div className="flex shrink-0 flex-col gap-3 border-b-2 border-stone-200 bg-white px-4 py-3 sm:flex-row sm:items-center sm:px-6">
+      <div className="flex shrink-0 flex-wrap items-center gap-3 border-b-2 border-stone-200 bg-white px-4 py-3 sm:px-6">
         <label className="flex items-center gap-2 font-bold text-stone-700">
           Skala
           <select value={scaleId} onChange={(event) => selectScale(event.target.value)} className="rounded-xl border-2 border-stone-300 bg-white px-3 py-2 font-bold text-stone-900">
@@ -248,11 +249,15 @@ export default function PointsGrade() {
           {saveStatusLabel}
           {scaleChanged && <span className="ml-2 font-black text-rose-700">Notenskala lokal angepasst</span>}
         </div>
+        <button type="button" aria-pressed={showDistribution} onClick={() => setShowDistribution((visible) => !visible)} className="flex items-center gap-2 rounded-lg border-2 border-stone-900 bg-white px-4 py-2 font-bold aria-pressed:bg-stone-900 aria-pressed:text-white">
+          <BarChart3 className="h-5 w-5" /> Notenspiegel
+        </button>
       </div>
 
       {error && <div className="mx-4 mt-3 rounded-2xl border-2 border-rose-300 bg-rose-100 px-4 py-3 font-bold text-rose-900">{error}</div>}
 
       <main className="min-h-0 flex-1 overflow-auto p-4 sm:p-6">
+        {showDistribution ? <GradeDistribution title="Notenspiegel" scale={activeScale} session={data.session} maxPoints={maxPoints} values={rows.map((row) => row.summaryValue || row.grade)} /> : <>
         <div ref={tableScrollRef} className="max-h-[calc(100vh-12rem)] max-w-full overflow-auto rounded-2xl border-2 border-stone-900 bg-white shadow-brutal-sm" style={{ scrollPaddingLeft: SUMMARY_COL_WIDTH + NAME_COL_WIDTH, scrollPaddingTop: 96 }}>
           <table className="w-full border-separate border-spacing-0 text-sm">
             <thead>
@@ -307,8 +312,7 @@ export default function PointsGrade() {
           </table>
         </div>
 
-        <section className="mt-5 grid gap-5 xl:grid-cols-[minmax(0,1fr)_420px]">
-          <GradeDistribution scale={activeScale} session={data.session} maxPoints={maxPoints} values={rows.map((row) => row.summaryValue || row.grade)} />
+        <section className="mt-5 max-w-xl">
 
           <div className="overflow-hidden rounded-2xl border-2 border-stone-900 bg-white shadow-brutal-sm">
             <div className="border-b-2 border-stone-900 bg-amber-300 px-4 py-3">
@@ -346,6 +350,7 @@ export default function PointsGrade() {
             </table>
           </div>
         </section>
+        </>}
       </main>
     </div>
   );

@@ -76,7 +76,7 @@ export function inspectPointsImport(rows, students) {
     if (Number.isFinite(achieved) && Number.isFinite(maximum) && achieved > maximum) errors.push("Erreichte Punkte überschreiten die maximalen Punkte.");
     if (maxima.size > 1) warnings.push("Unterschiedliche Höchstpunktzahlen: Note wird aus dem Prozentwert dieser Zeile berechnet.");
     if (!STATUSES.has(row.status)) warnings.push(`Unbekannter Status: ${row.status || "leer"}.`);
-    else if (row.status !== "geprüft") warnings.push(`Quellstatus: ${row.status}. Entscheidung erforderlich.`);
+    else if (!["geprüft", "unveröffentlicht, geprüft"].includes(row.status)) warnings.push(`Quellstatus: ${row.status}. Entscheidung erforderlich.`);
     const issues = [...errors, ...warnings];
     const missing = row.decision === "missing";
     return { student, achieved, maximum, errors, warnings, issues, missing, valid: errors.length === 0, ready: missing || (row.decision === "accept" && errors.length === 0) };
