@@ -660,6 +660,7 @@ async function get(url) {
       data: {
         class_id: cls.id,
         class_name: cls.name || "",
+        teacher_name: String(state.teacher_config?.name || "").trim(),
         grade_system: cls.grade_system || "grades_1_6",
         grade_scale_id: cls.grade_scale_id || "MEDA",
         grade_scales: gradeScalesForState(state),

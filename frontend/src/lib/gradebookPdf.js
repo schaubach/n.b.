@@ -170,7 +170,7 @@ function drawCell(doc, cell, x, y, width, height, alternate = false) {
   }
 }
 
-function drawPageHeading(doc, title, subtitle, legendLines, legendTop, legendHeight, pageWidth) {
+function drawPageHeading(doc, title, subtitle, legendLines, legendTop, legendHeight, pageWidth, teacherLines) {
   doc.setTextColor(28, 25, 23);
   doc.setFont("helvetica", "bold");
   doc.setFontSize(13);
@@ -180,6 +180,11 @@ function drawPageHeading(doc, title, subtitle, legendLines, legendTop, legendHei
   doc.setTextColor(120, 113, 108);
   doc.text(subtitle, 8, 14);
   doc.text("n.b.", pageWidth - 8, 9, { align: "right" });
+  if (teacherLines.length) {
+    doc.setFontSize(9);
+    doc.setTextColor(28, 25, 23);
+    doc.text(teacherLines, 8, 19, { lineHeightFactor: 1.4 });
+  }
   doc.setFillColor(245, 245, 244);
   doc.setDrawColor(214, 211, 209);
   doc.roundedRect(8, legendTop, pageWidth - 16, legendHeight, 1.5, 1.5, "FD");
@@ -196,6 +201,10 @@ export async function createGradebookPdfFile(data, rows, columns) {
   const created = new Date().toLocaleDateString("de-DE");
   const pageWidth = doc.internal.pageSize.getWidth();
   const pageHeight = doc.internal.pageSize.getHeight();
+  const teacherName = String(data.teacher_name || "").trim().replace(/\s+/g, " ");
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(9);
+  const teacherLines = teacherName ? doc.splitTextToSize(`Lehrkraft: ${teacherName}`, pageWidth - 16) : [];
   const nameWidth = 38;
   const gradeWidth = 12.5;
   const headerHeight = 7;
@@ -208,7 +217,7 @@ export async function createGradebookPdfFile(data, rows, columns) {
   }
   if (columnGroups.length === 0) columnGroups.push([]);
 
-  doc.setProperties({ title, subject: "Notenstand", author: "n.b.", creator: "n.b." });
+  doc.setProperties({ title, subject: "Notenstand", author: teacherName || "n.b.", creator: "n.b." });
   let pageStarted = false;
   columnGroups.forEach((group) => {
     const groupHead = [table.head[0], ...group.map((index) => table.head[index])];
@@ -219,7 +228,7 @@ export async function createGradebookPdfFile(data, rows, columns) {
     doc.setFont("helvetica", "normal");
     doc.setFontSize(6.5);
     const legendLines = doc.splitTextToSize(legendText, pageWidth - 20);
-    const legendTop = 17;
+    const legendTop = 17 + teacherLines.length * 4.5;
     const legendHeight = Math.max(8, legendLines.length * 3 + 4);
     const tableTop = legendTop + legendHeight + 3;
     const rowsPerPage = Math.max(1, Math.floor((pageHeight - 13 - tableTop - headerHeight) / rowHeight));
@@ -232,7 +241,7 @@ export async function createGradebookPdfFile(data, rows, columns) {
     rowGroups.forEach((pageRows, rowGroupIndex) => {
       if (pageStarted) doc.addPage();
       pageStarted = true;
-      drawPageHeading(doc, title, `${rows.length} Lernende - ${created}`, legendLines, legendTop, legendHeight, pageWidth);
+      drawPageHeading(doc, title, `${rows.length} Lernende - ${created}`, legendLines, legendTop, legendHeight, pageWidth, teacherLines);
 
       let x = 8;
       groupHead.forEach((cell, index) => {

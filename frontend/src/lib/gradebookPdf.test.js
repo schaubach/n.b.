@@ -53,3 +53,27 @@ test("creates a downloadable PDF file", async () => {
   expect(file.type).toBe("application/pdf");
   expect(file.size).toBeGreaterThan(500);
 });
+
+test("prints the configured teacher on every page and wraps long names", async () => {
+  const name = "Dr. Alex Beispiel ".repeat(12).trim();
+  const data = {
+    class_name: "Testklasse", teacher_name: name, grade_system: "grades_1_6",
+    students: Array.from({ length: 60 }, (_, i) => ({ id: String(i), first_name: "Test", last_name: String(i) })),
+    sessions: [], grades: [], average_overrides: [], average_weights: [],
+  };
+  const file = await createGradebookPdfFile(data, buildGradebookRows(data), []);
+  const bytes = await new Promise((resolve) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(Buffer.from(reader.result));
+    reader.readAsArrayBuffer(file);
+  });
+  const pdf = bytes.toString("latin1");
+  const streams = Array.from(pdf.matchAll(/stream\r?\n([\s\S]*?)\r?\nendstream/g), (match) => {
+    try { return require("zlib").inflateSync(Buffer.from(match[1], "latin1")).toString("latin1"); } catch { return ""; }
+  });
+  const pages = streams.filter((stream) => stream.includes("Lehrkraft:"));
+  expect(pages.length).toBeGreaterThan(1);
+  expect(pages.length).toBe((pdf.match(/\/Type \/Page\b/g) || []).length);
+  expect(pdf).toContain("/Author (" + name + ")");
+  pages.forEach((page) => expect(page).toContain("Dr. Alex Beispiel"));
+});
